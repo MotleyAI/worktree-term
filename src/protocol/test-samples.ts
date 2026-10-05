@@ -1,9 +1,7 @@
-import type { Direction, MessageOf } from './index.js';
+import type { Direction, Layout, MessageOf, Terminal, Worktree } from './index.js';
 
-export type Layout = Extract<MessageOf<'clientToDaemon'>, { t: 'setLayout' }>['layout'];
+export type { Layout, Terminal, Worktree };
 export type Pane = Layout['tabs'][number]['root'];
-export type Worktree = Extract<MessageOf<'daemonToClient'>, { t: 'worktreesChanged' }>['worktrees'][number];
-export type Terminal = Extract<MessageOf<'daemonToClient'>, { t: 'termCreated' }>['term'];
 export type HostEntry = Extract<MessageOf<'hubToBrowser'>, { t: 'hosts' }>['hosts'][number];
 
 export const REPO = '/home/u/repo';
@@ -97,6 +95,7 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   { t: 'done', req: 1 },
   { t: 'error', req: 2, code: 'unknown-term', message: 'no such terminal' },
   { t: 'error', req: null, code: 'internal', message: '' },
+  { t: 'error', req: 5, code: 'not-a-repo', message: 'not a repository' },
   {
     t: 'repoState',
     repo: REPO,
@@ -108,6 +107,7 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] },
   { t: 'worktreesChanged', repo: REPO, worktrees: [mainWorktree] },
   { t: 'termCreated', req: 3, term: liveTerminal },
+  { t: 'termCreated', req: null, term: exitedTerminal },
   { t: 'termExited', termId: 1, code: 0, signal: null },
   { t: 'termExited', termId: 2, code: 137, signal: 'SIGKILL' },
   { t: 'termClosed', termId: 1 },

@@ -1,3 +1,4 @@
+import type { Target } from './imports.js';
 import { unitOf, type ArchModel } from './model.js';
 import type { Violation } from './structure.js';
 import { isTestFile, type SourceFile } from './tree.js';
@@ -46,25 +47,25 @@ export const ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
 
 const noBuiltins = (unit: string): boolean => unit === 'protocol' || unit.startsWith('web.');
 
+/** The rule an import of `target` from `unit` breaks, if any. */
+const brokenRule = (unit: string, target: Target): string | undefined => {
+  const allowed = ALLOWLIST[unit] ?? [];
+  if (target.kind === 'builtin') {
+    if (noBuiltins(unit)) return 'builtin-in-pure-unit';
+    return PURE_BUILTINS.has(target.name) || allowed.includes(target.name) ? undefined : 'io-builtin-not-allowed';
+  }
+  return target.kind === 'package' && !allowed.includes(target.name) ? 'package-not-allowed' : undefined;
+};
+
 /** Dependency rules of `architecture/system.arc42.md` principle 3; test files are exempt. */
 export const checkDependencies = (model: ArchModel, files: readonly SourceFile[]): Violation[] => {
   const violations: Violation[] = [];
   for (const file of files) {
-    if (isTestFile(file.path)) continue;
-    const unit = unitOf(model, file.path);
+    const unit = isTestFile(file.path) ? undefined : unitOf(model, file.path);
     if (unit === undefined) continue;
-    const allowed = ALLOWLIST[unit.id] ?? [];
     for (const ref of file.imports) {
-      const { target } = ref;
-      if (target.kind === 'builtin') {
-        if (noBuiltins(unit.id)) {
-          violations.push({ rule: 'builtin-in-pure-unit', file: file.path, detail: `${unit.id} imports ${ref.specifier}` });
-        } else if (!PURE_BUILTINS.has(target.name) && !allowed.includes(target.name)) {
-          violations.push({ rule: 'io-builtin-not-allowed', file: file.path, detail: `${unit.id} imports ${ref.specifier}` });
-        }
-      } else if (target.kind === 'package' && !allowed.includes(target.name)) {
-        violations.push({ rule: 'package-not-allowed', file: file.path, detail: `${unit.id} imports ${ref.specifier}` });
-      }
+      const rule = brokenRule(unit.id, ref.target);
+      if (rule !== undefined) violations.push({ rule, file: file.path, detail: `${unit.id} imports ${ref.specifier}` });
     }
   }
   return violations;

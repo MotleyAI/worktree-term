@@ -29,37 +29,49 @@ const specifierArg = (node: ts.CallExpression): string => {
   return arg !== undefined && ts.isStringLiteralLike(arg) ? arg.text : '';
 };
 
+const importRef = (node: ts.Node): ImportRef | undefined => {
+  if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return undefined;
+  const clause = node.importClause;
+  return {
+    specifier: node.moduleSpecifier.text,
+    form: clause === undefined ? 'side-effect' : 'import',
+    typeOnly: clause?.phaseModifier === ts.SyntaxKind.TypeKeyword,
+  };
+};
+
+const exportRef = (node: ts.Node): ImportRef | undefined => {
+  if (!ts.isExportDeclaration(node) || node.moduleSpecifier === undefined || !ts.isStringLiteral(node.moduleSpecifier)) return undefined;
+  const star = node.exportClause === undefined || ts.isNamespaceExport(node.exportClause);
+  return { specifier: node.moduleSpecifier.text, form: star ? 'export-star' : 'export-from', typeOnly: node.isTypeOnly };
+};
+
+const importEqualsRef = (node: ts.Node): ImportRef | undefined => {
+  if (!ts.isImportEqualsDeclaration(node) || !ts.isExternalModuleReference(node.moduleReference)) return undefined;
+  const { expression } = node.moduleReference;
+  return ts.isStringLiteral(expression) ? { specifier: expression.text, form: 'import-equals', typeOnly: node.isTypeOnly } : undefined;
+};
+
+const callRef = (node: ts.Node): ImportRef | undefined => {
+  if (!ts.isCallExpression(node)) return undefined;
+  if (node.expression.kind === ts.SyntaxKind.ImportKeyword) return { specifier: specifierArg(node), form: 'dynamic-import', typeOnly: false };
+  const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+  return isRequire ? { specifier: specifierArg(node), form: 'require', typeOnly: false } : undefined;
+};
+
+const importTypeRef = (node: ts.Node): ImportRef | undefined => {
+  if (!ts.isImportTypeNode(node) || !ts.isLiteralTypeNode(node.argument)) return undefined;
+  const { literal } = node.argument;
+  return ts.isStringLiteral(literal) ? { specifier: literal.text, form: 'import-type-node', typeOnly: true } : undefined;
+};
+
 /** Every module reference in a TypeScript source, with whether it survives to runtime. */
 export const scanImports = (fileName: string, text: string): ImportRef[] => {
   const kind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
   const refs: ImportRef[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      const clause = node.importClause;
-      refs.push({
-        specifier: node.moduleSpecifier.text,
-        form: clause === undefined ? 'side-effect' : 'import',
-        typeOnly: clause?.phaseModifier === ts.SyntaxKind.TypeKeyword,
-      });
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
-      const star = node.exportClause === undefined || ts.isNamespaceExport(node.exportClause);
-      refs.push({ specifier: node.moduleSpecifier.text, form: star ? 'export-star' : 'export-from', typeOnly: node.isTypeOnly });
-    } else if (
-      ts.isImportEqualsDeclaration(node) &&
-      ts.isExternalModuleReference(node.moduleReference) &&
-      ts.isStringLiteral(node.moduleReference.expression)
-    ) {
-      refs.push({ specifier: node.moduleReference.expression.text, form: 'import-equals', typeOnly: node.isTypeOnly });
-    } else if (ts.isCallExpression(node)) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-        refs.push({ specifier: specifierArg(node), form: 'dynamic-import', typeOnly: false });
-      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
-        refs.push({ specifier: specifierArg(node), form: 'require', typeOnly: false });
-      }
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
-      refs.push({ specifier: node.argument.literal.text, form: 'import-type-node', typeOnly: true });
-    }
+    const ref = importRef(node) ?? exportRef(node) ?? importEqualsRef(node) ?? callRef(node) ?? importTypeRef(node);
+    if (ref !== undefined) refs.push(ref);
     ts.forEachChild(node, visit);
   };
   visit(source);

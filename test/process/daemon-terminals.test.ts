@@ -2,7 +2,7 @@ import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FLOW_HIGH, MAX_FRAME, type Layout, type Terminal } from '../../src/protocol/index.js';
-import { replay, type DaemonClient, type RequestBody } from '../support/daemon-client.js';
+import { replay, type DaemonClient, type Event, type RequestBody } from '../support/daemon-client.js';
 import { addWorktree, alive, DaemonHost, git, makeRepo, sleep, waitUntil, type WtdProcess } from '../support/daemon-host.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
@@ -34,7 +34,10 @@ afterEach(async () => {
   await host.cleanup();
 });
 
-/** Creates a terminal in `worktree` and attaches `client` to it. */
+/**
+ * Creates a terminal in `worktree` and attaches `client` to it; an interactive shell is waited for
+ * until it has run a command and printed its prompt, so login start-up output is over.
+ */
 const started = async (
   client: DaemonClient,
   command: string | null,
@@ -42,8 +45,16 @@ const started = async (
 ): Promise<Terminal> => {
   const term = await client.create(worktree, { command, cols, rows });
   await client.attach(term.termId);
+  if (command === null) {
+    client.sendInput(term.termId, 'echo READY-$((6*7))\r');
+    await client.waitOutput(term.termId, 'READY-42\r\n', 10_000);
+    await sleep(300);
+  }
   return term;
 };
+
+/** Messages from index `from`, without activity flags, which login start-up output may raise at any time. */
+const repliesFrom = (client: DaemonClient, from: number): Event[] => client.messages.slice(from).filter((m) => m.t !== 'activity');
 
 /** Restarts the daemon with extra environment, re-watching from fresh clients. */
 const restart = async (env: Record<string, string | undefined> = {}): Promise<void> => {
@@ -233,7 +244,7 @@ describe('terminal lifetime', () => {
     const job = await pidIn(wt, 'bg.pid');
     const from = a.mark();
     await a.ok({ t: 'closeTerm', termId: term.termId });
-    expect(a.messages.slice(from).map((m) => m.t)).toEqual(['termClosed', 'done']);
+    expect(repliesFrom(a, from).map((m) => m.t)).toEqual(['termClosed', 'done']);
     expect(await b.waitFor('termClosed')).toEqual({ t: 'termClosed', termId: term.termId });
     await waitUntil(() => !alive(shell) && !alive(job), 'shell and job to end', 7000);
     expect((await b.watch(repo)).terminals).toEqual([]);
@@ -287,7 +298,8 @@ exec sleep 600
       await sleep(40);
     }
     await a.waitOutput(term.termId, 'SEQ-DONE', 30_000);
-    await b.waitOutput(term.termId, 'SEQ-DONE', 30_000);
+    // B's last attach may come after the output ended, leaving SEQ-DONE in its snapshot.
+    await waitUntil(async () => (await b.view(term.termId).screen.text()).includes('SEQ-DONE'), 'SEQ-DONE on B', 30_000);
     const reference = a.view(term.termId);
     const [first] = reference.attachments;
     if (first === undefined) throw new Error('A has no snapshot');
@@ -404,8 +416,8 @@ describe('output flow control', () => {
 describe('input', () => {
   it('echoes a command round trip', async () => {
     const term = await started(a, null);
-    a.sendInput(term.termId, 'echo hi\r');
-    await a.waitOutput(term.termId, '\r\nhi\r\n');
+    a.sendInput(term.termId, "echo h''i\r");
+    await a.waitOutput(term.termId, 'hi\r\n');
   });
 
   it('writes input frames to the PTY in order', async () => {
@@ -450,7 +462,7 @@ describe('resize', () => {
     a.resize(term.termId, 90, 20);
     a.resize(term.termId, 100, 30);
     a.sendInput(term.termId, 'stty size\r');
-    await a.waitOutput(term.termId, '\r\n30 100\r\n');
+    await a.waitOutput(term.termId, '30 100\r\n');
     const state = await (await host.client()).watch(repo);
     expect(state.terminals.find((t) => t.termId === term.termId)).toMatchObject({ cols: 100, rows: 30 });
   });
@@ -584,7 +596,7 @@ describe('checked state and layouts', () => {
     const layout = twoPanes(one.termId, two.termId);
     const from = a.mark();
     await a.ok({ t: 'setLayout', worktree: wt, layout });
-    expect(a.messages.slice(from)).toEqual([
+    expect(repliesFrom(a, from)).toEqual([
       { t: 'layoutChanged', worktree: wt, layout },
       { t: 'done', req: ANY_REQ },
     ]);
@@ -605,7 +617,9 @@ describe('checked state and layouts', () => {
   it('replaces a split by its other half when a terminal in it is closed', async () => {
     const one = await a.create(wt, { command: 'exec sleep 60' });
     const two = await a.create(wt, { command: 'exec sleep 60' });
+    const fromSet = b.mark();
     await a.ok({ t: 'setLayout', worktree: wt, layout: twoPanes(one.termId, two.termId) });
+    await b.waitFor('layoutChanged', () => true, { from: fromSet });
     const from = b.mark();
     await a.ok({ t: 'closeTerm', termId: one.termId });
     expect(await b.waitFor('layoutChanged', () => true, { from })).toEqual({
@@ -617,7 +631,9 @@ describe('checked state and layouts', () => {
 
   it('removes a tab left empty when its last terminal is closed', async () => {
     const one = await a.create(wt, { command: 'exec sleep 60' });
+    const fromSet = b.mark();
     await a.ok({ t: 'setLayout', worktree: wt, layout: { tabs: [{ id: 'solo', root: { term: one.termId } }], active: 0 } });
+    await b.waitFor('layoutChanged', () => true, { from: fromSet });
     const from = b.mark();
     await a.ok({ t: 'closeTerm', termId: one.termId });
     expect(await b.waitFor('layoutChanged', () => true, { from })).toEqual({

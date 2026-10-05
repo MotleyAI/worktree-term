@@ -8,15 +8,28 @@ import {
   statSync,
   writeFileSync,
   writeSync,
+  type BigIntStats,
   type PathLike,
   type Stats,
 } from 'node:fs';
 import type * as FsPromises from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { acquireStartLock, hostPaths, openLog, preparePrivateDirs, readFileIfExists, writeFileAtomic } from './index.js';
+import {
+  acquireStartLock,
+  currentHostPaths,
+  fileIdentity,
+  hostPaths,
+  makeOwnerOnly,
+  openLog,
+  preparePrivateDirs,
+  readFileIfExists,
+  removeFile,
+  renameFile,
+  writeFileAtomic,
+} from './index.js';
 
 // platform.files does its I/O through node:fs/promises; these hooks inject failures into it.
 interface Hooks {
@@ -56,9 +69,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         return typeof value === 'function' ? (...args: unknown[]): unknown => Reflect.apply(value, target, args) : value;
       },
     });
-  const foreign = async (path: PathLike, stat: (p: PathLike) => Promise<Stats>): Promise<Stats> => {
-    const stats = await stat(path);
-    if (String(path) === hooks.foreignOwner) Object.defineProperty(stats, 'uid', { value: stats.uid + 1 });
+  const foreign = async <S extends Stats | BigIntStats>(path: PathLike, stat: () => Promise<S>): Promise<S> => {
+    const stats = await stat();
+    if (String(path) === hooks.foreignOwner)
+      Object.defineProperty(stats, 'uid', { value: typeof stats.uid === 'bigint' ? stats.uid + 1n : stats.uid + 1 });
     return stats;
   };
   return {
@@ -78,8 +92,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       hooks.calls.push(`rename ${String(from)} ${String(to)}`);
       await real.rename(from, to);
     },
-    stat: (path: PathLike) => foreign(path, real.stat),
-    lstat: (path: PathLike) => foreign(path, real.lstat),
+    stat: (path: PathLike) => foreign(path, () => real.stat(path)),
+    lstat: (path: PathLike, options?: { bigint?: boolean }) =>
+      options?.bigint === true ? foreign(path, () => real.lstat(path, { bigint: true })) : foreign(path, () => real.lstat(path)),
   };
 });
 
@@ -151,6 +166,13 @@ describe('host paths', () => {
   });
 });
 
+describe('current host paths', () => {
+  it('derives the paths from the environment, home and host name', () => {
+    const paths = currentHostPaths();
+    expect(paths).toEqual(hostPaths({ env: process.env, home: homedir(), host: hostname() }));
+  });
+});
+
 describe('private directories', () => {
   const paths = () => hostPaths({ env: { XDG_STATE_HOME: join(dir, 'state') }, home: '/nonexistent', host: 'box' });
 
@@ -170,14 +192,18 @@ describe('private directories', () => {
 
   it('refuses a state directory owned by another user, naming it', async () => {
     mkdirSync(paths().stateDir, { recursive: true, mode: 0o700 });
-    hooks.foreignOwner = paths().stateDir;
-    await expect(preparePrivateDirs(paths())).rejects.toThrow(paths().stateDir);
+    const target = paths();
+    hooks.foreignOwner = target.stateDir;
+    const preparing = preparePrivateDirs(target);
+    await expect(preparing).rejects.toThrow(target.stateDir);
   });
 
   it('refuses a run/ directory owned by another user, naming it', async () => {
     mkdirSync(paths().runDir, { recursive: true, mode: 0o700 });
-    hooks.foreignOwner = paths().runDir;
-    await expect(preparePrivateDirs(paths())).rejects.toThrow(paths().runDir);
+    const target = paths();
+    hooks.foreignOwner = target.runDir;
+    const preparing = preparePrivateDirs(target);
+    await expect(preparing).rejects.toThrow(target.runDir);
   });
 });
 
@@ -201,7 +227,9 @@ describe('atomic writes', () => {
     const file = join(dir, 'f.json');
     writeFileSync(file, 'previous content');
     hooks.failWriteOf = dir;
-    await expect(writeFileAtomic(file, 'n'.repeat(100_000))).rejects.toThrow(/ENOSPC/);
+    const data = 'n'.repeat(100_000);
+    const writing = writeFileAtomic(file, data);
+    await expect(writing).rejects.toThrow(/ENOSPC/);
     expect(readFileSync(file, 'utf8')).toBe('previous content');
     expect(readdirSync(dir)).toEqual(['f.json']);
   });
@@ -231,6 +259,40 @@ describe('atomic writes', () => {
 
   it('reads a missing file as no content', async () => {
     expect(await readFileIfExists(join(dir, 'missing.json'))).toBeNull();
+  });
+});
+
+describe('file helpers', () => {
+  it('renames a file', async () => {
+    writeFileSync(join(dir, 'a'), 'content');
+    await renameFile(join(dir, 'a'), join(dir, 'b'));
+    expect(readdirSync(dir)).toEqual(['b']);
+  });
+
+  it('removes a file, and counts a missing one as removed', async () => {
+    writeFileSync(join(dir, 'a'), 'content');
+    await removeFile(join(dir, 'a'));
+    await removeFile(join(dir, 'a'));
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('makes a file owner-only', async () => {
+    writeFileSync(join(dir, 'a'), 'content', { mode: 0o644 });
+    await makeOwnerOnly(join(dir, 'a'));
+    expect(modeOf(join(dir, 'a'))).toBe(0o600);
+  });
+
+  it('identifies a file stably, a recreated file differently, and a missing one as null', async () => {
+    const file = join(dir, 'a');
+    writeFileSync(file, 'one');
+    const first = await fileIdentity(file);
+    expect(first).not.toBeNull();
+    expect(await fileIdentity(file)).toBe(first);
+    rmSync(file);
+    writeFileSync(file, 'two');
+    expect(await fileIdentity(file)).not.toBe(first);
+    rmSync(file);
+    expect(await fileIdentity(file)).toBeNull();
   });
 });
 
@@ -314,8 +376,10 @@ describe('start lock', () => {
   it('waits for a live holder and fails after 5 s without taking the lock', async () => {
     const first = await acquireStartLock(lockFile());
     const before = readFileSync(lockFile(), 'utf8');
+    const path = lockFile();
     const started = Date.now();
-    await expect(acquireStartLock(lockFile())).rejects.toThrow();
+    const acquiring = acquireStartLock(path);
+    await expect(acquiring).rejects.toThrow();
     const waited = Date.now() - started;
     expect(waited).toBeGreaterThanOrEqual(4900);
     expect(waited).toBeLessThan(7000);

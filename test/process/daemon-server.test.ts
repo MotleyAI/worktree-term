@@ -128,7 +128,7 @@ describe('single instance', () => {
     }
     await waitUntil(() => !alive(holderPid), 'the lock holder to die');
     await host.start();
-    expect(inode(host.socket)).not.toBe(staleInode);
+    expect(await canConnect(host.socket)).toBe(true);
   });
 
   it('prints one line and exits 1 when the socket path is too long', async () => {

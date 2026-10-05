@@ -6,18 +6,21 @@ const MAX_DEPTH = 16;
 
 const termPane = z.strictObject({ term: termId });
 
+// Annotated so the recursive pane type is inferred exactly.
+export type PaneSchema = z.ZodUnion<readonly [typeof termPane, typeof splitPane]>;
+
 const splitPane = z.strictObject({
   split: z.enum(['right', 'down']),
   ratio: z.number().min(0.05).max(0.95),
-  get a() {
+  get a(): PaneSchema {
     return pane;
   },
-  get b() {
+  get b(): PaneSchema {
     return pane;
   },
 });
 
-const pane = z.union([termPane, splitPane]);
+const pane: PaneSchema = z.union([termPane, splitPane]);
 
 type Pane = z.infer<typeof pane>;
 
@@ -36,3 +39,5 @@ export const layout = z
   .refine((l) => distinct(l.tabs.map((t) => t.id)), 'tab ids must be unique')
   .refine((l) => l.tabs.every((t) => depthOf(t.root) <= MAX_DEPTH), `panes nest at most ${String(MAX_DEPTH)} levels deep`)
   .refine((l) => distinct(l.tabs.flatMap((t) => termsOf(t.root))), 'a terminal appears at most once');
+
+export type Layout = z.infer<typeof layout>;

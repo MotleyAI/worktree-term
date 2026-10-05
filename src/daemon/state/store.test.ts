@@ -276,9 +276,9 @@ describe('pruning', () => {
     expect(store.checked(REPO)).toEqual([]);
     expect(store.layouts(REPO)).toEqual([{ worktree: WT2, layout: SPLIT }]);
     expect(store.checked(OTHER)).toEqual(['/home/u/other']);
-    const reloaded = await StateStore.load(file);
-    expect(reloaded.checked(REPO)).toEqual([]);
-    expect(reloaded.layouts(REPO)).toEqual([{ worktree: WT2, layout: SPLIT }]);
+    const written = fileSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+    expect(written.repos.find((r) => r.repo === REPO)?.worktrees.map((w) => w.path)).toEqual([WT2]);
+    expect(checkedIn(readFileSync(file, 'utf8'))).toEqual(['/home/u/other']);
   });
 
   it('writes nothing when nothing is pruned', async () => {

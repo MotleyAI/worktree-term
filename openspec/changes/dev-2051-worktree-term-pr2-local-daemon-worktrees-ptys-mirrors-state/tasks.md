@@ -19,28 +19,28 @@
 
 ## 3. Protocol v2
 
-- [ ] 3.1 `PROTOCOL_VERSION` 2, nullable `termCreated.req`, `not-a-repo` error code, exports of the layout schema and `Layout`/`Worktree`/`Terminal` types; re-bless `wire.golden.json` (`frozen.golden.json` unchanged); verify 2.1 and the existing protocol tests pass
+- [x] 3.1 `PROTOCOL_VERSION` 2, nullable `termCreated.req`, `not-a-repo` error code, exports of the layout schema and `Layout`/`Worktree`/`Terminal` types; re-bless `wire.golden.json` (`frozen.golden.json` unchanged); verify 2.1 and the existing protocol tests pass
 
 ## 4. Platform
 
-- [ ] 4.1 `platform.files`: paths, private dirs, atomic write, read, owner-only log append-open, start lock (design D3); verify 2.2 passes
-- [ ] 4.2 `platform.dialer`: connect, detached spawn with log, retry window (design D4); verify the dialer parts of 2.11 pass
+- [x] 4.1 `platform.files`: paths, private dirs, atomic write, read, owner-only log append-open, start lock (design D3); verify 2.2 passes
+- [x] 4.2 `platform.dialer`: connect, detached spawn with log, retry window (design D4); verify the dialer parts of 2.11 pass
 
 ## 5. Daemon elements
 
-- [ ] 5.1 `daemon.state`: `pruneLayout`, store with generations, coalesced durable writes, rollback, pruning (design D11); verify 2.3 passes
-- [ ] 5.2 `daemon.worktrees`: porcelain parser, listing, repo identity, watcher with reconcile-before-relist and failure reporting, discovery (design D10); verify 2.4 passes
-- [ ] 5.3 `daemon.terminals`: `FlowControl`; verify 2.5 passes
-- [ ] 5.4 `daemon.terminals`: PTY spawn, output sequencer, mirror, snapshot cut, lifecycle states, input bound, activity flags (design D5, D8, D9)
-- [ ] 5.5 `daemon.server`: bind under the start lock, handshake state machine, outbound queue bound, dispatch, repo registry, visibility, broadcasts (design D3, D7, D12); verify 2.6 and 2.8 pass
-- [ ] 5.6 `daemon.main` and CLI verbs `daemon`/`connect`; rewire `hub.*` placeholders to real `platform.files` exports; verify 2.9–2.11 pass and `la-arch-check` exits 0
+- [x] 5.1 `daemon.state`: `pruneLayout`, store with generations, coalesced durable writes, rollback, pruning (design D11); verify 2.3 passes
+- [x] 5.2 `daemon.worktrees`: porcelain parser, listing, repo identity, watcher with reconcile-before-relist and failure reporting, discovery (design D10); verify 2.4 passes
+- [x] 5.3 `daemon.terminals`: `FlowControl`; verify 2.5 passes
+- [x] 5.4 `daemon.terminals`: PTY spawn, output sequencer, mirror, snapshot cut, lifecycle states, input bound, activity flags (design D5, D8, D9)
+- [x] 5.5 `daemon.server`: bind under the start lock, handshake state machine, outbound queue bound, dispatch, repo registry, visibility, broadcasts (design D3, D7, D12); verify 2.6 and 2.8 pass
+- [x] 5.6 `daemon.main` and CLI verbs `daemon`/`connect`; rewire `hub.*` placeholders to real `platform.files` exports; verify 2.9–2.11 pass and `la-arch-check` exits 0
 
 ## 6. Architecture (edits approved during planning)
 
-- [ ] 6.1 `architecture/daemon.arc42.md` Purpose: replace "serves the protocol on `$XDG_RUNTIME_DIR/wtd.sock`" with "serves the protocol on an owner-only unix socket in `$XDG_STATE_HOME/worktree-term/run/`"; verify `la-arch-diagrams` leaves the file otherwise unchanged
-- [ ] 6.2 Once their tests are green, tag `daemon.arc42.md` principles 2 `[enforced: test:test/process/daemon-server.test.ts]`, 3 and 5 `[enforced: test:test/process/daemon-terminals.test.ts]`, 4 `[enforced: test:src/daemon/terminals/flow.test.ts] [enforced: test:test/process/daemon-terminals.test.ts]`, 7 `[enforced: test:src/daemon/state/store.test.ts]` (6 stays `[review]`), and `platform.arc42.md` principles 3 and 4 `[enforced: test:src/platform/files/files.test.ts]`; verify `la-arch-check` exits 0
-- [ ] 6.3 `architecture/model/typescript.c4`: `specs ['daemon']` on `daemon`, `specs ['platform']` on `platform`; verify `la-arch-check` and `likec4 validate architecture` exit 0 (if the check needs the archived specs, land this edit with the archive in pr-review)
+- [x] 6.1 `architecture/daemon.arc42.md` Purpose: replace "serves the protocol on `$XDG_RUNTIME_DIR/wtd.sock`" with "serves the protocol on an owner-only unix socket in `$XDG_STATE_HOME/worktree-term/run/`"; verify `la-arch-diagrams` leaves the file otherwise unchanged
+- [x] 6.2 Once their tests are green, tag `daemon.arc42.md` principles 2 `[enforced: test:test/process/daemon-server.test.ts]`, 3 and 5 `[enforced: test:test/process/daemon-terminals.test.ts]`, 4 `[enforced: test:src/daemon/terminals/flow.test.ts] [enforced: test:test/process/daemon-terminals.test.ts]`, 7 `[enforced: test:src/daemon/state/store.test.ts]` (6 stays `[review]`), and `platform.arc42.md` principles 3 and 4 `[enforced: test:src/platform/files/files.test.ts]`; verify `la-arch-check` exits 0
+- [x] 6.3 `architecture/model/typescript.c4`: `specs ['daemon']` on `daemon`, `specs ['platform']` on `platform`; verify `la-arch-check` and `likec4 validate architecture` exit 0 (if the check needs the archived specs, land this edit with the archive in pr-review)
 
 ## 7. Final gates
 
-- [ ] 7.1 `pnpm test` green; `la-typecheck`, `la-arch-check`, `likec4 validate architecture` exit 0; `pnpm build` succeeds; `openspec validate dev-2051-worktree-term-pr2-local-daemon-worktrees-ptys-mirrors-state --strict` passes
+- [x] 7.1 `pnpm test` green; `la-typecheck`, `la-arch-check`, `likec4 validate architecture` exit 0; `pnpm build` succeeds; `openspec validate dev-2051-worktree-term-pr2-local-daemon-worktrees-ptys-mirrors-state --strict` passes

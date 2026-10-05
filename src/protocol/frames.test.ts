@@ -69,7 +69,12 @@ const TWO_40 = 2 ** 40;
 const DATA = Uint8Array.of(1, 2, 3);
 
 const output: DataFrame = { kind: 'output', termId: 7, offset: TWO_40, data: DATA };
-const snapshot: DataFrame = { kind: 'snapshot', termId: 4294967295, offset: Number.MAX_SAFE_INTEGER, data: new Uint8Array(70_000).fill(65) };
+const snapshot: DataFrame = {
+  kind: 'snapshot',
+  termId: 4294967295,
+  offset: Number.MAX_SAFE_INTEGER,
+  data: new Uint8Array(70_000).fill(65),
+};
 const input: DataFrame = { kind: 'input', termId: 1, data: utf8('ab') };
 
 describe('stream framing', () => {

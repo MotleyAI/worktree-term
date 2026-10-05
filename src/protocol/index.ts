@@ -11,4 +11,5 @@ export {
   type DataFrame,
   type Frame,
 } from './frames.js';
-export { decodeMessage, encodeMessage, messageSchemas, type Direction, type MessageOf } from './messages.js';
+export { layout as layoutSchema, type Layout } from './layout.js';
+export { decodeMessage, encodeMessage, messageSchemas, type Direction, type MessageOf, type Terminal, type Worktree } from './messages.js';

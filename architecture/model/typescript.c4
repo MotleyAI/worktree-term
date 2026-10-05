@@ -20,6 +20,7 @@ model {
       metadata {
         package 'src/platform'
         arc42 'architecture/platform.arc42.md'
+        specs ['platform']
       }
       files = component 'Files'
       dialer = component 'Dialer'
@@ -29,6 +30,7 @@ model {
       metadata {
         package 'src/daemon'
         arc42 'architecture/daemon.arc42.md'
+        specs ['daemon']
       }
       worktrees = component 'Worktrees'
       terminals = component 'Terminals'

@@ -1,0 +1,111 @@
+specification {
+  element root
+  element node
+  element component
+  tag legacy
+}
+
+model {
+  typescript = root 'worktree-term' {
+
+    protocol = node 'Protocol' {
+      metadata {
+        package 'src/protocol'
+        arc42 'architecture/protocol.arc42.md'
+        specs ['protocol']
+      }
+    }
+
+    platform = node 'Platform' {
+      metadata {
+        package 'src/platform'
+        arc42 'architecture/platform.arc42.md'
+      }
+      files = component 'Files'
+      dialer = component 'Dialer'
+    }
+
+    daemon = node 'Daemon' {
+      metadata {
+        package 'src/daemon'
+        arc42 'architecture/daemon.arc42.md'
+      }
+      worktrees = component 'Worktrees'
+      terminals = component 'Terminals'
+      state = component 'State'
+      server = component 'Server'
+      main = component 'Main'
+    }
+
+    hub = node 'Hub' {
+      metadata {
+        package 'src/hub'
+        arc42 'architecture/hub.arc42.md'
+      }
+      server = component 'Server'
+      links = component 'Links'
+      config = component 'Config'
+      router = component 'Router'
+      main = component 'Main'
+    }
+
+    cli = node 'CLI' {
+      metadata {
+        package 'src/cli'
+        arc42 'architecture/cli.arc42.md'
+        specs ['cli']
+      }
+    }
+
+    web = node 'Web' {
+      metadata {
+        package 'src/web'
+        arc42 'architecture/web.arc42.md'
+      }
+      client = component 'Client'
+      terminals = component 'Terminals'
+      layout = component 'Layout'
+      ui = component 'UI'
+      main = component 'Main'
+    }
+
+    platform.dialer -> platform.files
+
+    daemon -> protocol
+    daemon -> platform.files
+    daemon.main -> daemon.server
+    daemon.main -> daemon.worktrees
+    daemon.main -> daemon.terminals
+    daemon.main -> daemon.state
+    daemon.server -> daemon.worktrees
+    daemon.server -> daemon.terminals
+    daemon.server -> daemon.state
+
+    hub -> protocol
+    hub.server -> platform.files
+    hub.config -> platform.files
+    hub.links -> platform.dialer
+    hub.main -> hub.server
+    hub.main -> hub.router
+    hub.main -> hub.links
+    hub.main -> hub.config
+    hub.server -> hub.router
+    hub.router -> hub.links
+    hub.router -> hub.config
+
+    cli -> daemon.main
+    cli -> hub.main
+    cli -> platform.files
+    cli -> platform.dialer
+    cli -> protocol
+
+    web.client -> protocol
+    web.main -> web.ui
+    web.main -> web.client
+    web.main -> web.terminals
+    web.ui -> web.client
+    web.ui -> web.terminals
+    web.ui -> web.layout
+    web.terminals -> web.client
+  }
+}

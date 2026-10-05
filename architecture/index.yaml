@@ -1,0 +1,12 @@
+typescript:
+  root_package: src
+  tsconfig: tsconfig.json
+
+legacy_arrows: {baseline: 0}
+
+diagrams:
+  architecture/system.arc42.md: [system]
+  architecture/platform.arc42.md: [platform]
+  architecture/daemon.arc42.md: [daemon]
+  architecture/hub.arc42.md: [hub]
+  architecture/web.arc42.md: [web]

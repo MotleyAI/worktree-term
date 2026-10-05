@@ -1,0 +1,25 @@
+{
+  "frames": [
+    { "kind": 0, "payload": "7b7d", "bytes": "00000002007b7d" },
+    { "kind": 3, "payload": "", "bytes": "0000000003" },
+    { "kind": 1, "payload": "0000000100000000000000004142", "bytes": "0000000e010000000100000000000000004142" }
+  ],
+  "messages": [
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\",\"instance\":\"a1B2_c3\"}", "valid": true },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"instance\":\"Z-9_z\",\"version\":\"2.0.0-beta.1\",\"protocol\":7,\"t\":\"hello\"}", "valid": true },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\",\"instance\":\"iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii\"}", "valid": true },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\",\"instance\":\"a b\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\",\"instance\":\"\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\",\"instance\":\"iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"\",\"instance\":\"a\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\",\"instance\":\"a\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":0,\"version\":\"0.1.0\",\"instance\":\"a\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1.5,\"version\":\"0.1.0\",\"instance\":\"a\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":\"1\",\"version\":\"0.1.0\",\"instance\":\"a\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\"}", "valid": false },
+    { "dirs": ["clientToDaemon", "daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\",\"instance\":\"a\",\"x\":1}", "valid": false },
+    { "dirs": ["clientToDaemon"], "json": "{\"t\":\"shutdown\"}", "valid": true },
+    { "dirs": ["clientToDaemon"], "json": "{\"t\":\"shutdown\",\"req\":1}", "valid": false },
+    { "dirs": ["daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"shutdown\"}", "valid": false }
+  ]
+}

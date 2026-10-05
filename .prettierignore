@@ -1,0 +1,6 @@
+dist/
+build/
+pnpm-lock.yaml
+src/protocol/*.golden.json
+architecture/
+openspec/

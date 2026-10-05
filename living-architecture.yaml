@@ -1,0 +1,13 @@
+tracker: linear                     # detected: Linear MCP + egor/dev-NNNN-<slug> branches
+openspec: true                      # detected: openspec/
+architecture: true                  # detected: architecture/index.yaml
+reviewers:
+  codex: true                       # detected: Codex MCP server available
+  sonar:
+    project_key: MotleyAI_worktree-term   # plan: design.md D8
+issue_key_pattern: "DEV-\\d+"       # plan: design.md D8
+commands:
+  test: pnpm test                   # plan: design.md D8
+  lint: pnpm lint                   # plan: design.md D8
+  typecheck:
+    typescript: tsc -b              # plan: design.md D8

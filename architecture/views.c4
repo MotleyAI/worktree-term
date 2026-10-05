@@ -1,0 +1,22 @@
+views {
+  view system of typescript {
+    title 'worktree-term'
+    include *
+  }
+  view platform of typescript {
+    title 'Platform'
+    include platform, * -> platform
+  }
+  view daemon of typescript {
+    title 'Daemon'
+    include daemon, daemon -> *, * -> daemon
+  }
+  view hub of typescript {
+    title 'Hub'
+    include hub, hub -> *, * -> hub
+  }
+  view web of typescript {
+    title 'Web'
+    include web, web -> *
+  }
+}

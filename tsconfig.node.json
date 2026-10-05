@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "build/types/node",
+    "tsBuildInfoFile": "build/types/node.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts", "package.json"],
+  "exclude": ["src/web", "src/protocol", "src/**/*.test.ts"],
+  "references": [{ "path": "./src/protocol" }]
+}

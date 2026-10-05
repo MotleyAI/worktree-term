@@ -130,6 +130,23 @@ describe('stream framing', () => {
     expect(decoder.push(concat(u32(MAX_FRAME), Uint8Array.of(1)))).toEqual([]);
   });
 
+  it('does not reserve an announced payload before its bytes arrive', () => {
+    const before = process.memoryUsage().arrayBuffers;
+    const decoders = Array.from({ length: 8 }, () => new StreamDecoder());
+    for (const decoder of decoders) decoder.push(concat(u32(MAX_FRAME), Uint8Array.of(1)));
+    expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(MAX_FRAME);
+  });
+
+  it('assembles a large payload from small chunks', () => {
+    const payload = Uint8Array.from({ length: 200_000 }, (_, i) => i % 251);
+    const bytes = rawFrame(2, payload);
+    const decoder = new StreamDecoder();
+    const got: Frame[] = [];
+    for (let at = 0; at < bytes.length; at += 1000) got.push(...decoder.push(bytes.subarray(at, at + 1000)));
+    decoder.end();
+    expect(got).toEqual([{ kind: 2, payload }]);
+  });
+
   it('fails on an unknown kind', () => {
     const decoder = new StreamDecoder();
     const bytes = rawFrame(4, utf8('{}'));

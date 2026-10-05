@@ -43,14 +43,14 @@ const placeholderRun = (entry: () => void) => (): Promise<void> => {
 };
 
 // `daemon` and `connect` are implemented by DEV-2051, `ui` and `hub` by DEV-2052, the installers by DEV-2054.
-const COMMANDS: Readonly<Record<string, Command>> = {
-  ui: { args: [], run: placeholderRun(runHub) },
-  hub: { args: [], run: placeholderRun(runHub) },
-  daemon: { args: [], run: placeholderRun(runDaemon) },
-  connect: { args: [], run: placeholderRun(dial) },
-  'install-local': { args: [], run: placeholderRun(installFiles) },
-  'install-remote': { args: ['alias'], run: placeholderRun(installFiles) },
-};
+const COMMANDS: ReadonlyMap<string, Command> = new Map([
+  ['ui', { args: [], run: placeholderRun(runHub) }],
+  ['hub', { args: [], run: placeholderRun(runHub) }],
+  ['daemon', { args: [], run: placeholderRun(runDaemon) }],
+  ['connect', { args: [], run: placeholderRun(dial) }],
+  ['install-local', { args: [], run: placeholderRun(installFiles) }],
+  ['install-remote', { args: ['alias'], run: placeholderRun(installFiles) }],
+]);
 
 class UsageError extends Error {
   override readonly name = 'UsageError';
@@ -88,7 +88,7 @@ const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => 
   }
   const [verb, ...args] = positionals;
   if (verb === undefined) throw new UsageError('missing command');
-  const command = COMMANDS[verb];
+  const command = COMMANDS.get(verb);
   if (command === undefined) throw new UsageError(`unknown command '${verb}'`);
   const missing = command.args[args.length];
   if (missing !== undefined) throw new UsageError(`${verb}: ${missing} is required`);

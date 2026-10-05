@@ -71,6 +71,10 @@ describe('usage errors', () => {
     await expectUsageError(await wtd('frobnicate'), /frobnicate/);
   });
 
+  it.each(['constructor', '__proto__', 'toString'])('treats inherited name %s as an unknown command', async (verb) => {
+    await expectUsageError(await wtd(verb), new RegExp(verb));
+  });
+
   it('names an unknown option', async () => {
     await expectUsageError(await wtd('--frob'), /--frob/);
   });

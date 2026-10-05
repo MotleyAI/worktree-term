@@ -6,7 +6,7 @@ The CLI is `wtd`: a daemon per host owns the PTYs and git watches, and a local h
 
 ## Development
 
-Requires Node 22 (`.nvmrc`) and pnpm.
+Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`uv tool install living-architecture==0.2.3`), which `pnpm test` runs.
 
 ```sh
 pnpm install

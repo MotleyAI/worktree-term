@@ -43,6 +43,7 @@ export const checkStructure = (model: ArchModel, files: readonly SourceFile[]): 
       if (ref.target.path !== `${to.dir}/index.ts`) {
         violations.push({ rule: 'deep-import', file: file.path, detail: `${ref.specifier} reaches past ${to.id}/index.ts` });
       }
+      // Runtime imports are arch_check's model-truth; it does not see type-only ones.
       if (ref.typeOnly && to.id !== PROTOCOL && !arrowAllows(model, from.id, to.id)) {
         violations.push({ rule: 'type-import-without-arrow', file: file.path, detail: `${from.id} -> ${to.id}` });
       }

@@ -16,6 +16,7 @@ const HEADER = 5;
 const ID = 4;
 const OFFSET = 8;
 const WS_HEADER = 1 + 2;
+const INITIAL_PAYLOAD = 64 * 1024;
 
 const bytes = z.custom<Uint8Array>((value) => value instanceof Uint8Array, 'expected a Uint8Array');
 
@@ -82,6 +83,7 @@ export class StreamDecoder {
   private headerFill = 0;
   private kind: FrameKind = FrameKind.control;
   private payload: Uint8Array | null = null;
+  private payloadLength = 0;
   private payloadFill = 0;
   private failure: ProtocolError | null = null;
 
@@ -122,11 +124,12 @@ export class StreamDecoder {
         if (this.headerFill < HEADER) break;
         payload = this.startPayload();
       }
-      const take = Math.min(payload.length - this.payloadFill, chunk.length - at);
+      const take = Math.min(this.payloadLength - this.payloadFill, chunk.length - at);
+      payload = this.reserve(payload, this.payloadFill + take);
       payload.set(chunk.subarray(at, at + take), this.payloadFill);
       this.payloadFill += take;
       at += take;
-      if (this.payloadFill === payload.length) {
+      if (this.payloadFill === this.payloadLength) {
         frames.push({ kind: this.kind, payload });
         this.payload = null;
         this.headerFill = 0;
@@ -141,9 +144,19 @@ export class StreamDecoder {
     if (length > MAX_FRAME) throw new ProtocolError(`frame of ${String(length)} bytes exceeds MAX_FRAME`);
     if (!isKind(kind)) throw new ProtocolError(`unknown frame kind ${String(kind)}`);
     this.kind = kind;
-    this.payload = new Uint8Array(length);
+    this.payload = new Uint8Array(Math.min(length, INITIAL_PAYLOAD));
+    this.payloadLength = length;
     this.payloadFill = 0;
     return this.payload;
+  }
+
+  /** Grows the payload buffer geometrically, so an announced length costs memory only as bytes arrive. */
+  private reserve(payload: Uint8Array, needed: number): Uint8Array {
+    if (needed <= payload.length) return payload;
+    const grown = new Uint8Array(Math.min(this.payloadLength, Math.max(needed, payload.length * 2)));
+    grown.set(payload.subarray(0, this.payloadFill));
+    this.payload = grown;
+    return grown;
   }
 }
 

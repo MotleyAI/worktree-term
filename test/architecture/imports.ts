@@ -40,7 +40,7 @@ export const scanImports = (fileName: string, text: string): ImportRef[] => {
       refs.push({
         specifier: node.moduleSpecifier.text,
         form: clause === undefined ? 'side-effect' : 'import',
-        typeOnly: clause?.isTypeOnly ?? false,
+        typeOnly: clause?.phaseModifier === ts.SyntaxKind.TypeKeyword,
       });
     } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
       const star = node.exportClause === undefined || ts.isNamespaceExport(node.exportClause);

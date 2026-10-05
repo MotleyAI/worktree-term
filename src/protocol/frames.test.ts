@@ -131,7 +131,9 @@ describe('stream framing', () => {
   });
 
   it('fails on an unknown kind', () => {
-    expect(() => new StreamDecoder().push(rawFrame(4, utf8('{}')))).toThrow(ProtocolError);
+    const decoder = new StreamDecoder();
+    const bytes = rawFrame(4, utf8('{}'));
+    expect(() => decoder.push(bytes)).toThrow(ProtocolError);
   });
 
   it('fails at end of stream after half a payload', () => {
@@ -161,15 +163,18 @@ describe('stream framing', () => {
 
   it('stays failed once it has failed', () => {
     const decoder = new StreamDecoder();
-    expect(() => decoder.push(rawFrame(9, utf8('{}')))).toThrow(ProtocolError);
-    expect(() => decoder.push(rawFrame(0, utf8('{}')))).toThrow(ProtocolError);
+    const bad = rawFrame(9, utf8('{}'));
+    const good = rawFrame(0, utf8('{}'));
+    expect(() => decoder.push(bad)).toThrow(ProtocolError);
+    expect(() => decoder.push(good)).toThrow(ProtocolError);
     expect(() => {
       decoder.end();
     }).toThrow(ProtocolError);
   });
 
   it('refuses to encode a payload over MAX_FRAME', () => {
-    expect(() => encodeFrame({ kind: FrameKind.snapshot, payload: new Uint8Array(MAX_FRAME + 1) })).toThrow(ProtocolError);
+    const payload = new Uint8Array(MAX_FRAME + 1);
+    expect(() => encodeFrame({ kind: FrameKind.snapshot, payload })).toThrow(ProtocolError);
   });
 });
 
@@ -210,7 +215,8 @@ describe('data frames on a stream', () => {
       termId: 1,
       data: max,
     });
-    expect(() => encodeStreamData({ kind: 'input', termId: 1, data: new Uint8Array(MAX_INPUT + 1) })).toThrow(ProtocolError);
+    const data = new Uint8Array(MAX_INPUT + 1);
+    expect(() => encodeStreamData({ kind: 'input', termId: 1, data })).toThrow(ProtocolError);
     const tooLong = single(rawFrame(3, concat(u32(1), new Uint8Array(MAX_INPUT + 1))));
     expect(() => decodeStreamData(tooLong)).toThrow(ProtocolError);
   });
@@ -220,7 +226,8 @@ describe('data frames on a stream', () => {
     ['an output payload shorter than its header', rawFrame(1, concat(u32(7), Uint8Array.of(0, 0, 0)))],
     ['an input payload shorter than its id', rawFrame(3, Uint8Array.of(0, 0, 7))],
   ])('rejects %s as a data frame', (_name, bytes) => {
-    expect(() => decodeStreamData(single(bytes))).toThrow(ProtocolError);
+    const frame = single(bytes);
+    expect(() => decodeStreamData(frame)).toThrow(ProtocolError);
   });
 });
 
@@ -248,14 +255,16 @@ describe('data frames on a WebSocket', () => {
   });
 
   it('rejects terminal id 0', () => {
-    expect(() => decodeWsData(concat(Uint8Array.of(3), u16(0), u32(0), DATA))).toThrow(ProtocolError);
+    const bytes = concat(Uint8Array.of(3), u16(0), u32(0), DATA);
+    expect(() => decodeWsData(bytes)).toThrow(ProtocolError);
     expect(() => encodeWsData(0, { ...output, termId: 0 })).toThrow(ProtocolError);
   });
 
   it('refuses MAX_INPUT + 1 input bytes', () => {
     const data = new Uint8Array(MAX_INPUT + 1);
+    const bytes = concat(Uint8Array.of(3), u16(0), u32(1), data);
     expect(() => encodeWsData(0, { kind: 'input', termId: 1, data })).toThrow(ProtocolError);
-    expect(() => decodeWsData(concat(Uint8Array.of(3), u16(0), u32(1), data))).toThrow(ProtocolError);
+    expect(() => decodeWsData(bytes)).toThrow(ProtocolError);
   });
 
   it.each([-1, 65536, 1.5])('refuses host index %d', (host) => {

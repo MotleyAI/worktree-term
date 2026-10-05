@@ -161,7 +161,7 @@ export const samples: { readonly [D in Direction]: readonly MessageOf<D>[] } = {
 
 export const DIRECTIONS: readonly Direction[] = ['clientToDaemon', 'daemonToClient', 'browserToHub', 'hubToBrowser'];
 
-export const MESSAGE_TYPES: { readonly [D in Direction]: readonly string[] } = {
+export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
   clientToDaemon: [
     'hello',
     'shutdown',

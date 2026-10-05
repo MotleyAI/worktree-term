@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "build/types/test",
+    "tsBuildInfoFile": "build/types/test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts", "src/**/*.test.ts", "src/protocol/test-samples.ts", "src/protocol/*.golden.json", "*.config.ts"],
+  "references": [{ "path": "./src/protocol" }, { "path": "./tsconfig.node.json" }]
+}

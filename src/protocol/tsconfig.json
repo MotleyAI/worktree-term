@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": [],
+    "rootDir": ".",
+    "outDir": "../../build/types/protocol",
+    "tsBuildInfoFile": "../../build/types/protocol.tsbuildinfo"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["**/*.test.ts", "test-samples.ts"]
+}

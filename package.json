@@ -13,6 +13,10 @@
     "wtd": "dist/wtd.mjs"
   },
   "scripts": {
+    "build": "vite build && esbuild src/cli/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/wtd.mjs \"--banner:js=#!/usr/bin/env node\" --external:@homebridge/node-pty-prebuilt-multiarch",
+    "typecheck": "tsc -b",
+    "lint": "tsc -b && eslint . --max-warnings 0",
+    "format": "prettier --write .",
     "test": "vitest run --project unit --project process --project architecture && playwright test --pass-with-no-tests",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
@@ -20,9 +24,17 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "~1.63.0",
     "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
     "likec4": "1.59.4",
+    "prettier": "^3.9.9",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vite": "^8.3.2",
     "vitest": "^5.0.3"
   }
 }

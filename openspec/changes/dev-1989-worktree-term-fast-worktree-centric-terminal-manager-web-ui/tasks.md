@@ -6,7 +6,7 @@
 ## 2. Toolchain scaffold
 
 - [ ] 2.1 `package.json` (pnpm 12.8.1 `packageManager`, ESM, `engines.node >=20`, scripts per design D8, build approval for exactly `esbuild`), `.nvmrc`, `.gitignore` (`node_modules`, `dist`, `build`, test output), `.editorconfig`, Prettier config; verify `pnpm install` succeeds from a clean clone
-- [ ] 2.2 Pin dependencies: `zod` (exact), TypeScript `~6.0.3`, ESLint + `typescript-eslint`, Prettier, Vitest 5, Playwright 1.63, esbuild, Vite, `living-architecture@0.2.2`, `likec4@1.59.4`, `@types/node`; verify `pnpm ls` shows them
+- [ ] 2.2 Pin dependencies: `zod` (exact), TypeScript `~6.0.3`, ESLint + `typescript-eslint`, Prettier, Vitest 5, Playwright 1.63, esbuild, Vite, `likec4@1.59.4`, `@types/node` (the `la-*` tools, living-architecture 0.2.3, come from the global install that `la-doctor` checks); verify `pnpm ls` shows them
 - [ ] 2.3 tsconfig projects per D8 (base, solution, protocol, node, web, test) emitting declarations only into `build/types/<project>`; verify `tsc -b` exits 0 and `git status` shows no new untracked files outside ignored paths
 - [ ] 2.4 Verify `la-typecheck --write-baseline` with `commands.typecheck.typescript: tsc -b` writes an empty `.tsc-baseline.json` and a second `la-typecheck` exits 0; if it fails, STOP and flag it as a living-architecture issue
 - [ ] 2.5 ESLint flat config per D8; verify `pnpm lint` exits 0 with zero warnings

@@ -1,0 +1,28 @@
+{
+  "name": "worktree-term",
+  "version": "0.1.0",
+  "description": "Worktree-centric terminal manager for coding agents",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "wtd": "dist/wtd.mjs"
+  },
+  "scripts": {
+    "test": "vitest run --project unit --project process --project architecture && playwright test --pass-with-no-tests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "likec4": "1.59.4",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.3"
+  }
+}

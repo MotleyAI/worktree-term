@@ -2,7 +2,7 @@
 
 Greenfield repo (MIT license only). See proposal.md for motivation. The requirements brief is Linear DEV-1989; this change is PR 1 of 5. The approved architecture (LikeC4 model, views, `index.yaml`, arc42 principles per node) is committed under `architecture/` with this plan and is normative for every PR: `architecture/system.arc42.md` and the node docs.
 
-Constraints: `la-arch-check` (living-architecture 0.2.2) enforces the model as the import law — a declared arrow without a measured runtime import is a finding, type-only imports are not measured, parent↔descendant edges are ungoverned. DEV-2027 uses this repo as acceptance for living-architecture TS support: green `la-arch-check`, `likec4 validate`, `la-typecheck`; Vitest as `commands.test`; tsconfig `strict`, `noImplicitAny`, `noImplicitOverride`; typed mocks.
+Constraints: `la-arch-check` (living-architecture 0.2.3) enforces the model as the import law — a declared arrow without a measured runtime import is a finding, type-only imports are not measured, parent↔descendant edges are ungoverned. DEV-2027 uses this repo as acceptance for living-architecture TS support: green `la-arch-check`, `likec4 validate`, `la-typecheck`; Vitest as `commands.test`; tsconfig `strict`, `noImplicitAny`, `noImplicitOverride`; typed mocks.
 
 ## Goals / Non-Goals
 

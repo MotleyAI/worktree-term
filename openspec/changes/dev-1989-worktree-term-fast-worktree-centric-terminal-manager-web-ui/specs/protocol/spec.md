@@ -45,7 +45,7 @@ A control message SHALL be one UTF-8 JSON object whose `t` names a message of th
 ### Requirement: Daemon-link message catalogue
 Client-to-daemon messages SHALL be exactly: `hello`; `shutdown`; `watchRepo{req, repo}`; `unwatchRepo{req, repo}`; `discoverRepos{req, roots, depth}`; `createTerm{req, worktree, preset, command, cols, rows}`; `attach{req, termId}`; `detach{req, termId}`; `resize{termId, cols, rows}`; `closeTerm{req, termId}`; `ack{termId, offset}`; `setVisible{termIds}`; `setChecked{req, worktree, checked}`; `setLayout{req, worktree, layout}`.
 Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}`; `termExited{termId, code, signal}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, bell}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}`.
-A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main}`; a terminal SHALL be `{termId, worktree, preset, cols, rows, exit, unseen, bell}` where `exit` is null or `{code, signal}`; a `layouts` entry SHALL be `{worktree, layout}`; `reason` SHALL be `"lagging"`; `error.req` SHALL be a request id or null.
+A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main}`; a terminal SHALL be `{termId, worktree, preset, cols, rows, exit, unseen, bell}` where `exit` is null or `{code, signal}`; a `layouts` entry SHALL be `{worktree, layout}`; `reason` SHALL be `"lagging"`; `detached`, `locked`, `prunable`, `bare`, `main`, `checked`, `unseen`, `bell` and `remote` SHALL be booleans; `code` SHALL be an integer; `error.req` SHALL be a request id or null.
 
 #### Scenario: Every daemon-link message round-trips
 - **WHEN** a valid instance of each daemon-link message is encoded and decoded
@@ -84,7 +84,7 @@ Every message that asks a peer to act and can fail SHALL carry `req`, an integer
 - **THEN** decoding succeeds
 
 ### Requirement: Value limits
-Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host, preset and tab names are 1–64 characters; `branch` and `command` are null or at most 4096 characters; `signal` is null or at most 32 characters; `version` is 1–64 characters; error messages are at most 1024 characters; error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `internal`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
+Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names, preset names and tab ids are 1–64 characters; `branch` and `command` are null or at most 4096 characters; `signal` is null or at most 32 characters; `version` is 1–64 characters; error messages are at most 1024 characters; error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `internal`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
 
 #### Scenario: Relative path rejected
 - **WHEN** a `watchRepo` whose `repo` is "repo/a" is decoded
@@ -99,7 +99,7 @@ Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Layout validity
-A layout SHALL be `{tabs, active}` with at most 64 tabs, each `{id, root}`. A pane SHALL be either `{term}` or `{split, ratio, a, b}` with `split` one of `right` or `down` and `ratio` from 0.05 to 0.95. Pane nesting SHALL be at most 16 levels deep, each terminal id SHALL appear at most once in a layout, tab ids SHALL be unique, and `active` SHALL index an existing tab, or be 0 when there are no tabs.
+A layout SHALL be `{tabs, active}` with at most 64 tabs, each `{id, root}`. A pane SHALL be either `{term}` or `{split, ratio, a, b}` with `split` one of `right` or `down` and `ratio` from 0.05 to 0.95. Pane nesting SHALL be at most 16 levels deep, a lone terminal pane counting as one level, each terminal id SHALL appear at most once in a layout, tab ids SHALL be unique, and `active` SHALL index an existing tab, or be 0 when there are no tabs.
 
 #### Scenario: Duplicate terminal rejected
 - **WHEN** a layout whose split has the same `term` in both children is decoded

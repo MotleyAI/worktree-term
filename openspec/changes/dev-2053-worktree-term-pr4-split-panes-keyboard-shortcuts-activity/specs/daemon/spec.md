@@ -30,7 +30,7 @@ Every change of `unseen` or `state` SHALL be sent as `activity{termId, unseen, s
 - **WHEN** a terminal not listed by any `setVisible` produces output
 - **THEN** watchers receive `activity` with `unseen` true and `state` "working"
 
-#### Scenario: Shown clears unseen
+#### Scenario: Shown clears flags
 - **WHEN** a client lists a terminal with `unseen` set in `setVisible`
 - **THEN** watchers receive `activity` with `unseen` false
 

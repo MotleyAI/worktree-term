@@ -11,13 +11,16 @@ const replaceAll = (text: string, from: string, to: string): { text: string; cou
 
 /**
  * Copies `dist/` into a directory inside the repo (so its externals resolve), renames every web asset
- * and rewrites the references, and replaces the package version literal with `version`.
+ * and rewrites the references, and replaces the package version literal with `version`; with `web`
+ * false only the hub's version changes, so the hub serves a bundle older than itself.
  */
-export const skewedDist = (from: string, version: string): string => {
+export const skewedDist = (from: string, version: string, { web = true }: { web?: boolean } = {}): string => {
   mkdirSync(join(REPO_ROOT, 'build'), { recursive: true });
   const dir = mkdtempSync(join(REPO_ROOT, 'build', 'e2e-skew-'));
   try {
-    rewrite(dir, from, version);
+    cpSync(join(REPO_ROOT, 'dist'), dir, { recursive: true });
+    if (web) rewriteWeb(dir, from, version);
+    rewriteHub(dir, from, version);
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     throw error;
@@ -25,8 +28,7 @@ export const skewedDist = (from: string, version: string): string => {
   return dir;
 };
 
-const rewrite = (dir: string, from: string, version: string): void => {
-  cpSync(join(REPO_ROOT, 'dist'), dir, { recursive: true });
+const rewriteWeb = (dir: string, from: string, version: string): void => {
   const web = join(dir, 'web');
   const assets = join(web, 'assets');
   const names = readdirSync(assets);
@@ -43,6 +45,10 @@ const rewrite = (dir: string, from: string, version: string): void => {
     }
     writeFileSync(file, text);
   }
+  if (webVersions === 0) throw new Error(`version ${from} not found in the web bundle`);
+};
+
+const rewriteHub = (dir: string, from: string, version: string): void => {
   const bundle = join(dir, 'wtd.mjs');
   let hubVersions = 0;
   let text = readFileSync(bundle, 'utf8');
@@ -52,6 +58,5 @@ const rewrite = (dir: string, from: string, version: string): void => {
     hubVersions += replaced.count;
   }
   writeFileSync(bundle, text);
-  if (webVersions === 0 || hubVersions === 0)
-    throw new Error(`version ${from} not found (web ${String(webVersions)}, hub ${String(hubVersions)})`);
+  if (hubVersions === 0) throw new Error(`version ${from} not found in the hub bundle`);
 };

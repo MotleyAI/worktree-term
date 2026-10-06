@@ -106,34 +106,26 @@ test.describe('stale bundle', () => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     const version = packageVersion();
-    const skew = skewedDist(version, `${version}-skew`);
+    // The hub serves a bundle older than itself, so the page stays stale after its one reload.
+    const skew = skewedDist(version, `${version}-skew`, { web: false });
     try {
-      await stopHub(hub);
-      const replacement = spawn(process.execPath, [join(skew, 'wtd.mjs'), 'hub'], { env: hub.env(), stdio: 'ignore' });
+      const newer = spawn(process.execPath, [join(skew, 'wtd.mjs'), 'hub'], { env: hub.env(), stdio: 'ignore' });
       try {
         await waitUntil(
           async () => (await hub.serving()) && (await hub.identity()).version === `${version}-skew`,
           'the skewed hub',
           15_000,
         );
-        const web = join(REPO_ROOT, 'dist', 'web');
-        let staleServed = false;
-        await page.route(`${hub.origin}/`, async (route) => {
-          if (staleServed) return route.continue();
-          staleServed = true;
-          return route.fulfill({ path: join(web, 'index.html') });
-        });
-        await page.route(/\/assets\/(?!skew-)/, (route) => route.fulfill({ path: join(web, new URL(route.request().url()).pathname) }));
         let loads = 0;
         page.on('load', () => loads++);
 
         await page.goto(await hub.pageUrl());
-        await expect.poll(() => loads, { timeout: 20_000 }).toBe(2);
-        await expect(page.locator(repoTab(repo))).toBeVisible();
+        await expect(page.locator(byTestId(TID.outdatedUi))).toBeVisible({ timeout: 20_000 });
+        expect(loads).toBe(2);
         await expect(page.locator(byTestId(TID.authMessage))).toHaveCount(0);
         expect(await storedValues(page)).toContain(hub.token());
       } finally {
-        replacement.kill('SIGKILL');
+        newer.kill('SIGKILL');
       }
     } finally {
       rmSync(skew, { recursive: true, force: true });

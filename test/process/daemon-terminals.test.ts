@@ -453,12 +453,11 @@ describe('input', () => {
     const frame = new Uint8Array(64 * KiB).fill(0x61);
     for (let i = 0; i < 24; i++) a.sendInput(stuck.termId, frame);
     await a.waitFor('error', (m) => m.code === 'busy', { from });
-    await sleep(1000);
+    await waitUntil(() => a.view(flood.termId).position - before > 4 * FLOW_HIGH, 'flood output past the flow window', 10_000);
     const busy = a.messages.slice(from).filter((m) => m.t === 'error');
     expect(busy.every((m) => m.req === null && m.code === 'busy')).toBe(true);
     expect(busy.length).toBeGreaterThanOrEqual(1);
     expect(busy.length).toBeLessThanOrEqual(8);
-    expect(a.view(flood.termId).position - before).toBeGreaterThan(4 * FLOW_HIGH);
     expect(a.isClosed).toBe(false);
   });
 });

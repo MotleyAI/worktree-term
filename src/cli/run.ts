@@ -50,7 +50,8 @@ const notImplemented = (): void => {
   throw new Error(NOT_IMPLEMENTED);
 };
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/\s*\n\s*/g, ' ');
+const message = (error: unknown): string =>
+  (error instanceof Error ? error.message : String(error)).replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
 
 /** The command that runs this `wtd`, without a verb. */
 const wtdCommand = (): string[] => {

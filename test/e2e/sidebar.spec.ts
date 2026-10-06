@@ -4,6 +4,7 @@ import {
   detachedWorktree,
   expect,
   listedWorktrees,
+  LOCAL,
   makeRepoWith,
   newTerminal,
   openPage,
@@ -124,7 +125,7 @@ test.describe('checked filter', () => {
     expect(await listedWorktrees(page)).toEqual([second.repo]);
   });
 
-  test('the selected worktree stays listed and selected when unchecked under "checked only"', async ({ hub, page }) => {
+  test('the selected worktree stays listed and selected when unchecked under "checked only"', async ({ hub, page, wire }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
     const [a = '', b = ''] = worktrees;
     hub.writeRepos([repo]);
@@ -135,8 +136,11 @@ test.describe('checked filter', () => {
     await page.locator(byTestId(TID.filterChecked)).check();
     await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([a, b].sort());
 
+    const from = wire.markReceived();
     await page.locator(checkbox(b)).uncheck();
-    await page.waitForTimeout(500);
+    await expect
+      .poll(() => wire.receivedFromHost(LOCAL, from).some((m) => m.t === 'checkedChanged' && m.worktree === b && !m.checked))
+      .toBe(true);
     await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
     expect((await listedWorktrees(page)).sort()).toEqual([a, b].sort());
     await expect(page.locator(checkbox(b))).not.toBeChecked();

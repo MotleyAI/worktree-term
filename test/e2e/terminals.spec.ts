@@ -58,7 +58,7 @@ test.describe('terminal tabs', () => {
     await openUi(hub, page);
     await selectWorktree(page, feat);
     await expect(page.locator(byTestId(TID.newTerminal))).toBeVisible();
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(page.locator(byTestId(TID.termTab))).toHaveCount(0);
     expect(wire.sentToHost(LOCAL).filter((m) => m.t === 'createTerm')).toEqual([]);
   });
@@ -145,11 +145,11 @@ test.describe('terminal lifetime', () => {
     await selectWorktree(page, b);
     const termB = await newTerminal(page);
     await ready(page, termB);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500); // NOSONAR(S2925) — lets setup traffic settle before the mark; nothing to synchronise on
 
     const mark = wire.markSent();
     for (const path of [a, b, a, b]) await selectWorktree(page, path);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     const sent = wire.sentMessages(mark);
     expect(wire.sentBinary(mark)).toEqual([]);
     expect(sent.map((m) => (m.t === 'host' ? m.m.t : m.t)).filter((t) => t !== 'setVisible' && t !== 'resize')).toEqual([]);
@@ -225,7 +225,7 @@ test.describe('lagging terminals', () => {
     await expect
       .poll(() => wire.receivedFromHost(LOCAL).some((m) => m.t === 'detached' && m.termId === term), { timeout: 15_000 })
       .toBe(true);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(wire.attachesSent(LOCAL, term, mark)).toBe(0);
 
     await selectWorktree(page, b);
@@ -373,7 +373,7 @@ test.describe('lagging terminals, shown or with the page hidden', () => {
     await expect
       .poll(() => wire.receivedFromHost(LOCAL).some((m) => m.t === 'detached' && m.termId === term), { timeout: 15_000 })
       .toBe(true);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(wire.attachesSent(LOCAL, term, mark)).toBe(0);
     await setVisibility(page, false);
     await expect.poll(() => wire.attachesSent(LOCAL, term, mark), { timeout: 3000 }).toBeGreaterThan(0);

@@ -11,6 +11,7 @@ describe('parseCredential', () => {
     ['the credential first', `wtd.token.${HEX}, wtd`, { kind: 'token', secret: HEX }],
     ['no space after the comma', `wtd,wtd.token.${HEX}`, { kind: 'token', secret: HEX }],
     ['spaces and tabs around the comma', `wtd \t,\t wtd.code.${HEX}`, { kind: 'code', secret: HEX }],
+    ['spaces and tabs around the header', `\t wtd, wtd.token.${HEX} \t`, { kind: 'token', secret: HEX }],
   ])('accepts %s', (_name, header, credential) => {
     expect(parseCredential(header)).toEqual(credential);
   });
@@ -36,6 +37,7 @@ describe('parseCredential', () => {
     ['65 hex digits', `wtd, wtd.token.${HEX}0`],
     ['an empty secret', 'wtd, wtd.token.'],
     ['whitespace inside the credential', `wtd, wtd.token. ${HEX}`],
+    ['whitespace other than spaces and tabs around the credential', `wtd,\v wtd.token.${HEX}`],
     ['a semicolon separator', `wtd; wtd.token.${HEX}`],
     ['an extra unknown protocol', `wtd, chat, wtd.token.${HEX}`],
   ])('refuses %s', (_name, header) => {

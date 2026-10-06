@@ -32,7 +32,7 @@ const configSchema = z.strictObject({
   repos: z.array(repoPath).max(MAX_REPOS).optional(),
 });
 
-const oneLine = (text: string): string => text.replace(/\s*\n\s*/g, ' ');
+const oneLine = (text: string): string => text.replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
 
 const parseJson = (text: string): unknown => {
   try {

@@ -42,7 +42,7 @@ test.describe('authentication', () => {
     await runUi(hub);
     await page.goto(`${hub.origin}/`);
     await expect(page.locator(byTestId(TID.authMessage))).toContainText('wtd ui');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(wire.sockets).toBe(0);
     await expect(page.locator(byTestId(TID.repoTab))).toHaveCount(0);
   });
@@ -91,7 +91,7 @@ test.describe('stale bundle', () => {
         await expect(page.locator(repoTab(repo))).toBeVisible();
         const scripts = await page.evaluate(() => Array.from(document.scripts, (s) => s.src));
         expect(scripts.some((src) => src.includes('/assets/skew-'))).toBe(true);
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(2000); // NOSONAR(S2925) — absence check: nothing to synchronise on
         expect(loads).toBe(2);
         await expect(page.locator(byTestId(TID.outdatedUi))).toHaveCount(0);
       } finally {

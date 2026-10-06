@@ -58,8 +58,7 @@ const randomInstance = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
   return btoa(String.fromCodePoint(...bytes))
     .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '');
+    .replaceAll('/', '_');
 };
 
 /** Whether the hub answers HTTP at all, as opposed to being down or starting. */

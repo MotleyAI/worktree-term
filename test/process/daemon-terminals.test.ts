@@ -35,20 +35,23 @@ afterEach(async () => {
 });
 
 /**
- * Creates a terminal in `worktree` and attaches `client` to it; an interactive shell is waited for
- * until it has run a command and printed its prompt, so login start-up output is over.
+ * Creates a terminal in `worktree` and attaches `client` to it. A command runs only once attached,
+ * so all its output follows the snapshot; an interactive shell is waited for until it has run a
+ * command and printed its prompt, so login start-up output is over.
  */
 const started = async (
   client: DaemonClient,
   command: string | null,
   { worktree = wt, cols = 80, rows = 24 }: { worktree?: string; cols?: number; rows?: number } = {},
 ): Promise<Terminal> => {
-  const term = await client.create(worktree, { command, cols, rows });
+  const term = await client.create(worktree, { command: command === null ? null : `read -r _; ${command}`, cols, rows });
   await client.attach(term.termId);
   if (command === null) {
     client.sendInput(term.termId, 'echo READY-$((6*7))\r');
     await client.waitOutput(term.termId, 'READY-42\r\n', 10_000);
     await sleep(300);
+  } else {
+    client.sendInput(term.termId, '\r');
   }
   return term;
 };

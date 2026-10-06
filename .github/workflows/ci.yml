@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -9,14 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-      - uses: astral-sh/setup-uv@v6
-      # la-arch-check, run by the architecture tests.
-      - run: uv tool install living-architecture==0.2.3
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      # la-arch-check (run by the architecture tests) and its TypeScript twin, which is not on npm.
+      - run: uv tool install --no-build living-architecture==0.2.3
+      - run: |
+          git clone --depth 1 --branch v0.2.3 https://github.com/MotleyAI/living-architecture.git "$RUNNER_TEMP/living-architecture"
+          cd "$RUNNER_TEMP/living-architecture/node"
+          npm ci
+          npm run build
+          npm install -g .
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint

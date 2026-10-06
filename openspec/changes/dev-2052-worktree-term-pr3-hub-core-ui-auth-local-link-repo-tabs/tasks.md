@@ -40,7 +40,7 @@
 - [x] 6.3 `web.layout`: tab operations; verify its unit tests pass
 - [x] 6.4 `web.terminals`: terminal manager outside Preact, attach generations and acks, lagging re-attach, fit/resize, addons, `WebglLru`, the read-only inspection hook (design D11, D12); verify its unit tests pass
 - [x] 6.5 `web.ui` and `web.main`: repo tabs, sidebar, filter, selection, terminal tabs, empty and outdated states, switch measurement (design D13); verify 2.10 and 2.11 pass
-- [ ] 6.6 Spike: open the UI in a headed Chrome `--app` window, run `claude` in a terminal, take screenshots at three window sizes (incl. a resize while running) and inspect box drawing, colours, wide characters, the input box and redraw; record the outcome with the screenshots' findings on DEV-2052; STOP and flag any rendering defect
+- [x] 6.6 Spike: open the UI in a headed Chrome `--app` window, run `claude` in a terminal, take screenshots at three window sizes (incl. a resize while running) and inspect box drawing, colours, wide characters, the input box and redraw; record the outcome with the screenshots' findings on DEV-2052; STOP and flag any rendering defect
 
 ## 7. Architecture (each edit shown to the user for approval when it lands)
 

@@ -1,13 +1,18 @@
 import type { Page } from '@playwright/test';
-import { byTestId, terminalBox, termTab, TID } from './contract.js';
+import { decodeMessage } from '../../src/protocol/index.js';
+import { byTestId, pane, terminalBox, termTab, TID } from './contract.js';
 import {
+  activeTerm,
+  confirmClose,
   expect,
   isCurrent,
   LOCAL,
   makeRepoWith,
+  markOf,
   newTerminal,
   openPage,
   openUi,
+  PRESETS,
   ready,
   screenOf,
   selectWorktree,
@@ -17,9 +22,70 @@ import {
   watcher,
   xtermOf,
 } from './fixture.js';
+import { createTerms, leaf, split, storeTabs } from './panes.js';
+
+/** Where the page's first session is cut: when the hub answers its `createTerm`, or when it sends the `setLayout` that follows. */
+type Cut = 'termCreated' | 'setLayout';
+
+interface CutSession {
+  /** WebSocket sessions the page opened. */
+  sessions: () => number;
+  /** Whether the first session was cut. */
+  cut: () => boolean;
+  /** `createTerm` requests the page sent over every session. */
+  creates: () => number;
+  /** The terminal created in reply to the page's `createTerm`; 0 before. */
+  created: () => number;
+}
+
+/** Routes the page's WebSockets through the test and closes both sides of the first session at `at`; later sessions pass through. */
+const cutSession = async (page: Page, at: Cut): Promise<CutSession> => {
+  let sessions = 0;
+  let cut = false;
+  let creates = 0;
+  let created = 0;
+  await page.routeWebSocket(
+    (url) => url.pathname === '/ws',
+    (ws) => {
+      sessions++;
+      const first = sessions === 1;
+      const server = ws.connectToServer();
+      const close = (): void => {
+        cut = true;
+        void ws.close();
+        void server.close();
+      };
+      ws.onMessage((message) => {
+        if (typeof message === 'string') {
+          const m = decodeMessage('browserToHub', message);
+          if (m.t === 'host' && m.m.t === 'createTerm') creates++;
+          if (first && !cut && at === 'setLayout' && created > 0 && m.t === 'host' && m.m.t === 'setLayout') {
+            close();
+            return;
+          }
+        }
+        server.send(message);
+      });
+      server.onMessage((message) => {
+        if (typeof message === 'string') {
+          const m = decodeMessage('hubToBrowser', message);
+          if (m.t === 'host' && m.m.t === 'termCreated' && m.m.req !== null) {
+            created = m.m.term.termId;
+            if (first && !cut && at === 'termCreated') {
+              close();
+              return;
+            }
+          }
+        }
+        ws.send(message);
+      });
+    },
+  );
+  return { sessions: () => sessions, cut: () => cut, creates: () => creates, created: () => created };
+};
 
 test.describe('terminal tabs', () => {
-  test('a new terminal runs a shell in the worktree, becomes the active tab and is listed in every page', async ({
+  test('a preset picked in a worktree without terminals runs there, becomes the active tab and is listed in every page', async ({
     hub,
     page,
     wire,
@@ -31,7 +97,9 @@ test.describe('terminal tabs', () => {
     await openUi(hub, page);
     await selectWorktree(page, feat);
     const mark = wire.markSent();
-    const term = await newTerminal(page);
+    await page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption), { hasText: 'shell' }).click();
+    const term = await activeTerm(page);
+    await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
     const creates = wire.sentToHost(LOCAL, mark).filter((m) => m.t === 'createTerm');
     expect(creates).toEqual([expect.objectContaining({ worktree: feat, preset: 'shell', command: null })]);
     await expect
@@ -51,13 +119,13 @@ test.describe('terminal tabs', () => {
     await expect(other.page.locator(termTab(term))).toBeVisible();
   });
 
-  test('a worktree without terminals offers to create one and creates none by itself', async ({ hub, page, wire }) => {
+  test('a worktree without terminals shows the presets as choices and creates none by itself', async ({ hub, page, wire }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
     const feat = worktrees[0] ?? '';
     hub.writeRepos([repo]);
     await openUi(hub, page);
     await selectWorktree(page, feat);
-    await expect(page.locator(byTestId(TID.newTerminal))).toBeVisible();
+    await expect(page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption))).toHaveText(PRESETS.map((p) => p.name));
     await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(page.locator(byTestId(TID.termTab))).toHaveCount(0);
     expect(wire.sentToHost(LOCAL).filter((m) => m.t === 'createTerm')).toEqual([]);
@@ -82,9 +150,36 @@ test.describe('terminal tabs', () => {
     await ready(page, term);
     await typeLine(page, term, "echo BYE''-MARK; exit");
     await expect(page.locator(termTab(term))).toContainText('exited');
+    await expect.poll(() => markOf(page, pane(term))).toBe('exited');
+    await expect.poll(() => markOf(page, termTab(term))).toBe('exited');
     await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
     expect(await screenOf(page, term)).toContain('BYE-MARK');
   });
+
+  for (const at of ['setLayout', 'termCreated'] as const) {
+    test(`a terminal created before the session closes at its ${at} is shown as a tab after reconnecting and created once`, async ({
+      hub,
+      page,
+    }) => {
+      const { repo } = makeRepoWith(hub, 'app', []);
+      hub.writeRepos([repo]);
+      const session = await cutSession(page, at);
+      await openUi(hub, page);
+      const client = await watcher(hub, repo);
+      await page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption), { hasText: 'shell' }).click();
+      await expect.poll(() => session.cut()).toBe(true);
+      const term = session.created();
+      expect(term).toBeGreaterThan(0);
+
+      await expect.poll(() => session.sessions(), { timeout: 15_000 }).toBeGreaterThan(1);
+      await expect(page.locator(byTestId(TID.reconnecting))).toBeHidden({ timeout: 15_000 });
+      await expect(page.locator(termTab(term))).toBeVisible({ timeout: 15_000 });
+      await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
+      expect(session.creates()).toBe(1);
+      expect(client.messages.filter((m) => m.t === 'termCreated')).toHaveLength(1);
+      await expect(page.locator(byTestId(TID.termTab))).toHaveCount(1);
+    });
+  }
 });
 
 test.describe('terminal lifetime', () => {
@@ -154,6 +249,35 @@ test.describe('terminal lifetime', () => {
     expect(wire.sentBinary(mark)).toEqual([]);
     expect(sent.map((m) => (m.t === 'host' ? m.m.t : m.t)).filter((t) => t !== 'setVisible' && t !== 'resize')).toEqual([]);
     expect(sent.some((m) => m.t === 'host' && m.m.t === 'setVisible')).toBe(true);
+  });
+
+  test('switching between viewed worktrees whose tabs hold two panes sends only setVisible and resize', async ({ hub, page, wire }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [a = '', b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const panes: number[][] = [];
+    for (const worktree of [a, b]) {
+      const [left = 0, right = 0] = await createTerms(client, worktree, 2);
+      await storeTabs(client, worktree, [split('right', leaf(left), leaf(right))]);
+      panes.push([left, right]);
+    }
+    for (const [i, worktree] of [a, b].entries()) {
+      await selectWorktree(page, worktree);
+      for (const term of panes[i] ?? []) await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
+    }
+    await page.waitForTimeout(500); // NOSONAR(S2925) — lets setup traffic settle before the mark; nothing to synchronise on
+
+    const mark = wire.markSent();
+    for (const path of [a, b, a, b]) await selectWorktree(page, path);
+    for (const term of panes[1] ?? []) await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    const sent = wire.sentMessages(mark);
+    expect(wire.sentBinary(mark)).toEqual([]);
+    expect(sent.map((m) => (m.t === 'host' ? m.m.t : m.t)).filter((t) => t !== 'setVisible' && t !== 'resize')).toEqual([]);
+    const visible = sent.flatMap((m) => (m.t === 'host' && m.m.t === 'setVisible' ? [[...m.m.termIds].sort((x, y) => x - y)] : []));
+    expect(visible.at(-1)).toEqual([...(panes[1] ?? [])].sort((x, y) => x - y));
   });
 });
 
@@ -275,7 +399,7 @@ test.describe('choosing and closing tabs', () => {
     }
   });
 
-  test('closing a tab sends closeTerm and removes the tab', async ({ hub, page, wire }) => {
+  test('closing a tab of a running terminal sends closeTerm once confirmed and removes the tab', async ({ hub, page, wire }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
@@ -283,6 +407,7 @@ test.describe('choosing and closing tabs', () => {
     const second = await newTerminal(page);
     const mark = wire.markSent();
     await page.locator(termTab(second)).locator(byTestId(TID.termTabClose)).click();
+    await confirmClose(page);
     await expect
       .poll(() =>
         wire

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeMessage, encodeMessage, layoutSchema, ProtocolError } from './index.js';
-import { raw, WT, type Layout, type Pane } from './test-samples.js';
+import { fullTabLayout, raw, WT, type Layout, type Pane } from './test-samples.js';
 
 const setLayout = (layout: unknown): string => raw({ t: 'setLayout', req: 1, worktree: WT, layout });
 
@@ -23,6 +23,14 @@ const nested = (levels: number): Pane => {
     pane = split({ term: level }, pane);
   }
   return pane;
+};
+
+/** A balanced pane tree over terminals `first`..`last`, alternating right and down splits by level. */
+const balanced = (first: number, last: number, dir: 'right' | 'down' = 'right'): Pane => {
+  if (first === last) return { term: first };
+  const mid = Math.floor((first + last) / 2);
+  const next = dir === 'right' ? 'down' : 'right';
+  return { split: dir, ratio: 0.5, a: balanced(first, mid, next), b: balanced(mid + 1, last, next) };
 };
 
 const oneTab = (root: Pane): Layout => ({ tabs: [{ id: 't', root }], active: 0 });
@@ -54,12 +62,37 @@ describe('layout validity', () => {
     ).toBe(false);
   });
 
-  it('accepts nesting 16 levels deep', () => {
-    expect(accepts(oneTab(nested(16)))).toBe(true);
+  it('accepts nesting 8 levels deep', () => {
+    expect(accepts(oneTab(nested(8)))).toBe(true);
   });
 
   it('rejects nesting 17 levels deep', () => {
     expect(accepts(oneTab(nested(17)))).toBe(false);
+  });
+
+  it('accepts 8 panes in a tab', () => {
+    expect(accepts(fullTabLayout)).toBe(true);
+    expect(accepts(oneTab(balanced(1, 8)))).toBe(true);
+  });
+
+  it('rejects 9 panes in a tab of mixed right and down splits', () => {
+    expect(accepts(oneTab(balanced(1, 9)))).toBe(false);
+  });
+
+  it('rejects a chain of 9 panes', () => {
+    expect(accepts(oneTab(nested(9)))).toBe(false);
+  });
+
+  it('limits panes per tab, not per layout', () => {
+    expect(
+      accepts({
+        tabs: [
+          { id: 'a', root: balanced(1, 8) },
+          { id: 'b', root: balanced(9, 16, 'down') },
+        ],
+        active: 1,
+      }),
+    ).toBe(true);
   });
 
   it('rejects an active index past the last tab', () => {
@@ -141,5 +174,10 @@ describe('exported layout schema', () => {
     const invalid = oneTab(split({ term: 5 }, { term: 5 }));
     expect(layoutSchema.safeParse(valid).success).toBe(true);
     expect(layoutSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('enforces the pane limit like setLayout', () => {
+    expect(layoutSchema.safeParse(oneTab(balanced(1, 8))).success).toBe(true);
+    expect(layoutSchema.safeParse(oneTab(balanced(1, 9))).success).toBe(false);
   });
 });

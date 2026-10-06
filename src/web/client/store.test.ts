@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Layout, Terminal, Worktree } from '../../protocol/index.js';
+import type { Layout, Preset, Terminal, Worktree } from '../../protocol/index.js';
 import { HubStore } from './store.js';
 
 const REPO = '/r/app';
@@ -24,7 +24,7 @@ const terminal = (termId: number, path = WT): Terminal => ({
   rows: 24,
   exit: null,
   unseen: false,
-  bell: false,
+  state: 'idle',
 });
 
 const layout: Layout = { tabs: [{ id: 't1', root: { term: 1 } }], active: 0 };
@@ -93,6 +93,71 @@ describe('HubStore', () => {
     expect(store.repo(0, '/plain')?.error).toEqual({ code: 'not-a-repo', message: 'no' });
     store.apply(0, { t: 'repoState', repo: '/plain', worktrees: [], terminals: [], checked: [], layouts: [] });
     expect(store.repo(0, '/plain')?.error).toBeNull();
+  });
+
+  it('applies activity to the terminal', () => {
+    const store = watched();
+    store.apply(0, { t: 'activity', termId: 1, unseen: true, state: 'input' });
+    expect(store.repo(0, REPO)?.terminals[0]).toEqual({ ...terminal(1), unseen: true, state: 'input' });
+    store.apply(0, { t: 'activity', termId: 1, unseen: false, state: 'working' });
+    expect(store.repo(0, REPO)?.terminals[0]).toEqual({ ...terminal(1), unseen: false, state: 'working' });
+  });
+
+  it('shows a local layout at once and reverts to the one reported by repoState', () => {
+    const store = watched();
+    const local: Layout = { tabs: [{ id: 't1', root: { split: 'right', ratio: 0.5, a: { term: 1 }, b: { term: 2 } } }], active: 0 };
+    store.setLayout(0, WT, local);
+    expect(store.repo(0, REPO)?.layouts.get(WT)).toEqual(local);
+    store.revertLayout(0, WT);
+    expect(store.repo(0, REPO)?.layouts.get(WT)).toEqual(layout);
+  });
+
+  it('reverts to the layout last reported by layoutChanged', () => {
+    const store = watched();
+    const reported: Layout = { tabs: [{ id: 't2', root: { term: 2 } }], active: 0 };
+    store.apply(0, { t: 'layoutChanged', worktree: WT, layout: reported });
+    store.setLayout(0, WT, layout);
+    store.setLayout(0, WT, { tabs: [], active: 0 });
+    store.revertLayout(0, WT);
+    expect(store.repo(0, REPO)?.layouts.get(WT)).toEqual(reported);
+  });
+
+  it('removes a local layout when the daemon reported none', () => {
+    const store = watched();
+    store.setLayout(0, REPO, layout);
+    store.revertLayout(0, REPO);
+    expect(store.repo(0, REPO)?.layouts.has(REPO)).toBe(false);
+    expect(store.repo(0, REPO)?.layouts.get(WT)).toEqual(layout);
+  });
+
+  it('forgets a reported layout that a later repoState no longer lists', () => {
+    const store = watched();
+    store.apply(0, {
+      t: 'repoState',
+      repo: REPO,
+      worktrees: [worktree(REPO), worktree(WT)],
+      terminals: [terminal(1)],
+      checked: [],
+      layouts: [],
+    });
+    store.setLayout(0, WT, layout);
+    store.revertLayout(0, WT);
+    expect(store.repo(0, REPO)?.layouts.has(WT)).toBe(false);
+  });
+
+  it('keeps the session’s presets until the session closes', () => {
+    const store = new HubStore();
+    expect(store.presets.value).toBeNull();
+    const presets: Preset[] = [
+      { name: 'shell', command: null },
+      { name: 'claude', command: 'claude' },
+    ];
+    store.setPresets(presets);
+    expect(store.presets.value).toEqual(presets);
+    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    expect(store.presets.value).toEqual(presets);
+    store.sessionClosed();
+    expect(store.presets.value).toBeNull();
   });
 
   it('forgets only the repos of a cleared host', () => {

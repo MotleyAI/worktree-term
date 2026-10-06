@@ -1,7 +1,7 @@
 ## 1. Feasibility gate (STOP and flag on any failure)
 
-- [ ] 1.1 Probe a headed Chrome `--app` window serving a test page with an xterm.js terminal: Ctrl+Shift+T/W/C/D/E with `preventDefault` trigger no Chrome action; Ctrl+Shift+V with only the xterm custom key handler returning false reaches xterm as a paste event; Alt+arrows and Alt+Shift+arrows reach the page; record the outcome in a handoff comment on DEV-2053 (design D11)
-- [ ] 1.2 Probe Claude Code with `preferredNotifChannel: terminal_bell` in a PTY whose output is logged with timestamps: the bytes it emits at a permission prompt, at the idle prompt and around the bell; whether it keeps drawing during a 2-minute tool call; whether focus-in/out reports (`ESC [ I` / `ESC [ O`) make it draw within or after 1 s of a signal; record the outcome on DEV-2053 (design D11)
+- [x] 1.1 Probe a headed Chrome `--app` window serving a test page with an xterm.js terminal: Ctrl+Shift+T/W/C/D/E with `preventDefault` trigger no Chrome action; Ctrl+Shift+V with only the xterm custom key handler returning false reaches xterm as a paste event; Alt+arrows and Alt+Shift+arrows reach the page; record the outcome in a handoff comment on DEV-2053 (design D11)
+- [x] 1.2 Probe Claude Code with `preferredNotifChannel: terminal_bell` in a PTY whose output is logged with timestamps: the bytes it emits at a permission prompt, at the idle prompt and around the bell; whether it keeps drawing during a 2-minute tool call; whether focus-in/out reports (`ESC [ I` / `ESC [ O`) make it draw within or after 1 s of a signal; record the outcome on DEV-2053 (design D11)
 
 ## 2. Tests (pr-tests stage; all fail before implementation)
 

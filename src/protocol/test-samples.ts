@@ -41,7 +41,7 @@ export const liveTerminal: Terminal = {
   rows: 24,
   exit: null,
   unseen: false,
-  bell: false,
+  state: 'working',
 };
 
 export const exitedTerminal: Terminal = {
@@ -52,7 +52,7 @@ export const exitedTerminal: Terminal = {
   rows: 40,
   exit: { code: 1, signal: 'SIGTERM' },
   unseen: true,
-  bell: true,
+  state: 'input',
 };
 
 export const layout: Layout = {
@@ -61,6 +61,32 @@ export const layout: Layout = {
     { id: 'logs', root: { term: 4 } },
   ],
   active: 1,
+};
+
+/** One tab at the 8-pane limit, mixing right and down splits. */
+export const fullTabLayout: Layout = {
+  tabs: [
+    {
+      id: 'full',
+      root: {
+        split: 'right',
+        ratio: 0.5,
+        a: {
+          split: 'down',
+          ratio: 0.5,
+          a: { split: 'right', ratio: 0.5, a: { term: 1 }, b: { term: 2 } },
+          b: { split: 'right', ratio: 0.5, a: { term: 3 }, b: { term: 4 } },
+        },
+        b: {
+          split: 'down',
+          ratio: 0.5,
+          a: { split: 'right', ratio: 0.5, a: { term: 5 }, b: { term: 6 } },
+          b: { split: 'down', ratio: 0.5, a: { term: 7 }, b: { term: 8 } },
+        },
+      },
+    },
+  ],
+  active: 0,
 };
 
 export const hosts: HostEntry[] = [
@@ -114,9 +140,11 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   { t: 'termExited', termId: 2, code: 137, signal: 'SIGKILL' },
   { t: 'termClosed', termId: 1 },
   { t: 'detached', termId: 1, reason: 'lagging' },
-  { t: 'activity', termId: 1, unseen: true, bell: false },
+  { t: 'activity', termId: 1, unseen: true, state: 'idle' },
+  { t: 'activity', termId: 2, unseen: false, state: 'input' },
   { t: 'checkedChanged', worktree: WT, checked: false },
   { t: 'layoutChanged', worktree: WT, layout: { tabs: [], active: 0 } },
+  { t: 'layoutChanged', worktree: WT, layout: fullTabLayout },
   { t: 'reposDiscovered', req: 4, repos: [REPO, WT] },
 ];
 

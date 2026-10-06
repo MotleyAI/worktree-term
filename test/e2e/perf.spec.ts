@@ -3,12 +3,17 @@ import { join } from 'node:path';
 import type { DaemonClient } from '../support/daemon-client.js';
 import { addWorktree, git, makeRepo } from '../support/daemon-host.js';
 import { HubHost } from '../support/hub-host.js';
-import { byTestId, SWITCH_END, SWITCH_START, terminalBox, TID, worktreeEntry } from './contract.js';
+import { byTestId, DRAG_MOVE, DRAG_PAINT, SWITCH_END, SWITCH_START, terminalBox, TID, worktreeEntry } from './contract.js';
 import { createShells, LOCAL, openUi, selectWorktree } from './fixture.js';
+import { balanced, boxOf, createTerms, divider, storeTabs } from './panes.js';
 import { holdsWebgl, installWebglProbe, webglRenderer } from './webgl.js';
 
 const WORKTREES = 58;
 const SWITCHES = 20;
+const PANES = 8;
+/** Worktrees no other test views, turned into one tab of 8 panes by `eightPanes`. */
+const EIGHT_PANE_WORKTREES = [56, 57] as const;
+const DRAG_MOVES = 60;
 
 interface PerfRepo {
   hub: HubHost;
@@ -97,6 +102,45 @@ const view = async (page: Page, perf: PerfRepo, index: number): Promise<void> =>
   await expect.poll(() => holdsWebgl(page, LOCAL, term)).toBe(true);
 };
 
+/** An 8-pane worktree: its path and the terminals of its active tab. */
+interface EightPanes {
+  path: string;
+  terms: number[];
+}
+
+let eightPaneSetup: Promise<EightPanes[]> | null = null;
+
+/** Once per worker: makes each of EIGHT_PANE_WORKTREES hold one tab of 8 panes, its 2 shells and 6 more. */
+const eightPanes = (perf: PerfRepo): Promise<EightPanes[]> => {
+  eightPaneSetup ??= (async () => {
+    const client = await perf.hub.client();
+    try {
+      await client.watch(perf.repo);
+      const result: EightPanes[] = [];
+      for (const index of EIGHT_PANE_WORKTREES) {
+        const path = perf.worktrees[index] ?? '';
+        const existing = perf.terms[index] ?? [];
+        const terms = [...existing, ...(await createTerms(client, path, PANES - existing.length))]; // NOSONAR(S9382) — sequential setup
+        await storeTabs(client, path, [balanced(terms)]); // NOSONAR(S9382) — sequential setup
+        result.push({ path, terms });
+      }
+      return result;
+    } finally {
+      client.close();
+    }
+  })();
+  return eightPaneSetup;
+};
+
+/** Shows the worktree and waits until every pane of its 8-pane tab renders with WebGL. */
+const viewPanes = async (page: Page, target: EightPanes): Promise<void> => {
+  await selectWorktree(page, target.path);
+  for (const term of target.terms) await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
+  for (const term of target.terms) await expect.poll(() => holdsWebgl(page, LOCAL, term)).toBe(true);
+};
+
+const entries = (page: Page, name: string): Promise<number> => page.evaluate((n) => performance.getEntriesByName(n).length, name);
+
 test('WebGL runs on a hardware renderer', async ({ perf, page }) => {
   await openUi(perf.hub, page);
   const renderer = await webglRenderer(page);
@@ -163,4 +207,59 @@ test('worktrees added or removed with git show in the sidebar within 250 ms', as
   console.log(`sidebar: add ${String(appeared - added)} ms, remove ${String(gone - removed)} ms`);
   expect(appeared - added).toBeLessThanOrEqual(250);
   expect(gone - removed).toBeLessThanOrEqual(250);
+});
+
+test('switching to an 8-pane tab rendered via DOM takes at most 100 ms (median of 20)', async ({ perf, page }) => {
+  test.setTimeout(180_000);
+  const targets = await eightPanes(perf);
+  await openUi(perf.hub, page);
+  // Each view takes all 8 WebGL contexts, so the other 8-pane tab falls back to DOM.
+  for (const target of targets) await viewPanes(page, target);
+  const durations: number[] = [];
+  for (let i = 0; i < SWITCHES; i++) {
+    const target = targets[i % targets.length];
+    if (target === undefined) throw new Error('no 8-pane worktree');
+    for (const term of target.terms) expect(await holdsWebgl(page, LOCAL, term)).toBe(false);
+    durations.push(await timedSwitch(page, target.path));
+    for (const term of target.terms) await expect.poll(() => holdsWebgl(page, LOCAL, term)).toBe(true);
+  }
+  report('eight-pane switch', durations);
+  expect(durations.every(Number.isFinite)).toBe(true);
+  expect(median(durations)).toBeLessThanOrEqual(100);
+});
+
+test('dragging a divider of an 8-pane tab paints each pointer move within 16 ms (median of 60)', async ({ perf, page }) => {
+  test.setTimeout(180_000);
+  const [target] = await eightPanes(perf);
+  if (target === undefined) throw new Error('no 8-pane worktree');
+  await openUi(perf.hub, page);
+  await viewPanes(page, target);
+  // The root split of the balanced tab runs right, so its divider moves along x.
+  const box = await boxOf(divider(page, ''));
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  const durations: number[] = [];
+  for (let i = 0; i < DRAG_MOVES; i++) {
+    const paints = await entries(page, DRAG_PAINT);
+    // Every move differs from the previous one and keeps the ratio well inside 0.05-0.95.
+    await page.mouse.move(x + ((i % 10) - 4.5) * 30, y);
+    await expect.poll(() => entries(page, DRAG_PAINT)).toBeGreaterThan(paints);
+    durations.push(
+      await page.evaluate(
+        ([moveName, paintName]) => {
+          const move = performance.getEntriesByName(moveName).at(-1);
+          const paint = performance.getEntriesByName(paintName).at(-1);
+          if (move === undefined || paint === undefined || paint.startTime < move.startTime) return Number.NaN;
+          return paint.startTime - move.startTime;
+        },
+        [DRAG_MOVE, DRAG_PAINT] as const,
+      ),
+    );
+  }
+  await page.mouse.up();
+  report('divider drag', durations);
+  expect(durations.every(Number.isFinite)).toBe(true);
+  expect(median(durations)).toBeLessThanOrEqual(16);
 });

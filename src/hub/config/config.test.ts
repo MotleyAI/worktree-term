@@ -31,14 +31,20 @@ const problem = (text: string | null): string => {
 
 const paths = (n: number): string[] => Array.from({ length: n }, (_, i) => `/r/${String(i)}`);
 
+const SHELL = [{ name: 'shell', command: null }];
+const CLAUDE = { name: 'claude', command: 'claude' };
+
+const presets = (n: number): { name: string; command: string | null }[] =>
+  Array.from({ length: n }, (_, i) => ({ name: `p${String(i)}`, command: null }));
+
 describe('parseConfig', () => {
-  it('uses port 7417 and no repos for a missing file', () => {
+  it('uses port 7417, no repos and the shell preset for a missing file', () => {
     expect(DEFAULT_PORT).toBe(7417);
-    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [] });
+    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], presets: SHELL });
   });
 
   it('uses the defaults for an empty object', () => {
-    expect(parse({})).toEqual({ port: 7417, repos: [] });
+    expect(parse({})).toEqual({ port: 7417, repos: [], presets: SHELL });
   });
 
   it.each([1024, 8080, 65535])('accepts port %d', (port) => {
@@ -94,7 +100,58 @@ describe('parseConfig', () => {
   });
 
   it('refuses an unknown key, naming it', () => {
-    expect(problem(JSON.stringify({ port: 8080, presets: [] }))).toContain('presets');
+    expect(problem(JSON.stringify({ port: 8080, theme: 'dark' }))).toContain('theme');
+  });
+
+  it('keeps exactly the listed presets in their order', () => {
+    expect(parse({ presets: [CLAUDE, ...SHELL] }).presets).toEqual([CLAUDE, ...SHELL]);
+    expect(parse({ presets: [CLAUDE] }).presets).toEqual([CLAUDE]);
+  });
+
+  it('accepts names that differ only by case or whitespace', () => {
+    const list = [
+      { name: 'a', command: null },
+      { name: 'A', command: null },
+      { name: 'a ', command: 'x' },
+    ];
+    expect(parse({ presets: list }).presets).toEqual(list);
+  });
+
+  it('accepts names and commands at their length limits, keeping them as written', () => {
+    const list = [
+      { name: 'n'.repeat(64), command: 'c'.repeat(4096) },
+      { name: ' a ', command: 'x' },
+    ];
+    expect(parse({ presets: list }).presets).toEqual(list);
+  });
+
+  it('accepts 64 presets and refuses 65', () => {
+    expect(parse({ presets: presets(64) }).presets).toEqual(presets(64));
+    expect(problem(JSON.stringify({ presets: presets(65) }))).toContain('presets');
+  });
+
+  it.each([
+    ['an empty list', []],
+    [
+      'two presets named a',
+      [
+        { name: 'a', command: null },
+        { name: 'a', command: 'x' },
+      ],
+    ],
+    ['a blank name', [{ name: '   ', command: null }]],
+    ['a name of tabs and spaces', [{ name: ' \t ', command: null }]],
+    ['an empty name', [{ name: '', command: null }]],
+    ['a name over 64 characters', [{ name: 'n'.repeat(65), command: null }]],
+    ['an empty command', [{ name: 'a', command: '' }]],
+    ['a command over 4096 characters', [{ name: 'a', command: 'c'.repeat(4097) }]],
+    ['an unknown key in a preset', [{ name: 'a', command: null, icon: 'x' }]],
+    ['a preset that is not an object', ['a']],
+    ['a single object instead of a list', { name: 'a', command: null }],
+  ])('refuses %s as presets, naming the key', (_name, value) => {
+    const message = problem(JSON.stringify({ presets: value }));
+    expect(message).toContain('presets');
+    expect(message).not.toContain('\n');
   });
 
   it.each([
@@ -115,19 +172,37 @@ describe('parseConfig', () => {
 describe('loadConfig', () => {
   it('uses the defaults for a missing file without creating it or its directory', async () => {
     const path = join(dir, 'worktree-term', 'config.json');
-    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [] });
+    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], presets: SHELL });
     expect(existsSync(join(dir, 'worktree-term'))).toBe(false);
   });
 
   it('reads the file', async () => {
     const path = join(dir, 'config.json');
-    writeFileSync(path, JSON.stringify({ port: 9000, repos: ['~/app'] }));
-    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'] });
+    writeFileSync(path, JSON.stringify({ port: 9000, repos: ['~/app'], presets: [CLAUDE] }));
+    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'], presets: [CLAUDE] });
   });
 
   it('fails with one line naming the file and the problem', async () => {
     const path = join(dir, 'config.json');
-    writeFileSync(path, JSON.stringify({ presets: [] }));
+    writeFileSync(path, JSON.stringify({ theme: 'dark' }));
+    const loading = loadConfig(path, HOME);
+    await expect(loading).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadConfig(path, HOME)).rejects.toThrow(path);
+    await expect(loadConfig(path, HOME)).rejects.toThrow('theme');
+    await expect(loadConfig(path, HOME)).rejects.toThrow(/^[^\n]*$/);
+  });
+
+  it('fails with one line naming the file and presets for invalid presets', async () => {
+    const path = join(dir, 'config.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        presets: [
+          { name: 'a', command: null },
+          { name: 'a', command: null },
+        ],
+      }),
+    );
     const loading = loadConfig(path, HOME);
     await expect(loading).rejects.toBeInstanceOf(ConfigError);
     await expect(loadConfig(path, HOME)).rejects.toThrow(path);
@@ -146,7 +221,7 @@ describe('ConfigSource', () => {
     write(path, { repos: ['/a'] });
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a', '/b'] });
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/a', '/b'] }, problem: null });
+    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/a', '/b'], presets: SHELL }, problem: null });
   });
 
   it('keeps the last valid configuration and reports the problem of an invalid file', async () => {
@@ -157,19 +232,31 @@ describe('ConfigSource', () => {
     await source.snapshot();
     write(path, { repos: ['relative'] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'] });
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], presets: SHELL });
     expect(snapshot.problem).toContain('repos');
     write(path, '{');
     expect((await source.snapshot()).config.repos).toEqual(['/a', '/b']);
     write(path, { repos: ['/c'] });
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/c'] }, problem: null });
+    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/c'], presets: SHELL }, problem: null });
+  });
+
+  it('snapshots edited presets and keeps the last valid ones when they become invalid', async () => {
+    const path = join(dir, 'config.json');
+    write(path, { repos: ['/a'] });
+    const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
+    write(path, { repos: ['/a'], presets: [CLAUDE, ...SHELL] });
+    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/a'], presets: [CLAUDE, ...SHELL] }, problem: null });
+    write(path, { repos: ['/b'], presets: [{ name: 'claude', command: '' }] });
+    const snapshot = await source.snapshot();
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a'], presets: [CLAUDE, ...SHELL] });
+    expect(snapshot.problem).toContain('presets');
   });
 
   it('uses the defaults once the file is removed', async () => {
     const path = join(dir, 'config.json');
-    write(path, { port: 9000, repos: ['/a'] });
+    write(path, { port: 9000, repos: ['/a'], presets: [CLAUDE] });
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     rmSync(path);
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: [] }, problem: null });
+    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: [], presets: SHELL }, problem: null });
   });
 });

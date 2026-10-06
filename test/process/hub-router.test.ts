@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FLOW_HIGH, FrameKind, PROTOCOL_VERSION, type Terminal } from '../../src/protocol/index.js';
 import { addWorktree, alive, DaemonHost, makeRepo, residentBytes, sleep, waitUntil, type WtdProcess } from '../support/daemon-host.js';
 import { FakeDaemon, SocketProxy } from '../support/fake-daemon.js';
-import type { HubClient } from '../support/hub-client.js';
+import type { HubClient, HubMessageOf } from '../support/hub-client.js';
 import { HubHost } from '../support/hub-host.js';
 import { REPO_ROOT } from '../support/exec.js';
 
@@ -16,6 +16,9 @@ const ANY_INSTANCE: unknown = expect.stringMatching(/^[A-Za-z0-9_-]{1,64}$/);
 
 const KiB = 1024;
 const MiB = 1024 * KiB;
+
+const SHELL = { name: 'shell', command: null };
+const CLAUDE = { name: 'claude', command: 'claude' };
 
 let host: HubHost;
 let hub: WtdProcess;
@@ -62,6 +65,10 @@ const started = async (client: HubClient, command: string | null, worktree = wt)
   return term;
 };
 
+/** The preset lists of every `presets` message received so far. */
+const presetsOf = (client: HubClient): HubMessageOf<'presets'>['presets'][] =>
+  client.messages.flatMap((m) => (m.t === 'presets' ? [m.presets] : []));
+
 /** A connected session watching the repo. */
 const watching = async (): Promise<HubClient> => {
   const client = await host.session();
@@ -89,25 +96,49 @@ describe('configuration snapshots', () => {
     expect(client.hosts()[0]?.repos).toEqual([join(host.home, 'linked')]);
   });
 
+  it('sends the configured presets exactly, in their order', async () => {
+    host.presets = [CLAUDE, SHELL];
+    host.writeRepos([repo]);
+    const client = await host.session();
+    expect(presetsOf(client)).toEqual([[CLAUDE, SHELL]]);
+  });
+
   it('gives a new session an edited configuration, leaving an open session unchanged', async () => {
     const open = await host.session();
+    expect(presetsOf(open)).toEqual([[SHELL]]);
     const other = makeRepo(join(host.dir, 'other'));
+    host.presets = [SHELL, CLAUDE];
     host.writeRepos([repo, other]);
     const fresh = await host.session();
     expect(fresh.hosts()[0]?.repos).toEqual([repo, other]);
+    expect(presetsOf(fresh)).toEqual([[SHELL, CLAUDE]]);
     await open.expectNone('hosts', (m) => m.hosts.some((h) => h.repos.includes(other)), 1000);
     expect(open.hosts()[0]?.repos).toEqual([repo]);
+    expect(presetsOf(open)).toEqual([[SHELL]]);
   });
 
-  it('gives a new session an internal error and the last valid configuration when it became invalid', async () => {
-    await host.session();
-    host.writeConfig({ port: host.port, repos: [join(host.dir, 'x')], presets: [] });
+  it.each([
+    ['an empty presets list', []],
+    [
+      'two presets named a',
+      [
+        { name: 'a', command: null },
+        { name: 'a', command: 'x' },
+      ],
+    ],
+    ['a preset whose command is empty', [{ name: 'a', command: '' }]],
+  ])('gives a new session an internal error and the last valid repos and presets after an edit to %s', async (_name, presets) => {
+    host.presets = [CLAUDE, SHELL];
+    host.writeRepos([repo]);
+    expect(presetsOf(await host.session())).toEqual([[CLAUDE, SHELL]]);
+    host.writeConfig({ port: host.port, repos: [join(host.dir, 'x')], presets });
     const client = await host.open(['wtd', `wtd.token.${host.token()}`]);
     await client.handshake();
     const error = await client.waitFor('error');
     expect(error).toMatchObject({ req: null, host: null, code: 'internal' });
     expect(error.message).toContain('presets');
     expect(client.hosts()[0]?.repos).toEqual([repo]);
+    expect(presetsOf(client)).toEqual([[CLAUDE, SHELL]]);
   });
 });
 
@@ -142,8 +173,11 @@ describe('daemon links and host status', () => {
     expect(second).not.toBe(first);
   });
 
-  it('reports a daemon of another protocol as outdated with its version, keeping the link', async () => {
-    const fake = await FakeDaemon.listen(host.socket, { protocol: 99, version: '9.9.9' });
+  it.each([
+    ['an older', 3],
+    ['a newer', 99],
+  ])('reports a daemon of %s protocol as outdated with its version, keeping the link', async (_name, protocol) => {
+    const fake = await FakeDaemon.listen(host.socket, { protocol, version: '9.9.9' });
     const client = await host.session();
     expect(await client.waitHost(0, (h) => h.status === 'outdated')).toMatchObject({ daemonVersion: '9.9.9', instance: null });
     await sleep(1000);
@@ -342,8 +376,11 @@ describe('back-pressure', () => {
 });
 
 describe('daemon restart', () => {
-  it('restarts an outdated daemon into one speaking the hub’s protocol', async () => {
-    const fake = await FakeDaemon.listen(host.socket, { protocol: 99 });
+  it.each([
+    ['an older', 3],
+    ['a newer', 99],
+  ])('restarts an outdated daemon of %s protocol into one speaking the hub’s protocol', async (_name, protocol) => {
+    const fake = await FakeDaemon.listen(host.socket, { protocol });
     const client = await host.session();
     await client.waitHost(0, (h) => h.status === 'outdated');
     const from = client.mark();

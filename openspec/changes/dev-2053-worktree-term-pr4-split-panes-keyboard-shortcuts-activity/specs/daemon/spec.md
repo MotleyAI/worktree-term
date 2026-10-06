@@ -21,7 +21,7 @@ Each terminal SHALL have an attention `state`, `idle` when created. Times below 
 - An attention signal SHALL be: a bell character outside any escape sequence; an OSC 9 sequence whose payload does not start with a decimal number followed by `;`; an OSC 777 sequence whose payload starts with `notify;`; an OSC 99 sequence. A bell received within 1 s after an input frame that is not only focus reports SHALL NOT be a signal.
 - A signal SHALL set `input`, whether or not the terminal is visible.
 - In `working` or `idle`, output SHALL set `working`; `working` SHALL become `idle` once no output has been received for 3 s.
-- In `input`, output received more than 1 s after the last signal SHALL set `working`; earlier output SHALL leave `input`.
+- In `input`, output received more than 1 s after both the last signal and the last input frame consisting only of focus reports SHALL set `working`; other output SHALL leave `input`.
 - An input frame SHALL set `working` from `input`, unless the frame consists only of focus reports (`ESC [ I`, `ESC [ O`). Input SHALL be written to the PTY unchanged in every case.
 - After the process exits, `state` SHALL no longer change.
 Every change of `unseen` or `state` SHALL be sent as `activity{termId, unseen, state}` to the repo's watchers, and terminal entries SHALL carry both.
@@ -77,6 +77,10 @@ Every change of `unseen` or `state` SHALL be sent as `activity{termId, unseen, s
 #### Scenario: Focus reports do not clear input
 - **WHEN** a terminal in `input` receives an input frame holding `ESC [ O ESC [ I`
 - **THEN** its `state` stays "input" and the bytes reach the program
+
+#### Scenario: Reply to a focus report keeps input
+- **WHEN** a terminal in `input` receives `ESC [ I` 5 s after the signal and its program writes `ESC ( B SI` at once
+- **THEN** its `state` stays "input"
 
 #### Scenario: Output resuming clears input
 - **WHEN** a terminal in `input` produces output 1.5 s after the signal

@@ -36,7 +36,7 @@ describe('dist/wtd.mjs', () => {
   });
 
   it('prints its version', () => {
-    expect(wtd('--version')).toEqual({ status: 0, stdout: `wtd ${packageVersion()} (protocol 3)\n`, stderr: '' });
+    expect(wtd('--version')).toEqual({ status: 0, stdout: `wtd ${packageVersion()} (protocol 4)\n`, stderr: '' });
   });
 
   it('prints help listing every command and option', () => {

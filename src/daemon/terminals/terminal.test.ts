@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
-import { expect, it } from 'vitest';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { AttentionState } from './attention.js';
 import { TerminalProcess } from './terminal.js';
 
 const MiB = 1024 * 1024;
@@ -56,3 +59,124 @@ it('delivers the whole final burst of processes exiting under CPU load before re
     for (const hog of hogs) hog.kill('SIGKILL');
   }
 }, 60_000);
+
+describe('attention signals in the output', () => {
+  /** Consumer id used to wait for the mirror. */
+  const PROBE = 99;
+
+  let home: string;
+  let terms: TerminalProcess[];
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'wtd-attention-'));
+    terms = [];
+  });
+
+  afterEach(async () => {
+    await Promise.all(terms.map((t) => t.close()));
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const waitUntil = async (probe: () => boolean, what: string, timeout = 3000): Promise<void> => {
+    const deadline = Date.now() + timeout;
+    while (!probe()) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+      await sleep(20);
+    }
+  };
+
+  /** Starts `command` hidden, recording every activity event as `[unseen, state]`. */
+  const run = async (command: string): Promise<{ term: TerminalProcess; events: [boolean, AttentionState][]; exited: Promise<void> }> => {
+    const events: [boolean, AttentionState][] = [];
+    let exitedNow = (): void => undefined;
+    const exited = new Promise<void>((resolve) => {
+      exitedNow = resolve;
+    });
+    const term = await TerminalProcess.spawn(
+      { cwd: home, command, cols: 80, rows: 24, env: { ...process.env, HOME: home, SHELL: '/bin/bash' } },
+      {
+        activity: (unseen, state) => {
+          events.push([unseen, state]);
+        },
+        exited: () => {
+          exitedNow();
+        },
+      },
+    );
+    terms.push(term);
+    return { term, events, exited };
+  };
+
+  /** Waits until the mirror has parsed output containing `marker`. */
+  const parsedUpTo = async (term: TerminalProcess, marker: string): Promise<void> => {
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      const screen = await new Promise<string>((resolve) => {
+        term.attach(PROBE, {
+          snapshot: (_offset, data) => {
+            resolve(Buffer.from(data).toString());
+          },
+          output: () => undefined,
+          superseded: () => undefined,
+          lagging: () => undefined,
+        });
+      });
+      term.detach(PROBE);
+      if (screen.includes(marker)) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${marker} in the mirror`);
+      await sleep(20);
+    }
+  };
+
+  it.each([
+    ['a bell', String.raw`printf '\a'`],
+    ['OSC 9 done', String.raw`printf '\033]9;done\a'`],
+    ['OSC 777 notify', String.raw`printf '\033]777;notify;t;b\a'`],
+    ['OSC 99', String.raw`printf '\033]99;;hi\033\\'`],
+  ])('sets input on %s while hidden', async (_name, print) => {
+    const { term, events } = await run(`${print}; exec sleep 60`);
+    await waitUntil(() => term.state === 'input', 'state input');
+    expect(events.at(-1)).toEqual([true, 'input']);
+  });
+
+  it.each([
+    ['an OSC 9 progress report', String.raw`printf '\033]9;4;1;50\a'`],
+    ['a BEL terminating a title OSC', String.raw`printf '\033]0;title\a'`],
+    ['an OSC 777 other than notify', String.raw`printf '\033]777;other;x\a'`],
+  ])('does not set input on %s', async (_name, print) => {
+    const { term, events } = await run(`${print}; printf END-MARK; exec sleep 60`);
+    await parsedUpTo(term, 'END-MARK');
+    expect(term.state).toBe('working');
+    expect(events.filter(([, state]) => state === 'input')).toEqual([]);
+  });
+
+  it('sets input once for an OSC 777 notification split across two writes', async () => {
+    const { term, events } = await run(String.raw`printf '\033]777;noti'; sleep 0.2; printf 'fy;t;b\a'; printf END-MARK; exec sleep 60`);
+    await parsedUpTo(term, 'END-MARK');
+    expect(term.state).toBe('input');
+    expect(events.filter(([, state]) => state === 'input')).toEqual([[true, 'input']]);
+  });
+
+  it('sets input once for an OSC 777 notification split inside a multi-byte character of its payload', async () => {
+    // 'é' is \303\251 in UTF-8; the writes split between its two bytes.
+    const { term, events } = await run(
+      String.raw`printf '\033]777;notify;t;h\303'; sleep 0.2; printf '\251llo\a'; printf END-MARK; exec sleep 60`,
+    );
+    await parsedUpTo(term, 'END-MARK');
+    expect(term.state).toBe('input');
+    expect(events.filter(([, state]) => state === 'input')).toEqual([[true, 'input']]);
+  });
+
+  it('sets unseen when the process exits while hidden without further output', async () => {
+    const { term, events, exited } = await run('exec sleep 1');
+    term.setVisible(true);
+    await sleep(500);
+    term.setVisible(false);
+    const before = events.length;
+    await exited;
+    await waitUntil(() => term.unseen, 'unseen', 2000);
+    expect(events.slice(before)).toEqual([[true, term.state]]);
+  });
+});

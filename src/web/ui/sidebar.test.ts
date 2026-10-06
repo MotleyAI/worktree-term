@@ -25,7 +25,7 @@ const terminal = (termId: number, path: string, exit: Terminal['exit'] = null): 
   rows: 24,
   exit,
   unseen: false,
-  bell: false,
+  state: 'idle',
 });
 
 const main = worktree(REPO, { branch: 'main', main: true });

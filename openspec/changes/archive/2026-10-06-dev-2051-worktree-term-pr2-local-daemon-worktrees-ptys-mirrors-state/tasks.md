@@ -48,4 +48,4 @@
 ## 8. Review fixes
 
 - [x] 8.1 Canonical repo names: `watchRepo` accepts only the listed main worktree path; discovery reports real paths; tests for both
-- [ ] 8.2 `.github/workflows/ci.yml`: on push and pull request, install Node 22, pnpm and `living-architecture==0.2.3`, then `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm test`; green on this PR
+- [x] 8.2 `.github/workflows/ci.yml`: on pushes to main and on pull requests, install Node 22, pnpm and `living-architecture==0.2.3`, then `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm test`; green on this PR

@@ -319,9 +319,11 @@ exec sleep 600
     const last = view.attachments.at(-1);
     if (last === undefined) throw new Error('B has no snapshot');
     expect(view.bytes().equals(all.subarray(last.snapshotOffset - first.snapshotOffset))).toBe(true);
+    // The snapshot may cut a line: its tail starts B's output.
     const numbers = view
       .text()
       .split('\r\n')
+      .slice(1)
       .filter((line) => /^\d+$/.test(line))
       .map(Number);
     expect(numbers.every((n, i) => i === 0 || n === (numbers[i - 1] ?? 0) + 1)).toBe(true);

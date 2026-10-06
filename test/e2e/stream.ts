@@ -63,7 +63,7 @@ export function installStreamCheck(): void {
       const line = text.slice(at, end);
       at = end + 2;
       if (result.lines === lines.last) {
-        if (line.startsWith('SEQ-END')) result.done = true;
+        if (line === 'SEQ-END') result.done = true;
         else result.error = `unexpected line after ${String(lines.last)}: ${line.slice(0, 40)}`;
         return;
       }

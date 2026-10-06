@@ -43,7 +43,7 @@ The state directory and `run/` SHALL be created with mode 0700; when they alread
 - **THEN** the file has mode 0600
 
 ### Requirement: Atomic file writes
-A file write SHALL replace the file's content entirely or not at all: a reader SHALL see either the previous content or the new content, and a failed write SHALL leave the previous content intact and no temporary file behind. A completed write SHALL be durable.
+A file write SHALL replace the file's content entirely or not at all: a reader SHALL see either the previous content or the new content, and a failed write SHALL leave the previous content intact and no temporary file behind. A completed write SHALL be durable, except that a failure to sync its directory after the file was replaced SHALL NOT fail the write.
 
 #### Scenario: Failed write keeps the old file
 - **WHEN** a write fails after part of the new content was written

@@ -81,6 +81,22 @@ describe('watchWorktrees', () => {
     expect((events[0]?.at ?? 0) - lastAt).toBeGreaterThanOrEqual(95);
   });
 
+  it('reports a commit in a repository using the reftable ref format', async () => {
+    const reftable = join(dir, 'reftable');
+    execFileSync('git', ['init', '-q', '-b', 'main', '--ref-format=reftable', reftable]);
+    git(reftable, 'commit', '-q', '--allow-empty', '-m', 'init');
+    const changes: Worktree[][] = [];
+    const other = await watchWorktrees(reftable, { changed: (worktrees: Worktree[]) => changes.push(worktrees), failed: () => undefined });
+    try {
+      git(reftable, 'commit', '-q', '--allow-empty', '-m', 'second');
+      const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: reftable, encoding: 'utf8' }).trim();
+      await sleep(600);
+      expect(changes.at(-1)?.[0]?.head).toBe(head);
+    } finally {
+      other.close();
+    }
+  });
+
   it('stops reporting once closed', async () => {
     watch?.close();
     writeFileSync(lockFile(), '');

@@ -7,7 +7,7 @@ import { checkRepo, listWorktrees } from './git.js';
 const DEBOUNCE_MS = 100;
 
 /** Entries of the common git directory whose change can change the worktree list. */
-const COMMON_ENTRIES: ReadonlySet<string> = new Set(['HEAD', 'packed-refs', 'worktrees']);
+const COMMON_ENTRIES: ReadonlySet<string> = new Set(['HEAD', 'packed-refs', 'worktrees', 'reftable']);
 
 export interface WorktreeHandlers {
   /** The worktree list changed; receives the full new list. */
@@ -87,6 +87,8 @@ class RepoWatch implements WorktreeWatch {
       { path: this.common, recursive: false, only: COMMON_ENTRIES },
       { path: admin, recursive: false, only: null },
       { path: join(this.common, 'refs', 'heads'), recursive: true, only: null },
+      // Refs of the reftable format; absent in the files format.
+      { path: join(this.common, 'reftable'), recursive: false, only: null },
     ];
     for (const worktree of worktrees) {
       if (worktree.main || worktree.bare) continue;
@@ -139,7 +141,8 @@ class RepoWatch implements WorktreeWatch {
     let watcher: FSWatcher;
     try {
       watcher = watch(target.path, { recursive: target.recursive }, (_event, name) => {
-        if (target.only === null || (name !== null && target.only.has(name))) this.schedule();
+        // An event without a name may concern any entry.
+        if (target.only === null || name === null || target.only.has(name)) this.schedule();
       });
     } catch (error) {
       if (!isMissing(error) || target.path === this.common) throw error;

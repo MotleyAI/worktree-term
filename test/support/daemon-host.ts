@@ -19,7 +19,7 @@ export const waitUntil = async <T>(probe: () => Probed<T> | Promise<Probed<T>>, 
     const value = await probe(); // NOSONAR(S9382) — polling loop
     if (value !== undefined && value !== false) return value;
     if (Date.now() > deadline) throw new Error(`timed out after ${String(timeout)} ms waiting for ${what}`);
-    await sleep(20);
+    await sleep(20); // NOSONAR(S9382) — polling loop
   }
 };
 

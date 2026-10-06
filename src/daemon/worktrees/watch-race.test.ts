@@ -7,8 +7,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Worktree } from '../../protocol/index.js';
 import { watchWorktrees, type WorktreeWatch } from './index.js';
 
-// A path removed between its stat and its fs.watch: watching it fails once with ENOENT.
-const hooks = vi.hoisted((): { vanishOnce: string | null } => ({ vanishOnce: null }));
+// `vanishOnce`: removed between its stat and its fs.watch, so watching it fails once with ENOENT.
+// `silenced`: its events reach the watcher only through `unnamed`, which reports them without a name.
+const hooks = vi.hoisted((): { vanishOnce: string | null; silenced: string | null; unnamed: (() => void) | null } => ({
+  vanishOnce: null,
+  silenced: null,
+  unnamed: null,
+}));
 
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof Fs>();
@@ -16,6 +21,12 @@ vi.mock('node:fs', async (importOriginal) => {
     if (String(path) === hooks.vanishOnce) {
       hooks.vanishOnce = null;
       throw Object.assign(new Error(`ENOENT: no such file or directory, watch '${String(path)}'`), { code: 'ENOENT' });
+    }
+    if (String(path) === hooks.silenced) {
+      hooks.unnamed = () => {
+        Reflect.apply(listener, undefined, ['rename', null]);
+      };
+      return real.watch(path, options, () => undefined);
     }
     return real.watch(path, options, listener);
   };
@@ -44,6 +55,8 @@ beforeEach(() => {
 
 afterEach(() => {
   hooks.vanishOnce = null;
+  hooks.silenced = null;
+  hooks.unnamed = null;
   watch?.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -67,4 +80,15 @@ it('keeps watching when a worktree admin directory vanishes before it is watched
 it('fails when the common git directory cannot be watched', async () => {
   hooks.vanishOnce = join(repo, '.git');
   await expect(start([])).rejects.toThrow(/ENOENT/);
+});
+
+it('refreshes on a common-directory event without a name', async () => {
+  git(repo, 'branch', 'other');
+  hooks.silenced = join(repo, '.git');
+  const changes: Worktree[][] = [];
+  watch = await watchWorktrees(repo, { changed: (worktrees: Worktree[]) => changes.push(worktrees), failed: () => undefined });
+  git(repo, 'symbolic-ref', 'HEAD', 'refs/heads/other');
+  hooks.unnamed?.();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  expect(changes.at(-1)?.[0]?.branch).toBe('other');
 });

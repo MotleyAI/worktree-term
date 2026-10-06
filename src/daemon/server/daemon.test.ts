@@ -28,6 +28,7 @@ let dir: string;
 let socketPath: string;
 let server: Server;
 let daemon: Daemon;
+let store: StateStore;
 let clients: DaemonClient[];
 /** Spawns that have not finished; they finish only when a test settles them. */
 let spawns: PendingSpawn[];
@@ -59,11 +60,12 @@ beforeEach(async () => {
         spawns.push({ spec, events, resolve, reject });
       }),
   };
+  store = await StateStore.load(join(dir, 'state.json'));
   daemon = new Daemon({
     services,
     version: '0.0.0-test',
     instance: 'test_daemon',
-    store: await StateStore.load(join(dir, 'state.json')),
+    store,
     env: process.env,
     shutdown: () => undefined,
     report: () => undefined,
@@ -153,4 +155,11 @@ it('keeps a starting watch for a connection still waiting when another one left'
   const from = staying.mark();
   watchHandlers[0]?.changed(worktrees);
   expect(await staying.waitFor('worktreesChanged', () => true, { from })).toMatchObject({ repo: REPO });
+});
+
+it('prunes state of vanished worktrees before the first repoState', async () => {
+  await store.setChecked(REPO, '/r.worktrees/gone', true);
+  await store.setChecked(REPO, REPO, true);
+  const client = await connected();
+  expect((await client.watch(REPO)).checked).toEqual([REPO]);
 });

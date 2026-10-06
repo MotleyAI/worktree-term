@@ -76,10 +76,12 @@ describe('consumer watermarks', () => {
     expect(flow.paused).toBe(true);
   });
 
-  it('counts output produced for a consumer but not yet sent to it', () => {
+  it('does not count output held for a consumer until its snapshot is sent', () => {
     flow.attach(A);
     flow.output(FLOW_HIGH + 1);
     flow.parsed(FLOW_HIGH + 1);
+    expect(flow.paused).toBe(false);
+    flow.sent(A, flow.produced);
     expect(flow.paused).toBe(true);
   });
 

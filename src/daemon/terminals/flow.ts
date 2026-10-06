@@ -42,7 +42,9 @@ export class FlowControl {
   /** Output up to `offset` was handed to `consumer`'s connection. */
   sent(consumer: number, offset: number): void {
     const state = this.consumers.get(consumer);
-    if (state !== undefined) state.sent = Math.max(state.sent, offset);
+    if (state === undefined) return;
+    state.sent = Math.max(state.sent, offset);
+    this.update();
   }
 
   /** (Re-)attaches `consumer` at the current position, which it returns. */
@@ -83,12 +85,12 @@ export class FlowControl {
   }
 
   private update(): void {
-    const backlogs = [this.producedBytes - this.parsedBytes, ...[...this.consumers.values()].map((c) => this.producedBytes - c.acked)];
+    const backlogs = [this.producedBytes - this.parsedBytes, ...[...this.consumers.values()].map((c) => c.sent - c.acked)];
     if (!this.isPaused && backlogs.some((b) => b > FLOW_HIGH)) this.isPaused = true;
     else if (this.isPaused && backlogs.every((b) => b < FLOW_LOW)) this.isPaused = false;
     const now = this.now();
     for (const consumer of this.consumers.values()) {
-      const lagging = this.isPaused && this.producedBytes - consumer.acked >= FLOW_LOW;
+      const lagging = this.isPaused && consumer.sent - consumer.acked >= FLOW_LOW;
       if (!lagging) consumer.laggingSince = null;
       else consumer.laggingSince ??= now;
     }

@@ -46,7 +46,7 @@ describe('AckTracker', () => {
     const { acks, acker } = tracker();
     acker.attach(0);
     const data = new TextEncoder().encode('é✓𝄞');
-    expect(data.length).toBe(9);
+    expect(data).toHaveLength(9);
     acker.written(write(acker, data));
     expect(acks).toEqual([9]);
     expect(acker.expected).toBe(9);

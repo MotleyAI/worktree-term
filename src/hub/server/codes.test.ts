@@ -26,6 +26,22 @@ describe('CodeStore', () => {
     expect(store.consume(code)).toBe(false);
   });
 
+  it('checks a code without using it up', () => {
+    const store = new CodeStore(clock().now);
+    const code = store.issue();
+    expect(store.valid(code)).toBe(true);
+    expect(store.consume(code)).toBe(true);
+    expect(store.valid(code)).toBe(false);
+  });
+
+  it('reports an expired code as invalid', () => {
+    const time = clock();
+    const store = new CodeStore(time.now);
+    const code = store.issue();
+    time.advance(30_001);
+    expect(store.valid(code)).toBe(false);
+  });
+
   it('refuses a code it never issued', () => {
     const store = new CodeStore(clock().now);
     store.issue();

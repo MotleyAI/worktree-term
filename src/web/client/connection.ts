@@ -56,9 +56,9 @@ const SECRET = /^[0-9a-f]{64}$/;
 
 const randomInstance = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
+  return btoa(String.fromCodePoint(...bytes))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
     .replace(/=+$/, '');
 };
 
@@ -89,6 +89,8 @@ export class HubClient {
   /** A failed upgrade while the hub answered HTTP; a second one means our credential is refused. */
   private refusedOnce = false;
   private stopped = false;
+  /** A stale bundle waiting for the token before it reloads. */
+  private reloadOnToken = false;
 
   constructor(private readonly version: string) {}
 
@@ -121,17 +123,17 @@ export class HubClient {
 
   /** Sends a daemon request to `host`; resolves with its reply, rejects with RequestError or when it cannot complete. */
   async request(host: number, body: DaemonRequestBody): Promise<DaemonReply> {
-    const m = await this.call(host, (req) => ({ t: 'host', host, m: { ...body, req } }));
+    const m = await this.exchange(host, (req) => ({ t: 'host', host, m: { ...body, req } }));
     if ('host' in m) throw new Error(`unexpected hub reply ${m.t}`);
     return m;
   }
 
   /** Asks the hub to restart the daemon of `host`. */
   async restartDaemon(host: number): Promise<void> {
-    await this.call(null, (req) => ({ t: 'restartDaemon', req, host }));
+    await this.exchange(null, (req) => ({ t: 'restartDaemon', req, host }));
   }
 
-  private async call(host: number | null, message: (req: number) => BrowserMessage): Promise<Extract<Reply, { ok: true }>['m']> {
+  private async exchange(host: number | null, message: (req: number) => BrowserMessage): Promise<Extract<Reply, { ok: true }>['m']> {
     if (this.ws?.readyState !== WebSocket.OPEN) throw new Error('not connected to the hub');
     const { req, reply } = this.pending.add(host);
     this.sendMessage(message(req));
@@ -210,6 +212,12 @@ export class HubClient {
     this.stop('auth');
   }
 
+  private reload(): void {
+    this.stopped = true;
+    this.ws?.close();
+    location.reload();
+  }
+
   private stop(status: 'auth' | 'outdated'): void {
     this.stopped = true;
     this.store.status.value = status;
@@ -241,6 +249,7 @@ export class HubClient {
       case 'token':
         sessionStorage.setItem(TOKEN_KEY, m.token);
         this.credential = { kind: 'token', secret: m.token };
+        if (this.reloadOnToken) this.reload();
         return;
       case 'hosts':
         this.hosts(m.hosts);
@@ -266,9 +275,9 @@ export class HubClient {
     const check = checkBundle({ protocol: PROTOCOL_VERSION, version: this.version }, m, sessionStorage.getItem(RELOADED_KEY));
     if (check === 'reload') {
       sessionStorage.setItem(RELOADED_KEY, m.instance);
-      this.stopped = true;
-      this.ws?.close();
-      location.reload();
+      // A code session's token follows `hello`; the reloaded page needs it.
+      if (this.credential?.kind === 'code') this.reloadOnToken = true;
+      else this.reload();
       return;
     }
     if (check === 'outdated') {

@@ -21,6 +21,12 @@ export class CodeStore {
     return code;
   }
 
+  /** Whether `code` is valid, without using it up. */
+  valid(code: string): boolean {
+    this.expire();
+    return this.codes.has(code);
+  }
+
   /** Whether `code` is valid; a valid code is used up. */
   consume(code: string): boolean {
     this.expire();

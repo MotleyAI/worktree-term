@@ -109,6 +109,13 @@ button {
 
 .worktree .label {
   flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;

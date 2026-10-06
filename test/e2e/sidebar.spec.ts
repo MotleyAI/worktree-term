@@ -78,6 +78,16 @@ test.describe('worktree sidebar', () => {
     await expect(page.locator(checkbox(feat))).toBeChecked();
   });
 
+  test('a worktree is selected from the keyboard', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.locator(label(feat)).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'true');
+  });
+
   test('worktree list changes show without user action', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
@@ -109,6 +119,9 @@ test.describe('checked filter', () => {
 
     await selectRepo(page, second.repo);
     await expect(page.locator(byTestId(TID.filterChecked))).toBeChecked();
+    // Nothing checked there: its first worktree is selected and listed.
+    await expect(page.locator(worktreeEntry(second.repo))).toHaveAttribute('aria-selected', 'true');
+    expect(await listedWorktrees(page)).toEqual([second.repo]);
   });
 
   test('the selected worktree stays listed and selected when unchecked under "checked only"', async ({ hub, page }) => {

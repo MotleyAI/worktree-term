@@ -461,6 +461,24 @@ describe('WebSocket authentication', () => {
     expect(await refusal(host.open(['wtd', `wtd.code.${code}`]))).toBe(401);
   });
 
+  it('keeps a code presented by an upgrade the WebSocket handshake rejects', async () => {
+    const code = await host.code();
+    const response = await host.http('GET', '/ws', {
+      headers: [
+        ['Upgrade', 'websocket'],
+        ['Connection', 'Upgrade'],
+        ['Sec-WebSocket-Version', '12'],
+        ['Sec-WebSocket-Key', 'dGhlIHNhbXBsZSBub25jZQ=='],
+        ['Sec-WebSocket-Protocol', `wtd, wtd.code.${code}`],
+        ['Origin', host.origin],
+      ],
+      headersOnly: true,
+    });
+    expect(response.status).toBe(400);
+    const client = await host.open(['wtd', `wtd.code.${code}`]);
+    expect(client.protocol).toBe('wtd');
+  });
+
   it('accepts exactly one of two concurrent upgrades presenting the same code', async () => {
     const code = await host.code();
     const results = await Promise.all([outcome(host.open(['wtd', `wtd.code.${code}`])), outcome(host.open(['wtd', `wtd.code.${code}`]))]);
@@ -507,6 +525,7 @@ describe('WebSocket authentication', () => {
     const client = await host.session();
     client.sendBinary(new Uint8Array(MAX_FRAME + 1));
     await client.waitClosed(10_000);
+    expect(client.closeCode).toBe(1009);
   });
 
   it('accepts a message of MAX_FRAME bytes, then rejects it as malformed', async () => {

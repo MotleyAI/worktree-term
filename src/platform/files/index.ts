@@ -197,16 +197,18 @@ export interface TreeFile {
 
 /** Every regular file under `dir`, read whole; symbolic links are not followed. */
 export const readTree = async (dir: string): Promise<TreeFile[]> => {
-  const files: TreeFile[] = [];
-  const walk = async (relative: string): Promise<void> => {
-    for (const entry of await readdir(join(dir, relative), { withFileTypes: true })) {
-      const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile()) files.push({ path, data: await readFile(join(dir, path)) });
-    }
+  const walk = async (relative: string): Promise<TreeFile[]> => {
+    const entries = await readdir(join(dir, relative), { withFileTypes: true });
+    const nested = await Promise.all(
+      entries.map(async (entry): Promise<TreeFile[]> => {
+        const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+        if (entry.isDirectory()) return walk(path);
+        return entry.isFile() ? [{ path, data: await readFile(join(dir, path)) }] : [];
+      }),
+    );
+    return nested.flat();
   };
-  await walk('');
-  return files;
+  return walk('');
 };
 
 /** Restricts `path` to its owner. */

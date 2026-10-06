@@ -45,3 +45,7 @@ export const sidebarEntries = (state: {
 /** The entries the filter shows; the selected entry is always shown. */
 export const visibleWorktrees = (entries: readonly SidebarEntry[], filter: WorktreeFilter, selected: string | null): SidebarEntry[] =>
   filter === 'all' ? [...entries] : entries.filter((e) => e.checked || e.path === selected);
+
+/** The worktree selected without a stored selection: the first the filter shows, else the first entry. */
+export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
+  (visibleWorktrees(entries, filter, null)[0] ?? entries[0])?.path ?? null;

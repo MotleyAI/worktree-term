@@ -352,7 +352,8 @@ describe('daemon restart', () => {
     expect(fake.shutdowns).toBe(1);
     await fake.closed;
     expect(await instanceOf(client, from)).not.toBe('fake_instance');
-    expect(host.daemonPids()).toHaveLength(1);
+    // A daemon the session's reconnect started alongside the restart refuses to start and exits.
+    await waitUntil(() => host.daemonPids().length === 1, 'one daemon');
     const direct = await host.client();
     expect((await direct.handshake()).protocol).toBe(PROTOCOL_VERSION);
   });
@@ -362,7 +363,10 @@ describe('daemon restart', () => {
     const b = await host.session();
     const old = await instanceOf(a);
     await connected(b);
-    const [oldPid] = host.daemonPids();
+    const oldPid = await waitUntil(() => {
+      const pids = host.daemonPids();
+      return pids.length === 1 ? pids[0] : undefined;
+    }, 'one daemon');
     const fromA = a.mark();
     const fromB = b.mark();
     const replies = await Promise.all([
@@ -370,14 +374,16 @@ describe('daemon restart', () => {
       b.hubRequest({ t: 'restartDaemon', host: 0 }, 15_000),
     ]);
     expect(replies.map((r) => r.m.t)).toEqual(['done', 'done']);
-    expect(alive(oldPid ?? 0)).toBe(false);
-    await waitUntil(() => host.daemonPids().length === 1, 'one daemon');
-    await sleep(500);
-    expect(host.daemonPids()).toHaveLength(1);
+    // `done` follows the old daemon's socket going quiet; its process may still be exiting.
+    await waitUntil(() => !alive(oldPid), 'the old daemon to exit');
     const newA = await instanceOf(a, fromA);
     const newB = await instanceOf(b, fromB);
     expect(newA).not.toBe(old);
     expect(newB).toBe(newA);
+    // Both sessions reached the new daemon, so every reconnect has dialled; daemons they started alongside it exit.
+    await waitUntil(() => host.daemonPids().length === 1, 'one daemon');
+    await sleep(500);
+    expect(host.daemonPids()).toHaveLength(1);
   });
 
   it('answers internal when the daemon does not go away within 10 s', async () => {

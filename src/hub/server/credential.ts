@@ -7,14 +7,23 @@ export interface Credential {
 export const SUBPROTOCOL = 'wtd';
 
 const CREDENTIAL = /^wtd\.(token|code)\.([0-9a-f]{64})$/;
-const OPTIONAL_WHITESPACE = /^[ \t]+|[ \t]+$/g;
+const isBlank = (c: string | undefined): boolean => c === ' ' || c === '\t';
+
+/** `text` without leading and trailing spaces and tabs. */
+const trimBlanks = (text: string): string => {
+  let start = 0;
+  let end = text.length;
+  while (start < end && isBlank(text[start])) start++;
+  while (end > start && isBlank(text[end - 1])) end--;
+  return text.slice(start, end);
+};
 
 /** Parses the offered subprotocols: exactly `wtd` and one credential, or null. */
 export const parseCredential = (header: string | undefined): Credential | null => {
   if (header === undefined) return null;
   let protocol = false;
   let credential: Credential | null = null;
-  for (const token of header.split(',').map((t) => t.replace(OPTIONAL_WHITESPACE, ''))) {
+  for (const token of header.split(',').map(trimBlanks)) {
     if (token === SUBPROTOCOL && !protocol) {
       protocol = true;
       continue;

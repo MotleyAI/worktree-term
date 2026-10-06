@@ -42,7 +42,7 @@ test.describe('authentication', () => {
     await runUi(hub);
     await page.goto(`${hub.origin}/`);
     await expect(page.locator(byTestId(TID.authMessage))).toContainText('wtd ui');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(wire.sockets).toBe(0);
     await expect(page.locator(byTestId(TID.repoTab))).toHaveCount(0);
   });
@@ -91,11 +91,41 @@ test.describe('stale bundle', () => {
         await expect(page.locator(repoTab(repo))).toBeVisible();
         const scripts = await page.evaluate(() => Array.from(document.scripts, (s) => s.src));
         expect(scripts.some((src) => src.includes('/assets/skew-'))).toBe(true);
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(2000); // NOSONAR(S2925) — absence check: nothing to synchronise on
         expect(loads).toBe(2);
         await expect(page.locator(byTestId(TID.outdatedUi))).toHaveCount(0);
       } finally {
         replacement.kill('SIGKILL');
+      }
+    } finally {
+      rmSync(skew, { recursive: true, force: true });
+    }
+  });
+
+  test('a stale bundle opened with a one-time code keeps the token across its reload', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    const version = packageVersion();
+    // The hub serves a bundle older than itself, so the page stays stale after its one reload.
+    const skew = skewedDist(version, `${version}-skew`, { web: false });
+    try {
+      const newer = spawn(process.execPath, [join(skew, 'wtd.mjs'), 'hub'], { env: hub.env(), stdio: 'ignore' });
+      try {
+        await waitUntil(
+          async () => (await hub.serving()) && (await hub.identity()).version === `${version}-skew`,
+          'the skewed hub',
+          15_000,
+        );
+        let loads = 0;
+        page.on('load', () => loads++);
+
+        await page.goto(await hub.pageUrl());
+        await expect(page.locator(byTestId(TID.outdatedUi))).toBeVisible({ timeout: 20_000 });
+        expect(loads).toBe(2);
+        await expect(page.locator(byTestId(TID.authMessage))).toHaveCount(0);
+        expect(await storedValues(page)).toContain(hub.token());
+      } finally {
+        newer.kill('SIGKILL');
       }
     } finally {
       rmSync(skew, { recursive: true, force: true });

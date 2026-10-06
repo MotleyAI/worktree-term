@@ -69,7 +69,7 @@ export const openPage = async (hub: HubHost, context: BrowserContext): Promise<{
 export const makeRepoWith = (hub: HubHost, name: string, branches: readonly string[]): { repo: string; worktrees: string[] } => {
   const repo = makeRepo(join(hub.dir, 'repos', name));
   const worktrees = branches.map((branch) =>
-    addWorktree(repo, join(hub.dir, 'repos', `${name}.worktrees`, branch.replace(/\//g, '-')), branch),
+    addWorktree(repo, join(hub.dir, 'repos', `${name}.worktrees`, branch.replaceAll('/', '-')), branch),
   );
   return { repo, worktrees };
 };
@@ -95,11 +95,8 @@ export const createShells = async (client: DaemonClient, worktrees: readonly str
   for (const worktree of worktrees) {
     const terms: number[] = [];
     for (let i = 0; i < tabsEach; i++) terms.push((await client.create(worktree)).termId); // NOSONAR(S9382) — sequential setup
-    await client.ok({
-      t: 'setLayout',
-      worktree,
-      layout: { tabs: terms.map((term) => ({ id: `t${String(term)}`, root: { term } })), active: 0 },
-    }); // NOSONAR(S9382) — sequential setup
+    const layout = { tabs: terms.map((term) => ({ id: `t${String(term)}`, root: { term } })), active: 0 };
+    await client.ok({ t: 'setLayout', worktree, layout }); // NOSONAR(S9382) — sequential setup
     ids.push(terms);
   }
   return ids;
@@ -128,7 +125,9 @@ export const activeTerm = async (page: Page): Promise<number> => {
 
 /** Clicks new-terminal and resolves with the new active terminal's id once its container is visible. */
 export const newTerminal = async (page: Page): Promise<number> => {
-  const before = await page.locator(byTestId(TID.termTab)).evaluateAll((tabs) => tabs.map((t) => t.getAttribute('data-term')));
+  const before = await page
+    .locator(byTestId(TID.termTab))
+    .evaluateAll((tabs) => tabs.map((t) => (t instanceof HTMLElement ? (t.dataset['term'] ?? null) : null)));
   await page.locator(byTestId(TID.newTerminal)).click();
   const tab = page.locator(`${byTestId(TID.termTab)}[aria-selected="true"]`);
   await expect.poll(async () => (await tab.count()) === 1 && !before.includes(await tab.getAttribute('data-term'))).toBe(true);

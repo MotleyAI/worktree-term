@@ -63,7 +63,8 @@ const WorktreeEntry = ({ entry, selected, view }: { entry: SidebarEntry; selecte
         }}
       />
     )}
-    <span
+    <button
+      type="button"
       class="label"
       data-testid="worktree-label"
       onClick={() => {
@@ -72,7 +73,7 @@ const WorktreeEntry = ({ entry, selected, view }: { entry: SidebarEntry; selecte
     >
       {entry.label}
       {entry.gone ? ' (gone)' : ''}
-    </span>
+    </button>
   </div>
 );
 
@@ -83,7 +84,13 @@ const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: 
     data-testid="term-tab"
     data-term={String(tab.termId)}
     aria-selected={active ? 'true' : 'false'}
+    tabIndex={0}
     onClick={() => {
+      view.chooseTab(tab.termId);
+    }}
+    onKeyDown={(event) => {
+      if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
       view.chooseTab(tab.termId);
     }}
   >

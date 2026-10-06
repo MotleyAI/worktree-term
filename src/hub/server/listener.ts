@@ -283,11 +283,16 @@ export class Listener {
       return;
     }
     this.wss.handleUpgrade(req, socket, head, (ws) => {
+      // Only an accepted upgrade uses up a code; ws completes it synchronously, so no other upgrade interleaves.
+      if (credential.kind === 'code' && !this.options.codes.consume(credential.secret)) {
+        ws.close(POLICY_VIOLATION, 'code already used');
+        return;
+      }
       this.session(ws, credential.kind);
     });
   }
 
-  /** The status an upgrade is refused with, or null to accept it; checking a code uses it up. */
+  /** The status an upgrade is refused with, or null to accept it. */
   private upgradeRefusal(req: IncomingMessage, credential: Credential | null): number | null {
     if (!this.hostAllowed(req)) return 403;
     if (!this.ready) return 503;
@@ -296,9 +301,8 @@ export class Listener {
     return credential === null || !this.accepts(credential) ? 401 : null;
   }
 
-  /** Whether `credential` is valid; a valid code is used up. */
   private accepts(credential: Credential): boolean {
-    return credential.kind === 'token' ? sameSecret(credential.secret, this.options.token) : this.options.codes.consume(credential.secret);
+    return credential.kind === 'token' ? sameSecret(credential.secret, this.options.token) : this.options.codes.valid(credential.secret);
   }
 
   private session(ws: WebSocket, kind: Credential['kind']): void {

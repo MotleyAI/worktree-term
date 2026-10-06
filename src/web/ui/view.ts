@@ -4,7 +4,7 @@ import { repoKey, type HubClient, type RepoState } from '../client/index.js';
 import { selectTab, terminalTabs, type TerminalTab } from '../layout/index.js';
 import type { TerminalManager } from '../terminals/index.js';
 import { repoTabs, type RepoTab } from './repo-tabs.js';
-import { sidebarEntries, visibleWorktrees, type SidebarEntry, type WorktreeFilter } from './sidebar.js';
+import { defaultWorktree, sidebarEntries, visibleWorktrees, type SidebarEntry, type WorktreeFilter } from './sidebar.js';
 
 /** Performance marks around a worktree switch (design D13). */
 export const SWITCH_START = 'wtd:switch-start';
@@ -69,7 +69,7 @@ export class View {
     const stored = this.selections.value[repoKey(tab.host, tab.repo)];
     const entries = this.entries.value;
     if (stored !== undefined && entries.some((e) => e.path === stored)) return stored;
-    return visibleWorktrees(entries, this.filter.value, null)[0]?.path ?? null;
+    return defaultWorktree(entries, this.filter.value);
   });
   readonly listed = computed<SidebarEntry[]>(() => visibleWorktrees(this.entries.value, this.filter.value, this.worktree.value));
   readonly terminals = computed<Terminal[]>(() => {

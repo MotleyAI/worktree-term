@@ -31,7 +31,9 @@ jobs:
           cd "$twin/node"
           npm ci --ignore-scripts
           npm run build
-          npm install -g --ignore-scripts . # NOSONAR(S8543) — links the folder built above; its dependencies are locked by npm ci
+          mkdir "$twin/bin"
+          for file in dist/bin/*.js; do ln -s "$PWD/$file" "$twin/bin/$(basename "$file" .js)"; done
+          echo "$twin/bin" >> "$GITHUB_PATH"
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint

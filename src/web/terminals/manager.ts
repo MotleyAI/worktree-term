@@ -157,7 +157,7 @@ export class TerminalManager {
       this.client.input(
         host,
         termId,
-        Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff),
+        Uint8Array.from(data, (c) => (c.codePointAt(0) ?? 0) & 0xff),
       );
     });
     const acks = new AckTracker((offset) => {
@@ -204,7 +204,7 @@ export class TerminalManager {
 
   /** Disposes every terminal of `host`. */
   disposeHost(host: number): void {
-    for (const entry of [...this.entries.values()]) if (entry.host === host) this.dispose(entry);
+    for (const entry of this.entries.values()) if (entry.host === host) this.dispose(entry);
   }
 
   private dispose(entry: Entry): void {

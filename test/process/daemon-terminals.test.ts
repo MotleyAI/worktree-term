@@ -319,9 +319,11 @@ exec sleep 600
     const last = view.attachments.at(-1);
     if (last === undefined) throw new Error('B has no snapshot');
     expect(view.bytes().equals(all.subarray(last.snapshotOffset - first.snapshotOffset))).toBe(true);
+    // The snapshot may cut a line: its tail starts B's output.
     const numbers = view
       .text()
       .split('\r\n')
+      .slice(1)
       .filter((line) => /^\d+$/.test(line))
       .map(Number);
     expect(numbers.every((n, i) => i === 0 || n === (numbers[i - 1] ?? 0) + 1)).toBe(true);
@@ -451,12 +453,11 @@ describe('input', () => {
     const frame = new Uint8Array(64 * KiB).fill(0x61);
     for (let i = 0; i < 24; i++) a.sendInput(stuck.termId, frame);
     await a.waitFor('error', (m) => m.code === 'busy', { from });
-    await sleep(1000);
+    await waitUntil(() => a.view(flood.termId).position - before > 4 * FLOW_HIGH, 'flood output past the flow window', 10_000);
     const busy = a.messages.slice(from).filter((m) => m.t === 'error');
     expect(busy.every((m) => m.req === null && m.code === 'busy')).toBe(true);
     expect(busy.length).toBeGreaterThanOrEqual(1);
     expect(busy.length).toBeLessThanOrEqual(8);
-    expect(a.view(flood.termId).position - before).toBeGreaterThan(4 * FLOW_HIGH);
     expect(a.isClosed).toBe(false);
   });
 });

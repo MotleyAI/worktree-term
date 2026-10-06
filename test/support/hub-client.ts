@@ -199,9 +199,7 @@ export class HubClient {
   async watch(host: number, repo: string): Promise<DaemonEventOf<'repoState'>> {
     const from = this.mark();
     await this.ok(host, { t: 'watchRepo', repo });
-    const state = this.daemonEvents(host, 'repoState', from)
-      .filter((m) => m.repo === repo)
-      .at(-1);
+    const state = this.daemonEvents(host, 'repoState', from).findLast((m) => m.repo === repo);
     if (state === undefined) throw new Error(`no repoState before done for ${repo}`);
     return state;
   }

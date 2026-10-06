@@ -56,10 +56,10 @@ class SocketLink implements Link {
   private finished = false;
   private readonly decoder = new StreamDecoder();
 
-  constructor(
-    connecting: Promise<Socket>,
-    private readonly events: LinkEvents,
-  ) {
+  constructor(private readonly events: LinkEvents) {}
+
+  /** Attaches the socket once `connecting` resolves, or ends the link if it fails. */
+  follow(connecting: Promise<Socket>): void {
     connecting.then(
       (socket) => {
         this.attach(socket);
@@ -145,7 +145,9 @@ export class LocalDaemon {
 
   /** Opens a link, starting the daemon when absent unless `start` is false. */
   open(events: LinkEvents, { start = true }: { start?: boolean } = {}): Link {
-    return new SocketLink(start ? dial(this.paths, this.command) : connectExisting(this.paths.socket), events);
+    const link = new SocketLink(events);
+    link.follow(start ? dial(this.paths, this.command) : connectExisting(this.paths.socket));
+    return link;
   }
 }
 

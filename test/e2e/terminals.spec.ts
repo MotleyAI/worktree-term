@@ -58,7 +58,7 @@ test.describe('terminal tabs', () => {
     await openUi(hub, page);
     await selectWorktree(page, feat);
     await expect(page.locator(byTestId(TID.newTerminal))).toBeVisible();
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(page.locator(byTestId(TID.termTab))).toHaveCount(0);
     expect(wire.sentToHost(LOCAL).filter((m) => m.t === 'createTerm')).toEqual([]);
   });
@@ -145,11 +145,11 @@ test.describe('terminal lifetime', () => {
     await selectWorktree(page, b);
     const termB = await newTerminal(page);
     await ready(page, termB);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500); // NOSONAR(S2925) — lets setup traffic settle before the mark; nothing to synchronise on
 
     const mark = wire.markSent();
     for (const path of [a, b, a, b]) await selectWorktree(page, path);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     const sent = wire.sentMessages(mark);
     expect(wire.sentBinary(mark)).toEqual([]);
     expect(sent.map((m) => (m.t === 'host' ? m.m.t : m.t)).filter((t) => t !== 'setVisible' && t !== 'resize')).toEqual([]);
@@ -225,7 +225,7 @@ test.describe('lagging terminals', () => {
     await expect
       .poll(() => wire.receivedFromHost(LOCAL).some((m) => m.t === 'detached' && m.termId === term), { timeout: 15_000 })
       .toBe(true);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(wire.attachesSent(LOCAL, term, mark)).toBe(0);
 
     await selectWorktree(page, b);
@@ -256,6 +256,23 @@ test.describe('choosing and closing tabs', () => {
         }),
       )
       .toBe(true);
+  });
+
+  test('a focused tab is chosen with Enter or Space', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const first = await newTerminal(page);
+    const second = await newTerminal(page);
+    for (const [term, key] of [
+      [first, 'Enter'],
+      [second, ' '],
+    ] as const) {
+      await page.locator(termTab(term)).focus();
+      await page.keyboard.press(key);
+      await expect(page.locator(termTab(term))).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
+    }
   });
 
   test('closing a tab sends closeTerm and removes the tab', async ({ hub, page, wire }) => {
@@ -335,7 +352,7 @@ test.describe('lagging terminals, shown or with the page hidden', () => {
       .poll(() => wire.receivedFromHost(LOCAL).some((m) => m.t === 'detached' && m.termId === term), { timeout: 15_000 })
       .toBe(true);
     await expect.poll(() => wire.attachesSent(LOCAL, term, mark), { timeout: 3000 }).toBeGreaterThan(0);
-    await waitScreen(page, term, 'LAG-DONE', 30_000);
+    expect(await waitScreen(page, term, 'LAG-DONE', 30_000)).toContain('LAG-DONE');
   });
 
   test('a shown terminal detached as lagging while the page is hidden is attached again when it becomes visible', async ({
@@ -356,7 +373,7 @@ test.describe('lagging terminals, shown or with the page hidden', () => {
     await expect
       .poll(() => wire.receivedFromHost(LOCAL).some((m) => m.t === 'detached' && m.termId === term), { timeout: 15_000 })
       .toBe(true);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(wire.attachesSent(LOCAL, term, mark)).toBe(0);
     await setVisibility(page, false);
     await expect.poll(() => wire.attachesSent(LOCAL, term, mark), { timeout: 3000 }).toBeGreaterThan(0);
@@ -387,7 +404,7 @@ test.describe('terminal settings', () => {
     await ready(page, term);
     // U+1F917 is wide in Unicode 11 but narrow in xterm's default Unicode 6 table: one step back lands on its second half.
     await typeLine(page, term, String.raw`printf 'W:\U0001F917\e[1DX\n'`);
-    await expect.poll(async () => ((await screenOf(page, term)) ?? '').split('\n')).toContain('W: X');
+    expect((await waitScreen(page, term, 'W: X')).split('\n')).toContain('W: X');
   });
 
   test('a link opens in a new window without access to the page', async ({ hub, page, context }) => {

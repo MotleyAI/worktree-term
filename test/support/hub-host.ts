@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -57,7 +58,7 @@ const canBind = (port: number): Promise<boolean> =>
 /** A free TCP port on 127.0.0.1, below the ephemeral range so outgoing connections never take it meanwhile. */
 export const freePort = async (): Promise<number> => {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const port = 20_000 + Math.floor(Math.random() * 12_000);
+    const port = randomInt(20_000, 32_000);
     if (await canBind(port)) return port; // NOSONAR(S9382) — retries until a port is free
   }
   throw new Error('no free port');
@@ -71,8 +72,8 @@ const decodeChunked = (body: string): string => {
   for (;;) {
     const lineEnd = body.indexOf('\r\n', at);
     if (lineEnd < 0) return out;
-    const size = parseInt(body.slice(at, lineEnd), 16);
-    if (!(size > 0)) return out;
+    const size = Number.parseInt(body.slice(at, lineEnd), 16);
+    if (Number.isNaN(size) || size <= 0) return out;
     out += body.slice(lineEnd + 2, lineEnd + 2 + size);
     at = lineEnd + 2 + size + 2;
   }
@@ -104,7 +105,8 @@ export const rawHttp = (port: number, method: string, path: string, options: Htt
     headers.push(...(options.headers ?? []));
     if (options.body !== undefined) headers.push(['Content-Length', String(Buffer.byteLength(options.body))]);
     if (options.headersOnly !== true) headers.push(['Connection', 'close']);
-    const request = `${method} ${path} HTTP/1.1\r\n${headers.map(([k, v]) => `${k}: ${v}\r\n`).join('')}\r\n${options.body ?? ''}`;
+    const head = headers.map(([k, v]) => `${k}: ${v}\r\n`).join('');
+    const request = `${method} ${path} HTTP/1.1\r\n${head}\r\n${options.body ?? ''}`;
     const socket = connect(port, '127.0.0.1');
     let text = '';
     const timer = setTimeout(() => {
@@ -148,13 +150,13 @@ export const upgradeHeaders = (protocols: readonly string[] | null): [string, st
   return headers;
 };
 
-const BROWSER_STUB = (log: string): string => `#!/usr/bin/env node
+const BROWSER_STUB = (log: string): string => String.raw`#!/usr/bin/env node
 const fs = require('node:fs');
 const stat = fs.readFileSync('/proc/self/stat', 'utf8');
 const sid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[3]);
 let stdout = '';
 try { stdout = fs.readlinkSync('/proc/self/fd/1'); } catch { stdout = 'closed'; }
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), stdout, sid }) + '\\n');
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), stdout, sid }) + '\n');
 `;
 
 /** An isolated host for hub tests: DaemonHost plus XDG_CONFIG_HOME, a free port and a stub browser. */

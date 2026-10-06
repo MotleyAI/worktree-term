@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal, Worktree } from '../../protocol/index.js';
-import { sidebarEntries, visibleWorktrees, worktreeLabel, type SidebarEntry } from './sidebar.js';
+import { defaultWorktree, sidebarEntries, visibleWorktrees, worktreeLabel, type SidebarEntry } from './sidebar.js';
 
 const REPO = '/home/u/repo';
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
@@ -120,5 +120,23 @@ describe('visibleWorktrees', () => {
   it('keeps the selected entry listed with the checked filter', () => {
     expect(visibleWorktrees(entries, 'checked', '/b').map((e) => e.path)).toEqual(['/a', '/b', '/c']);
     expect(visibleWorktrees(entries, 'checked', '/d').map((e) => e.path)).toEqual(['/a', '/c', '/d']);
+  });
+});
+
+describe('defaultWorktree', () => {
+  const entry = (path: string, checked: boolean): SidebarEntry => ({ path, label: path, prunable: false, gone: false, checked });
+
+  it('selects the first entry the filter shows', () => {
+    const entries = [entry('/a', false), entry('/b', true)];
+    expect(defaultWorktree(entries, 'all')).toBe('/a');
+    expect(defaultWorktree(entries, 'checked')).toBe('/b');
+  });
+
+  it('selects the first entry when the checked filter shows none', () => {
+    expect(defaultWorktree([entry('/a', false), entry('/b', false)], 'checked')).toBe('/a');
+  });
+
+  it('selects nothing without entries', () => {
+    expect(defaultWorktree([], 'checked')).toBeNull();
   });
 });

@@ -25,9 +25,6 @@ const uniqueLabels = (repos: readonly string[]): string[] => {
 export const repoTabs = (hosts: readonly { idx: number; name: string; remote: boolean; repos: readonly string[] }[]): RepoTab[] =>
   hosts.flatMap((host) => {
     const labels = uniqueLabels(host.repos);
-    return host.repos.map((repo, i) => ({
-      host: host.idx,
-      repo,
-      label: `${host.remote ? `${host.name}:` : ''}${labels[i] ?? repo}`,
-    }));
+    const prefix = host.remote ? `${host.name}:` : '';
+    return host.repos.map((repo, i) => ({ host: host.idx, repo, label: prefix + (labels[i] ?? repo) }));
   });

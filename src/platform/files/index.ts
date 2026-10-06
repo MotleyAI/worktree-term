@@ -100,7 +100,10 @@ const writeTemporary = async (path: string, data: string): Promise<string> => {
   return temporary;
 };
 
-/** Replaces `path` with `data` entirely or not at all, durably, as an owner-only file. */
+/**
+ * Replaces `path` with `data` entirely or not at all, durably, as an owner-only file. Once the file
+ * is replaced the write has happened, so a failure to sync the directory does not fail it.
+ */
 export const writeFileAtomic = async (path: string, data: string): Promise<void> => {
   const temporary = await writeTemporary(path, data);
   try {
@@ -109,7 +112,7 @@ export const writeFileAtomic = async (path: string, data: string): Promise<void>
     await unlink(temporary).catch(ignore);
     throw error;
   }
-  await syncDir(dirname(path));
+  await syncDir(dirname(path)).catch(ignore);
 };
 
 /** The UTF-8 content of `path`, or null when it does not exist. */
@@ -216,6 +219,28 @@ const removeIfUnchanged = async (path: string, text: string | null): Promise<voi
   }
 };
 
+/**
+ * Removes the stale lock at `path` that held `text`. Moving it aside is atomic, so of several
+ * reclaimers only one moves it; one that moved a lock replaced since it was read puts it back.
+ */
+const reclaimStale = async (path: string, text: string): Promise<void> => {
+  const aside = `${path}.stale-${randomBytes(6).toString('hex')}`;
+  try {
+    await rename(path, aside);
+  } catch (error) {
+    if (hasCode(error, 'ENOENT')) return;
+    throw error;
+  }
+  if ((await readFileIfExists(aside)) !== text) {
+    try {
+      await link(aside, path);
+    } catch (error) {
+      if (!hasCode(error, 'EEXIST')) throw error;
+    }
+  }
+  await removeFile(aside);
+};
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -231,7 +256,7 @@ export const acquireStartLock = async (path: string): Promise<StartLock> => {
     const text = await readFileIfExists(path); // NOSONAR(S9382) — retry loop
     const current = text === null ? null : parseHolder(text);
     if (text !== null && current !== null && !isAlive(current.pid)) {
-      await removeIfUnchanged(path, text); // NOSONAR(S9382) — retry loop
+      await reclaimStale(path, text); // NOSONAR(S9382) — retry loop
       continue;
     }
     if (Date.now() >= deadline) {

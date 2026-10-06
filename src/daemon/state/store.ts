@@ -79,6 +79,8 @@ const parse = (text: string): Repos | null => {
   return repos;
 };
 
+const ignore = (): void => undefined;
+
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 /**
@@ -101,16 +103,22 @@ export class StateStore {
     this.current = clone(repos);
   }
 
-  /** Loads `file`; an unreadable one is moved to `<file>.corrupt-<timestamp>` and state starts empty. */
+  /**
+   * Loads `file`, writing back what start-up pruning removed; an unreadable one is moved to
+   * `<file>.corrupt-<timestamp>` and state starts empty.
+   */
   static async load(file: string, options: StateStoreOptions = {}): Promise<StateStore> {
+    const write = options.write ?? writeFileAtomic;
     const text = await readFileIfExists(file);
     let repos: Repos = new Map();
     if (text !== null) {
       const parsed = parse(text);
       if (parsed === null) await renameFile(file, `${file}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`);
       else repos = parsed;
+      // Best effort: the next change writes the pruned state anyway.
+      if (parsed !== null && serialize(parsed) !== text) await write(file, serialize(parsed)).catch(ignore);
     }
-    return new StateStore(file, repos, options.write ?? writeFileAtomic);
+    return new StateStore(file, repos, write);
   }
 
   /** Checked worktree paths of `repo`. */

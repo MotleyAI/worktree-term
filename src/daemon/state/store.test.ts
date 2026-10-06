@@ -129,6 +129,42 @@ describe('loading', () => {
     expect(store.layout(REPO, WT2)).toEqual(EMPTY);
     expect(store.layouts(REPO)).toEqual([]);
   });
+
+  it('writes the pruned state back, dropping entries left with default values', async () => {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        repos: [
+          {
+            repo: REPO,
+            worktrees: [
+              { path: WT1, checked: true, layout: SPLIT },
+              { path: WT2, checked: false, layout: SPLIT },
+            ],
+          },
+        ],
+      }),
+    );
+    await StateStore.load(file);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+      version: 1,
+      repos: [{ repo: REPO, worktrees: [{ path: WT1, checked: true, layout: EMPTY }] }],
+    });
+  });
+
+  it('leaves an already pruned state file untouched', async () => {
+    const content = JSON.stringify({ version: 1, repos: [{ repo: REPO, worktrees: [{ path: WT1, checked: true, layout: EMPTY }] }] });
+    writeFileSync(file, content);
+    const writes: string[] = [];
+    await StateStore.load(file, {
+      write: (_path, data) => {
+        writes.push(data);
+        return Promise.resolve();
+      },
+    });
+    expect(writes).toEqual([]);
+  });
 });
 
 describe('persisted format', () => {

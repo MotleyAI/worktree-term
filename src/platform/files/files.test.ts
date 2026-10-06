@@ -39,10 +39,21 @@ interface Hooks {
   foreignOwner: string | null;
   /** Unlinking paths under this prefix fails with EACCES. */
   failUnlinkOf: string | null;
+  /** Syncing this path fails with EIO. */
+  failSyncOf: string | null;
+  /** The first unlink or rename away of this path waits 100 ms. */
+  delayRemovalOf: string | null;
   calls: string[];
 }
 
-const hooks = vi.hoisted((): Hooks => ({ failWriteOf: null, foreignOwner: null, failUnlinkOf: null, calls: [] }));
+const hooks = vi.hoisted((): Hooks => ({
+  failWriteOf: null,
+  foreignOwner: null,
+  failUnlinkOf: null,
+  failSyncOf: null,
+  delayRemovalOf: null,
+  calls: [],
+}));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof FsPromises>();
@@ -58,6 +69,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         if (key === 'sync') {
           return async (): Promise<void> => {
             hooks.calls.push(`sync ${path}`);
+            if (path === hooks.failSyncOf) throw Object.assign(new Error('EIO: i/o error, fsync'), { code: 'EIO' });
             await target.sync();
           };
         }
@@ -71,6 +83,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         return typeof value === 'function' ? (...args: unknown[]): unknown => Reflect.apply(value, target, args) : value;
       },
     });
+  const delayedRemoval = async (path: PathLike): Promise<void> => {
+    if (String(path) !== hooks.delayRemovalOf) return;
+    hooks.delayRemovalOf = null;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  };
   const foreign = async <S extends Stats | BigIntStats>(path: PathLike, stat: () => Promise<S>): Promise<S> => {
     const stats = await stat();
     if (String(path) === hooks.foreignOwner)
@@ -92,12 +109,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     },
     rename: async (from: PathLike, to: PathLike): Promise<void> => {
       hooks.calls.push(`rename ${String(from)} ${String(to)}`);
+      await delayedRemoval(from);
       await real.rename(from, to);
     },
     unlink: async (path: PathLike): Promise<void> => {
       if (hooks.failUnlinkOf !== null && String(path).startsWith(hooks.failUnlinkOf)) {
         throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
       }
+      await delayedRemoval(path);
       await real.unlink(path);
     },
     stat: (path: PathLike) => foreign(path, () => real.stat(path)),
@@ -117,6 +136,8 @@ beforeEach(() => {
   hooks.failWriteOf = null;
   hooks.foreignOwner = null;
   hooks.failUnlinkOf = null;
+  hooks.failSyncOf = null;
+  hooks.delayRemovalOf = null;
   hooks.calls.length = 0;
 });
 
@@ -288,6 +309,14 @@ describe('atomic writes', () => {
     await expect(writeFileAtomic(target, 'x')).rejects.toMatchObject({ code: 'EISDIR' });
   });
 
+  it('completes a write whose directory cannot be synced once the file is replaced', async () => {
+    const file = join(dir, 'f.json');
+    writeFileSync(file, 'old');
+    hooks.failSyncOf = dir;
+    await writeFileAtomic(file, 'new');
+    expect(readFileSync(file, 'utf8')).toBe('new');
+  });
+
   it('syncs the new content before renaming it into place', async () => {
     const file = join(dir, 'f.json');
     await writeFileAtomic(file, 'x');
@@ -426,6 +455,14 @@ describe('start lock', () => {
     expect(holder().nonce).not.toBe('dead');
     await lock.release();
   });
+
+  it('lets only one of two starters reclaim the same stale lock, however their steps interleave', async () => {
+    writeFileSync(lockFile(), JSON.stringify({ pid: deadPid(), nonce: 'dead' }), { mode: 0o600 });
+    // The first reclaimer is slow to remove the stale lock; the second reclaims and takes it meanwhile.
+    hooks.delayRemovalOf = lockFile();
+    const outcomes = await Promise.allSettled([acquireStartLock(lockFile()), acquireStartLock(lockFile())]);
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+  }, 15_000);
 
   it('waits for a live holder and fails after 5 s without taking the lock', async () => {
     const first = await acquireStartLock(lockFile());

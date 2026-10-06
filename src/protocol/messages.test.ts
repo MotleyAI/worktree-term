@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { decodeMessage, encodeMessage, ProtocolError, type Direction } from './index.js';
-import { DIRECTIONS, featWorktree, hello, hosts, liveTerminal, MESSAGE_TYPES, raw, REPO, samples, SHA1, utf8, WT } from './test-samples.js';
+import { decodeCodeResponse, decodeMessage, encodeCodeResponse, encodeMessage, ProtocolError, type Direction } from './index.js';
+import {
+  DIRECTIONS,
+  featWorktree,
+  hello,
+  hosts,
+  liveTerminal,
+  MESSAGE_TYPES,
+  raw,
+  REPO,
+  samples,
+  SHA1,
+  TOKEN,
+  utf8,
+  WT,
+} from './test-samples.js';
 
 const decodes = (dir: Direction, value: unknown): boolean => {
   try {
@@ -293,6 +307,7 @@ describe('value limits', () => {
     'spawn-failed',
     'version-mismatch',
     'not-a-repo',
+    'host-unavailable',
     'internal',
   ];
 
@@ -397,5 +412,84 @@ describe('value limits', () => {
 
   it('rejects an unknown error code', () => {
     expectRejected('daemonToClient', raw({ t: 'error', req: 1, code: 'oops', message: 'x' }));
+  });
+
+  it('accepts the host-unavailable error code from the hub', () => {
+    expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 0, code: 'host-unavailable', message: 'x' })).toBe(true);
+  });
+});
+
+describe('hub link version 3', () => {
+  const entry = hosts[0];
+  const withEntry = (fields: Record<string, unknown>): unknown => ({ t: 'hosts', hosts: [{ ...entry, ...fields }] });
+
+  it('rejects a host entry without instance', () => {
+    const withoutInstance = Object.fromEntries(Object.entries(entry ?? {}).filter(([key]) => key !== 'instance'));
+    expectRejected('hubToBrowser', raw({ t: 'hosts', hosts: [withoutInstance] }));
+  });
+
+  it.each([
+    ['a null instance', null, true],
+    ['a daemon instance', 'A-_9'.repeat(16), true],
+    ['an instance with a space', 'a b', false],
+    ['an empty instance', '', false],
+    ['a 65-char instance', 'a'.repeat(65), false],
+  ])('decodes a host entry with %s: %s', (_name, instance, ok) => {
+    expect(decodes('hubToBrowser', withEntry({ instance }))).toBe(ok);
+  });
+
+  it('decodes a token message from the hub', () => {
+    expect(decodeMessage('hubToBrowser', raw({ t: 'token', token: TOKEN }))).toEqual({ t: 'token', token: TOKEN });
+  });
+
+  it('rejects a token message decoded as a browser-to-hub message', () => {
+    expectRejected('browserToHub', raw({ t: 'token', token: TOKEN }));
+  });
+
+  it.each([
+    ['63 hex digits', 'a'.repeat(63)],
+    ['65 hex digits', 'a'.repeat(65)],
+    ['an uppercase digit', 'A' + 'a'.repeat(63)],
+    ['a non-hex digit', 'g' + 'a'.repeat(63)],
+    ['a number', 1],
+  ])('rejects a token with %s', (_name, token) => {
+    expectRejected('hubToBrowser', raw({ t: 'token', token }));
+  });
+
+  it('rejects a token message with an extra field', () => {
+    expectRejected('hubToBrowser', raw({ t: 'token', token: TOKEN, code: TOKEN }));
+  });
+});
+
+describe('hub code response', () => {
+  it('round-trips through text and bytes', () => {
+    const response = { code: TOKEN };
+    const text = encodeCodeResponse(response);
+    expect(JSON.parse(text)).toEqual(response);
+    expect(decodeCodeResponse(text)).toEqual(response);
+    expect(decodeCodeResponse(utf8(text))).toEqual(response);
+  });
+
+  it('rejects an extra token field', () => {
+    expect(() => decodeCodeResponse(raw({ code: TOKEN, token: TOKEN }))).toThrow(ProtocolError);
+  });
+
+  it.each([
+    ['a 63-digit code', { code: 'a'.repeat(63) }],
+    ['an uppercase code', { code: 'A'.repeat(64) }],
+    ['no code', {}],
+    ['a t field', { t: 'code', code: TOKEN }],
+    ['an array', [TOKEN]],
+    ['null', null],
+  ])('rejects %s', (_name, value) => {
+    expect(() => decodeCodeResponse(raw(value))).toThrow(ProtocolError);
+  });
+
+  it('rejects invalid JSON', () => {
+    expect(() => decodeCodeResponse('{"code":')).toThrow(ProtocolError);
+  });
+
+  it('refuses to encode a malformed code', () => {
+    expect(() => encodeCodeResponse({ code: 'xyz' })).toThrow(ProtocolError);
   });
 });

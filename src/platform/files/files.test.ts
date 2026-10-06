@@ -139,7 +139,37 @@ describe('host paths', () => {
       lock: '/tmp/x/worktree-term/run/box.lock',
       state: '/tmp/x/worktree-term/state.json',
       log: '/tmp/x/worktree-term/daemon.log',
+      configDir: '/home/u/.config/worktree-term',
+      config: '/home/u/.config/worktree-term/config.json',
+      hubToken: '/tmp/x/worktree-term/hub-token',
+      hubLog: '/tmp/x/worktree-term/hub.log',
+      hubLock: '/tmp/x/worktree-term/run/hub.lock',
+      hubRecord: '/tmp/x/worktree-term/run/hub.json',
     });
+  });
+
+  it('honours an absolute XDG_CONFIG_HOME', () => {
+    const paths = hostPaths({ env: { XDG_CONFIG_HOME: '/tmp/c' }, home: '/home/u', host: 'box' });
+    expect(paths.configDir).toBe('/tmp/c/worktree-term');
+    expect(paths.config).toBe('/tmp/c/worktree-term/config.json');
+  });
+
+  it.each([
+    ['relative', { XDG_CONFIG_HOME: 'rel/dir' }],
+    ['empty', { XDG_CONFIG_HOME: '' }],
+    ['unset', {}],
+  ])('falls back to ~/.config when XDG_CONFIG_HOME is %s', (_name, env) => {
+    expect(hostPaths({ env, home: '/home/u', host: 'box' }).config).toBe('/home/u/.config/worktree-term/config.json');
+  });
+
+  it('keeps hub files under the state directory whatever the configuration directory', () => {
+    const paths = hostPaths({ env: { XDG_STATE_HOME: '/s', XDG_CONFIG_HOME: '/c' }, home: '/home/u', host: 'box' });
+    expect([paths.hubToken, paths.hubLog, paths.hubLock, paths.hubRecord]).toEqual([
+      '/s/worktree-term/hub-token',
+      '/s/worktree-term/hub.log',
+      '/s/worktree-term/run/hub.lock',
+      '/s/worktree-term/run/hub.json',
+    ]);
   });
 
   it.each([

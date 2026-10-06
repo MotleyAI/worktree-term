@@ -1,0 +1,115 @@
+import { waitUntil } from '../support/daemon-host.js';
+import { FakeDaemon } from '../support/fake-daemon.js';
+import { byTestId, terminalBox, TID, worktreeEntry } from './contract.js';
+import {
+  expect,
+  isCurrent,
+  LOCAL,
+  makeRepoWith,
+  newTerminal,
+  oneDaemon,
+  openUi,
+  ready,
+  screenOf,
+  stopHub,
+  test,
+  typeLine,
+  waitScreen,
+  xtermOf,
+} from './fixture.js';
+
+test.describe('reconnect and restore', () => {
+  test('a hub restart keeps each terminal object and its screen', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    await typeLine(page, term, "echo KEEP''-MARK");
+    const before = await waitScreen(page, term, 'KEEP-MARK');
+    const xterm = await xtermOf(page, term);
+
+    await stopHub(hub);
+    await expect(page.locator(byTestId(TID.reconnecting))).toBeVisible();
+    const mark = wire.markSent();
+    await hub.startHub();
+    await expect(page.locator(byTestId(TID.reconnecting))).toBeHidden({ timeout: 15_000 });
+    await expect.poll(() => wire.attachesSent(LOCAL, term, mark), { timeout: 10_000 }).toBeGreaterThan(0);
+    await expect.poll(() => screenOf(page, term)).toBe(before);
+    expect(await isCurrent(page, xterm, `${terminalBox(LOCAL, term)} .xterm`)).toBe(true);
+
+    await typeLine(page, term, "echo AFTER''-RESTART");
+    await waitScreen(page, term, 'AFTER-RESTART');
+    expect(await isCurrent(page, xterm, `${terminalBox(LOCAL, term)} .xterm`)).toBe(true);
+  });
+
+  test('a new daemon instance drops the old terminals', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    const xterm = await xtermOf(page, term);
+
+    const old = await oneDaemon(hub);
+    process.kill(old, 'SIGKILL');
+    await waitUntil(
+      () => {
+        const pids = hub.daemonPids();
+        return pids.length === 1 && pids[0] !== old;
+      },
+      'a new daemon',
+      15_000,
+    );
+    await expect.poll(() => xterm.evaluate((e) => e.isConnected), { timeout: 15_000 }).toBe(false);
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(0);
+
+    const fresh = await newTerminal(page);
+    await ready(page, fresh);
+    const freshXterm = await xtermOf(page, fresh);
+    expect(await page.evaluate(([a, b]) => a === b, [xterm, freshXterm] as const)).toBe(false);
+    expect(await xterm.evaluate((e) => e.isConnected)).toBe(false);
+  });
+
+  test('a full-screen program shows the same screen after a reload', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    await typeLine(page, term, "printf '\\033[?1049h\\033[H\\033[2JFULL''-SCREEN-MARK\\n'; sleep 600");
+    const before = await waitScreen(page, term, 'FULL-SCREEN-MARK');
+    expect(before).not.toContain('READY-MARK');
+
+    await page.reload();
+    await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
+    await expect.poll(() => screenOf(page, term), { timeout: 10_000 }).toBe(before);
+  });
+});
+
+test.describe('outdated host', () => {
+  test('restarting an outdated daemon from the page shows the repos again', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    const fake = await FakeDaemon.listen(hub.socket, { protocol: 99, version: '9.9.9' });
+    try {
+      await openUi(hub, page);
+      await expect(page.locator(byTestId(TID.hostOutdated))).toContainText('outdated');
+      let question = '';
+      page.once('dialog', (dialog) => {
+        question = dialog.message();
+        void dialog.accept();
+      });
+      await page.locator(byTestId(TID.restartDaemon)).click();
+      await fake.closed;
+      expect(fake.shutdowns).toBe(1);
+      expect(question).toMatch(/kill/i);
+      expect(question).toMatch(/terminal/i);
+      await expect(page.locator(byTestId(TID.hostOutdated))).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.locator(worktreeEntry(repo))).toBeVisible();
+      await oneDaemon(hub);
+    } finally {
+      await fake.close().catch(() => undefined);
+    }
+  });
+});

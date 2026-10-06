@@ -46,7 +46,7 @@ const expectUsageError = async (result: Result, mentions: RegExp): Promise<void>
 
 describe('wtd --version', () => {
   it('prints the package and protocol versions', async () => {
-    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 2)\n`, stderr: '' });
+    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 3)\n`, stderr: '' });
   });
 });
 
@@ -79,6 +79,10 @@ describe('usage errors', () => {
     await expectUsageError(await wtd('--frob'), /--frob/);
   });
 
+  it.each(['ui', 'hub'])('rejects an argument to %s', async (verb) => {
+    await expectUsageError(await wtd(verb, 'extra'), /extra/);
+  });
+
   it('requires an alias for install-remote', async () => {
     await expectUsageError(await wtd('install-remote'), /alias.*required|required.*alias/i);
   });
@@ -86,8 +90,6 @@ describe('usage errors', () => {
 
 describe('not-yet-implemented commands', () => {
   it.each([
-    ['ui', ['ui']],
-    ['hub', ['hub']],
     ['install-local', ['install-local']],
     ['install-remote', ['install-remote', 'devbox']],
   ])('%s prints "not implemented" and exits 2', async (verb, argv) => {

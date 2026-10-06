@@ -1,0 +1,181 @@
+import { test as base, expect, type BrowserContext, type ElementHandle, type Page } from '@playwright/test';
+import { join } from 'node:path';
+import type { DaemonClient } from '../support/daemon-client.js';
+import { addWorktree, git, makeRepo, waitUntil } from '../support/daemon-host.js';
+import { HubHost } from '../support/hub-host.js';
+import { byTestId, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
+import { installWebglProbe } from './webgl.js';
+import { WireRecorder } from './wire.js';
+
+export { expect };
+
+/** The local host's index. */
+export const LOCAL = 0;
+
+export interface Fixtures {
+  /** An isolated hub host on a free port; nothing started yet. */
+  hub: HubHost;
+  /** Records the default page's WebSocket traffic from its first navigation. */
+  wire: WireRecorder;
+}
+
+export const test = base.extend<Fixtures>({
+  page: async ({ page }, use) => {
+    await page.addInitScript(installWebglProbe);
+    await use(page);
+  },
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixtures must destructure their dependencies
+  hub: async ({}, use) => {
+    const hub = await HubHost.createHub();
+    await use(hub);
+    await hub.cleanup();
+  },
+  wire: async ({ page }, use) => {
+    await use(new WireRecorder(page));
+  },
+});
+
+/** Runs `wtd ui` with the stub browser and returns the URL it opened. */
+export const runUi = async (hub: HubHost): Promise<string> => {
+  const before = hub.browserCalls().length;
+  const ui = hub.wtd(['ui']);
+  const exit = await ui.exited;
+  if (exit.code !== 0) throw new Error(`wtd ui exited ${JSON.stringify(exit)}: ${ui.stderr}`);
+  const call = hub.browserCalls()[before];
+  const arg = call?.args[0];
+  if (arg?.startsWith('--app=') !== true) throw new Error(`unexpected browser call ${JSON.stringify(call)}`);
+  return arg.slice('--app='.length);
+};
+
+/** Opens the UI the way a user does: `wtd ui`, then the URL the browser was given. */
+export const openUi = async (hub: HubHost, page: Page): Promise<void> => {
+  await page.goto(await runUi(hub));
+  await expect(page.locator(byTestId(TID.authMessage))).toHaveCount(0);
+};
+
+/** A further page in `context` with the WebGL probe and a recorder, opened with a fresh code. */
+export const openPage = async (hub: HubHost, context: BrowserContext): Promise<{ page: Page; wire: WireRecorder }> => {
+  const page = await context.newPage();
+  await page.addInitScript(installWebglProbe);
+  const wire = new WireRecorder(page);
+  await page.goto(await hub.pageUrl());
+  return { page, wire };
+};
+
+/** Makes a repo under the host's directory with linked worktrees on the given branches; returns real paths. */
+export const makeRepoWith = (hub: HubHost, name: string, branches: readonly string[]): { repo: string; worktrees: string[] } => {
+  const repo = makeRepo(join(hub.dir, 'repos', name));
+  const worktrees = branches.map((branch) =>
+    addWorktree(repo, join(hub.dir, 'repos', `${name}.worktrees`, branch.replace(/\//g, '-')), branch),
+  );
+  return { repo, worktrees };
+};
+
+/** Adds a detached worktree at `<repo>.worktrees/<dir>` and returns its real path and head. */
+export const detachedWorktree = (repo: string, dir: string): { path: string; head: string } => {
+  const path = `${repo}.worktrees/${dir}`;
+  git(repo, 'worktree', 'add', '-q', '--detach', path);
+  return { path: git(path, 'rev-parse', '--show-toplevel'), head: git(path, 'rev-parse', 'HEAD') };
+};
+
+/** A daemon client that watches `repo` (the daemon must be running). */
+export const watcher = async (hub: HubHost, repo: string): Promise<DaemonClient> => {
+  const client = await hub.client();
+  await client.watch(repo);
+  return client;
+};
+
+/** Creates an idle shell in each worktree through `client`, as the only tab of its layout; returns the ids in order. */
+export const createShells = async (client: DaemonClient, worktrees: readonly string[], tabsEach = 1): Promise<number[][]> => {
+  const ids: number[][] = [];
+  for (const worktree of worktrees) {
+    const terms: number[] = [];
+    for (let i = 0; i < tabsEach; i++) terms.push((await client.create(worktree)).termId); // NOSONAR(S9382) — sequential setup
+    await client.ok({
+      t: 'setLayout',
+      worktree,
+      layout: { tabs: terms.map((term) => ({ id: `t${String(term)}`, root: { term } })), active: 0 },
+    }); // NOSONAR(S9382) — sequential setup
+    ids.push(terms);
+  }
+  return ids;
+};
+
+export const selectRepo = async (page: Page, path: string): Promise<void> => {
+  await page.locator(repoTab(path)).click();
+  await expect(page.locator(repoTab(path))).toHaveAttribute('aria-selected', 'true');
+};
+
+export const selectWorktree = async (page: Page, path: string): Promise<void> => {
+  await page.locator(worktreeEntry(path)).locator(byTestId(TID.worktreeLabel)).click();
+  await expect(page.locator(worktreeEntry(path))).toHaveAttribute('aria-selected', 'true');
+};
+
+/** Paths of the listed sidebar entries, in order. */
+export const listedWorktrees = (page: Page): Promise<string[]> =>
+  page.locator(byTestId(TID.worktree)).evaluateAll((entries) => entries.map((e) => e.getAttribute('title') ?? ''));
+
+/** The terminal id of the selected terminal tab. */
+export const activeTerm = async (page: Page): Promise<number> => {
+  const tab = page.locator(`${byTestId(TID.termTab)}[aria-selected="true"]`);
+  await expect(tab).toHaveCount(1);
+  return Number(await tab.getAttribute('data-term'));
+};
+
+/** Clicks new-terminal and resolves with the new active terminal's id once its container is visible. */
+export const newTerminal = async (page: Page): Promise<number> => {
+  const before = await page.locator(byTestId(TID.termTab)).evaluateAll((tabs) => tabs.map((t) => t.getAttribute('data-term')));
+  await page.locator(byTestId(TID.newTerminal)).click();
+  const tab = page.locator(`${byTestId(TID.termTab)}[aria-selected="true"]`);
+  await expect.poll(async () => (await tab.count()) === 1 && !before.includes(await tab.getAttribute('data-term'))).toBe(true);
+  const termId = Number(await tab.getAttribute('data-term'));
+  await expect(page.locator(terminalBox(LOCAL, termId))).toBeVisible();
+  return termId;
+};
+
+/** Types `line` and Enter into the terminal. */
+export const typeLine = async (page: Page, termId: number, line: string): Promise<void> => {
+  await page.locator(terminalBox(LOCAL, termId)).click();
+  await page.keyboard.type(line);
+  await page.keyboard.press('Enter');
+};
+
+/** The terminal's text through the inspection hook; null without a terminal object. */
+export const screenOf = (page: Page, termId: number, host = LOCAL): Promise<string | null> =>
+  page.evaluate(([h, t]) => window.__wtdInspect?.screen(h, t) ?? null, [host, termId] as const);
+
+/** Waits until the terminal's text contains `pattern`. */
+export const waitScreen = async (page: Page, termId: number, pattern: string, timeout = 10_000): Promise<string> => {
+  await expect.poll(async () => (await screenOf(page, termId)) ?? '', { timeout }).toContain(pattern);
+  return (await screenOf(page, termId)) ?? '';
+};
+
+/** Waits until the shell prompt of a fresh terminal settled, by echoing a marker. */
+export const ready = async (page: Page, termId: number): Promise<void> => {
+  await typeLine(page, termId, "echo READY''-MARK");
+  await waitScreen(page, termId, 'READY-MARK');
+};
+
+/** The terminal's `.xterm` element. */
+export const xtermOf = (page: Page, termId: number, host = LOCAL): Promise<ElementHandle<Element>> => {
+  return page.locator(terminalBox(host, termId)).locator('.xterm').elementHandle();
+};
+
+/** Whether `handle` is in the document and is what `selector` finds. */
+export const isCurrent = (page: Page, handle: ElementHandle<Element>, selector: string): Promise<boolean> =>
+  page.evaluate(([element, sel]) => element.isConnected && document.querySelector(sel) === element, [handle, selector] as const);
+
+/** The pid of this host's daemon once exactly one runs. */
+export const oneDaemon = (hub: HubHost): Promise<number> =>
+  waitUntil(() => {
+    const pids = hub.daemonPids();
+    return pids.length === 1 ? pids[0] : undefined;
+  }, 'exactly one daemon');
+
+/** Sends SIGTERM to the hub named by the hub record and waits until it is gone. */
+export const stopHub = async (hub: HubHost): Promise<void> => {
+  const record = hub.record();
+  if (record === null) throw new Error('no hub record');
+  process.kill(record.pid, 'SIGTERM');
+  await waitUntil(() => hub.hubPids().length === 0, 'the hub to exit', 10_000);
+};

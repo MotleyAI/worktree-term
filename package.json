@@ -17,19 +17,21 @@
     "typecheck": "tsc -b",
     "lint": "tsc -b && eslint . --max-warnings 0",
     "format": "prettier --write .",
-    "test": "vitest run --project unit --project process --project architecture && playwright test --pass-with-no-tests",
+    "test": "vitest run --project unit --project process --project architecture && playwright test",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "0.14.1",
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/headless": "6.0.0",
+    "ws": "8.22.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "~1.63.0",
     "@types/node": "^22.20.5",
+    "@types/ws": "8.18.2",
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",

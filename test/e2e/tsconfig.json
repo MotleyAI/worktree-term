@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "rootDir": "../..",
+    "outDir": "../../build/types/e2e",
+    "tsBuildInfoFile": "../../build/types/e2e.tsbuildinfo"
+  },
+  "include": ["**/*.ts"],
+  "references": [{ "path": "../../src/protocol" }, { "path": "../../tsconfig.test.json" }]
+}

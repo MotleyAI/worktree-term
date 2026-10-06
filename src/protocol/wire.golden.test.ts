@@ -109,6 +109,10 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'host', host: 65536, m: { t: 'detach', req: 1, termId: 1 } },
   { t: 'hosts', hosts: [{ idx: 0, name: 'local', remote: false, status: 'up', daemonVersion: null, repos: [] }] },
   { t: 'error', req: null, code: 'internal', message: 'x', host: 1 },
+  { t: 'error', req: 1, host: 0, code: 'host-unavailable', message: 'x' },
+  { t: 'token', token: 'a'.repeat(63) },
+  { t: 'token', token: 'A'.repeat(64) },
+  { t: 'hosts', hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', repos: [] }] },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -178,6 +182,10 @@ describe('wire golden', () => {
     const current = currentSnapshot();
     expect(wireViolations(previousSchema.parse(wireJson), current)).toEqual([]);
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
+  });
+
+  it('is blessed for protocol version 3', () => {
+    expect(previousSchema.parse(wireJson).protocolVersion).toBe(3);
   });
 
   it('records every sample as valid in its own direction', () => {

@@ -4,6 +4,8 @@
     { "path": "./src/protocol" },
     { "path": "./tsconfig.node.json" },
     { "path": "./src/web" },
-    { "path": "./tsconfig.test.json" }
+    { "path": "./tsconfig.test.json" },
+    { "path": "./test/e2e" },
+    { "path": "./src/web/tsconfig.test.json" }
   ]
 }

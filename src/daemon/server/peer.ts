@@ -14,6 +14,8 @@ import { ConnectionGate, type GateOutcome } from './connection.js';
 /** Bytes queued to one connection but not yet written, above which it is closed. */
 export const MAX_QUEUED = 64 * 1024 * 1024;
 const MAX_ERROR_MESSAGE = 1024;
+/** Longest a closing connection may take to flush its queue. */
+export const END_GRACE_MS = 1000;
 
 export type Event = MessageOf<'daemonToClient'>;
 
@@ -74,23 +76,31 @@ export class Peer {
   /** Resolves once at most `limit` bytes are queued, or the connection closed. */
   async drained(limit: number): Promise<void> {
     while (!this.ended && this.socket.writableLength > limit) {
-      await new Promise<void>((resolve) => {
-        const done = (): void => {
-          this.socket.off('drain', done);
-          this.socket.off('close', done);
-          resolve();
-        };
-        this.socket.on('drain', done);
-        this.socket.on('close', done);
-      });
+      await this.drainOrClose(); // NOSONAR(S9382) — one drain may not shorten the queue enough
     }
   }
 
-  /** Flushes what is queued, then closes. */
+  private drainOrClose(): Promise<void> {
+    return new Promise((resolve) => {
+      const done = (): void => {
+        this.socket.off('drain', done);
+        this.socket.off('close', done);
+        resolve();
+      };
+      this.socket.on('drain', done);
+      this.socket.on('close', done);
+    });
+  }
+
+  /** Flushes what is queued, then closes; a client not reading it is cut off after END_GRACE_MS. */
   end(): void {
     if (this.ended) return;
     this.ended = true;
+    const cutOff = setTimeout(() => {
+      this.socket.destroy();
+    }, END_GRACE_MS);
     this.socket.end(() => {
+      clearTimeout(cutOff);
       this.socket.destroy();
     });
   }

@@ -86,6 +86,13 @@ describe('discoverRepos', () => {
     }
   });
 
+  it('reports repos under a root given through a symbolic link by their real paths', async () => {
+    const one = repo('real', 'one');
+    const link = join(root, 'link');
+    symlinkSync(join(root, 'real'), link);
+    expect(await discoverRepos([link, `${root}/real/.`], 1)).toEqual([one]);
+  });
+
   it('skips missing roots', async () => {
     const one = repo('one');
     expect(await discoverRepos([join(root, 'missing'), root], 1)).toEqual([one]);

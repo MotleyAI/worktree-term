@@ -41,10 +41,12 @@ const realOrNull = async (path: string): Promise<string | null> => {
   }
 };
 
-/** Checks that `repo` is a repository's main worktree or bare directory; returns its common dir. */
+/**
+ * Checks that `repo` is exactly the main worktree (or bare directory) path git lists, a real path,
+ * so a repo has one name; returns its common dir.
+ */
 export const checkRepo = async (repo: string): Promise<string> => {
-  const real = await realOrNull(repo);
-  if (real === null) throw new NotARepoError(`${repo} does not exist`);
+  if ((await realOrNull(repo)) === null) throw new NotARepoError(`${repo} does not exist`);
   let listing: string;
   let common: string;
   try {
@@ -53,6 +55,6 @@ export const checkRepo = async (repo: string): Promise<string> => {
     throw new NotARepoError(`${repo} is not a git repository`, { cause: error });
   }
   const main = parsePorcelain(listing)[0];
-  if (main === undefined || (await realOrNull(main.path)) !== real) throw new NotARepoError(`${repo} is not a repository's main worktree`);
+  if (main?.path !== repo) throw new NotARepoError(`${repo} is not a repository's main worktree path`);
   return common;
 };

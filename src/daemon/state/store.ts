@@ -89,7 +89,7 @@ export class StateStore {
   /** Content of the last successful write (or of the loaded file). */
   private committed: Repos;
   private current: Repos;
-  private queued: Pending[] = [];
+  private readonly queued: Pending[] = [];
   private writing: Promise<void> | null = null;
 
   private constructor(
@@ -156,7 +156,7 @@ export class StateStore {
 
   /** Resolves once no write is in flight or queued. */
   async flush(): Promise<void> {
-    while (this.writing !== null) await this.writing;
+    while (this.writing !== null) await this.writing; // NOSONAR(S9382) — each write may queue the next
   }
 
   private change(change: Change): Promise<void> {

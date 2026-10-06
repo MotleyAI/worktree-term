@@ -15,6 +15,8 @@ export class InputWriter {
   private unaccepted = 0;
   private writing = false;
   private stopped = false;
+  /** Callers waiting for the write in flight to finish after a stop. */
+  private readonly idle: (() => void)[] = [];
 
   constructor(private readonly fd: number) {}
 
@@ -36,13 +38,23 @@ export class InputWriter {
     this.unaccepted = 0;
   }
 
+  /** Stops, then calls `then` once no write is in flight, so the fd may be closed. */
+  stopThen(then: () => void): void {
+    this.stop();
+    if (this.writing) this.idle.push(then);
+    else then();
+  }
+
   private pump(): void {
     const chunk = this.queue[0];
     if (this.writing || this.stopped || chunk === undefined) return;
     this.writing = true;
     write(this.fd, chunk, 0, chunk.length, null, (error, written) => {
       this.writing = false;
-      if (this.stopped) return;
+      if (this.stopped) {
+        for (const then of this.idle.splice(0)) then();
+        return;
+      }
       if (error !== null) {
         // Any error but EAGAIN means the PTY is gone; its input is discarded like input to an exited terminal.
         if (!isAgain(error)) this.stop();

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worktree } from '../../src/protocol/index.js';
@@ -129,6 +129,22 @@ describe('watchRepo', () => {
   it('fails with not-a-repo for the path of a linked worktree', async () => {
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'wt');
     expect(await (await host.client()).fails({ t: 'watchRepo', repo: wt })).toBe('not-a-repo');
+  });
+
+  it.each([
+    [
+      'a symbolic link',
+      (): string => {
+        const link = join(host.dir, 'link');
+        symlinkSync(repo, link);
+        return link;
+      },
+    ],
+    ['a "." segment', (): string => `${repo}/.`],
+  ])('fails with not-a-repo for a repo named through %s', async (_name, alias) => {
+    const client = await host.client();
+    expect(await client.fails({ t: 'watchRepo', repo: alias() })).toBe('not-a-repo');
+    expect((await client.watch(repo)).repo).toBe(repo);
   });
 
   it('fails with not-a-repo for a subdirectory of a repository', async () => {
@@ -332,7 +348,7 @@ describe('worktree change events', () => {
     writeFileSync(join(repo, 'file.txt'), 'one');
     git(repo, 'add', 'file.txt');
     writeFileSync(join(repo, 'file.txt'), 'two');
-    await a.expectNone('worktreesChanged', () => true, 800);
+    await expect(a.expectNone('worktreesChanged', () => true, 800)).resolves.toBeUndefined();
   });
 
   it('ends every subscription with internal when the repo directory is deleted', async () => {

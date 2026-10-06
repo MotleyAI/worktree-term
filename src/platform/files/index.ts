@@ -70,6 +70,8 @@ export const preparePrivateDirs = async (paths: HostPaths): Promise<void> => {
   await privateDir(paths.runDir);
 };
 
+const ignore = (): void => undefined;
+
 const temporaryOf = (path: string): string => `${path}.tmp-${randomBytes(6).toString('hex')}`;
 
 const syncDir = async (dir: string): Promise<void> => {
@@ -89,8 +91,9 @@ const writeTemporary = async (path: string, data: string): Promise<string> => {
     await handle.writeFile(data);
     await handle.sync();
   } catch (error) {
-    await handle.close();
-    await unlink(temporary);
+    // Best effort: the write's error is the one to report.
+    await handle.close().catch(ignore);
+    await unlink(temporary).catch(ignore);
     throw error;
   }
   await handle.close();
@@ -103,7 +106,7 @@ export const writeFileAtomic = async (path: string, data: string): Promise<void>
   try {
     await rename(temporary, path);
   } catch (error) {
-    await unlink(temporary);
+    await unlink(temporary).catch(ignore);
     throw error;
   }
   await syncDir(dirname(path));
@@ -223,19 +226,18 @@ export const acquireStartLock = async (path: string): Promise<StartLock> => {
   const holder: Holder = { pid: process.pid, nonce: randomBytes(16).toString('hex') };
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
-    if (await tryCreate(path, holder)) {
-      return { release: () => removeIfUnchanged(path, JSON.stringify(holder)) };
-    }
-    const text = await readFileIfExists(path);
+    const created = await tryCreate(path, holder); // NOSONAR(S9382) — retry loop
+    if (created) return { release: () => removeIfUnchanged(path, JSON.stringify(holder)) };
+    const text = await readFileIfExists(path); // NOSONAR(S9382) — retry loop
     const current = text === null ? null : parseHolder(text);
     if (text !== null && current !== null && !isAlive(current.pid)) {
-      await removeIfUnchanged(path, text);
+      await removeIfUnchanged(path, text); // NOSONAR(S9382) — retry loop
       continue;
     }
     if (Date.now() >= deadline) {
       const by = current === null ? '' : ` by process ${String(current.pid)}`;
       throw new Error(`start lock ${path} is held${by}`);
     }
-    await sleep(LOCK_RETRY_MS);
+    await sleep(LOCK_RETRY_MS); // NOSONAR(S9382) — retry loop
   }
 };

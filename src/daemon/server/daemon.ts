@@ -63,9 +63,15 @@ export class Daemon {
   private readonly peers = new Set<Peer>();
   private readonly repos = new Map<string, RepoEntry>();
   private readonly starting = new Map<string, Promise<RepoEntry>>();
+  /** Connections waiting per repo for its watch to start; a started watch is kept while any wait. */
+  private readonly waiting = new Map<string, number>();
   private readonly terminals = new Map<number, TermEntry>();
+  /** Terminals being started per repo; they count against MAX_TERMINALS. */
+  private readonly spawning = new Map<string, number>();
+  private readonly spawns = new Set<Promise<TerminalProcess>>();
   /** Terminals closed but not yet reaped. */
   private readonly reaping = new Set<Promise<void>>();
+  private stopping = false;
   private nextTermId = 1;
   private nextPeerId = 1;
 
@@ -84,12 +90,18 @@ export class Daemon {
     peer.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: this.options.version, instance: this.options.instance });
   }
 
-  /** Closes every terminal, waits until each is reaped and state is written, then ends every connection. */
+  /**
+   * Refuses further requests, lets terminal and watch starts in flight finish, closes every
+   * terminal and watch, waits until each terminal is reaped and state is written, then ends every
+   * connection.
+   */
   async shutdown(): Promise<void> {
-    for (const term of [...this.terminals.values()]) this.closeTerminal(term);
+    this.stopping = true;
+    await Promise.allSettled([...this.starting.values(), ...this.spawns]);
+    for (const term of this.terminals.values()) this.closeTerminal(term);
     for (const entry of this.repos.values()) entry.watch.close();
     this.repos.clear();
-    while (this.reaping.size > 0) await Promise.all(this.reaping);
+    while (this.reaping.size > 0) await Promise.all(this.reaping); // NOSONAR(S9382) — re-checks for closes started meanwhile
     await this.options.store.flush();
     for (const peer of this.peers) peer.end();
   }
@@ -164,6 +176,7 @@ export class Daemon {
   }
 
   private async handle(peer: Peer, m: Correlated): Promise<void> {
+    if (this.stopping) throw new RequestError('internal', 'the daemon is shutting down');
     switch (m.t) {
       case 'watchRepo':
         await this.watchRepo(peer, m.repo);
@@ -204,9 +217,17 @@ export class Daemon {
   // Repos and worktrees.
 
   private async watchRepo(peer: Peer, repo: string): Promise<void> {
-    const entry = this.repos.get(repo) ?? (await this.startWatch(repo));
+    let entry = this.repos.get(repo);
+    if (entry === undefined) {
+      increment(this.waiting, repo);
+      try {
+        entry = await this.startWatch(repo);
+      } finally {
+        decrement(this.waiting, repo);
+      }
+    }
     if (peer.closed) {
-      if (entry.watchers.size === 0) this.stopWatch(repo);
+      if (entry.watchers.size === 0 && !this.waiting.has(repo)) this.stopWatch(repo);
       return;
     }
     entry.watchers.add(peer);
@@ -316,24 +337,32 @@ export class Daemon {
 
   private async createTerm(peer: Peer, m: Extract<Correlated, { t: 'createTerm' }>): Promise<void> {
     const repo = this.repoOfWorktree(peer, m.worktree);
-    if (this.terminalsOf(repo).length >= MAX_TERMINALS) throw new RequestError('busy', `${repo} has ${String(MAX_TERMINALS)} terminals`);
+    if (this.terminalsOf(repo).length + (this.spawning.get(repo) ?? 0) >= MAX_TERMINALS) {
+      throw new RequestError('busy', `${repo} has ${String(MAX_TERMINALS)} terminals`);
+    }
     let termId = 0;
+    const spawn = this.options.services.spawnTerminal(
+      { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env: this.options.env },
+      {
+        activity: (unseen, bell) => {
+          this.broadcast(repo, { t: 'activity', termId, unseen, bell });
+        },
+        exited: (code, signal) => {
+          this.broadcast(repo, { t: 'termExited', termId, code, signal });
+        },
+      },
+    );
+    increment(this.spawning, repo);
+    this.spawns.add(spawn);
     let spawned: TerminalProcess;
     try {
-      spawned = await this.options.services.spawnTerminal(
-        { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env: this.options.env },
-        {
-          activity: (unseen, bell) => {
-            this.broadcast(repo, { t: 'activity', termId, unseen, bell });
-          },
-          exited: (code, signal) => {
-            this.broadcast(repo, { t: 'termExited', termId, code, signal });
-          },
-        },
-      );
+      spawned = await spawn;
     } catch (error) {
       if (error instanceof SpawnError) throw new RequestError('spawn-failed', error.message);
       throw error;
+    } finally {
+      decrement(this.spawning, repo);
+      this.spawns.delete(spawn);
     }
     termId = this.nextTermId++;
     const term: TermEntry = { termId, repo, worktree: m.worktree, preset: m.preset, process: spawned };
@@ -476,11 +505,21 @@ export class Daemon {
 
   private disconnect(peer: Peer): void {
     this.peers.delete(peer);
-    for (const repo of [...peer.watched]) this.unsubscribe(peer, repo);
+    for (const repo of peer.watched) this.unsubscribe(peer, repo);
     for (const term of this.terminals.values()) term.process.detach(peer.id);
     this.showOnly(peer, []);
   }
 }
+
+const increment = (counts: Map<string, number>, key: string): void => {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+};
+
+const decrement = (counts: Map<string, number>, key: string): void => {
+  const left = (counts.get(key) ?? 1) - 1;
+  if (left === 0) counts.delete(key);
+  else counts.set(key, left);
+};
 
 const describe = (term: TermEntry): Terminal => ({
   termId: term.termId,

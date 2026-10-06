@@ -7,7 +7,7 @@ import { isAbsolute } from 'node:path';
 import { MAX_FRAME } from '../../protocol/index.js';
 import { FlowControl, type AckResult } from './flow.js';
 import { InputWriter } from './input.js';
-import { guardStream, type StreamGuard } from './stream.js';
+import { drainFd, guardStream, type StreamGuard } from './stream.js';
 
 const SCROLLBACK = 5000;
 const KILL_AFTER_MS = 5000;
@@ -127,7 +127,18 @@ export class TerminalProcess {
       this.onBell();
     });
     this.input = new InputWriter(fd);
-    this.stream = guardStream(pty, () => this.ptyPaused);
+    // Destroying closes the fd: first read the output still in it, and let a write in flight
+    // finish, as it could land on a reused fd.
+    this.stream = guardStream(
+      pty,
+      () => this.ptyPaused,
+      (destroy) => {
+        drainFd(fd, (data) => {
+          this.onOutput(data);
+        });
+        this.input.stopThen(destroy);
+      },
+    );
     pty.onData((data) => {
       this.onOutput(data);
     });
@@ -227,7 +238,7 @@ export class TerminalProcess {
    */
   close(): Promise<void> {
     this.closing = true;
-    for (const id of [...this.consumers.keys()]) this.supersede(id);
+    for (const id of this.consumers.keys()) this.supersede(id);
     this.input.stop();
     if (this.evictTimer !== null) clearTimeout(this.evictTimer);
     if (this.ptyPaused) {
@@ -260,10 +271,10 @@ export class TerminalProcess {
     this.flow.sent(id, offset + data.length);
   }
 
-  private onOutput(data: string): void {
+  private onOutput(data: string | Uint8Array): void {
+    this.stream.received();
     if (this.closing) return;
-    const chunk: unknown = data;
-    const bytes = chunk instanceof Uint8Array ? chunk : Buffer.from(data);
+    const bytes = data instanceof Uint8Array ? data : Buffer.from(data);
     const offset = this.flow.produced;
     this.flow.output(bytes.length);
     this.mirror.write(bytes, () => {

@@ -90,6 +90,7 @@ describe('terminal creation', () => {
     const term = await started(a, null);
     a.sendInput(term.termId, 'pwd\r');
     await a.waitOutput(term.termId, `${wt}\r\n`);
+    expect(a.view(term.termId).text()).toContain(`${wt}\r\n`);
   });
 
   it('runs a command in a login interactive shell with TERM and COLORTERM set', async () => {
@@ -418,6 +419,7 @@ describe('input', () => {
     const term = await started(a, null);
     a.sendInput(term.termId, "echo h''i\r");
     await a.waitOutput(term.termId, 'hi\r\n');
+    expect(a.view(term.termId).text()).toContain('hi\r\n');
   });
 
   it('writes input frames to the PTY in order', async () => {
@@ -495,7 +497,7 @@ describe('activity', () => {
 
   it('flags a bell while hidden', async () => {
     const term = await a.create(wt, { command: "sleep 0.3; printf '\\a'; exec sleep 60" });
-    await a.waitFor('activity', (m) => m.termId === term.termId && m.bell);
+    expect(await a.waitFor('activity', (m) => m.termId === term.termId && m.bell)).toMatchObject({ bell: true });
   });
 
   it('clears both flags when shown and sends only changes', async () => {
@@ -529,7 +531,7 @@ describe('activity', () => {
     await sleep(200);
     from = b.mark();
     b.sendInput(term.termId, 'echo after-leave\r');
-    await b.waitFor('activity', (m) => m.unseen, { from });
+    expect(await b.waitFor('activity', (m) => m.unseen, { from })).toMatchObject({ termId: term.termId, unseen: true });
   });
 
   it('withdraws visibility when the showing client unwatches the repo', async () => {
@@ -541,7 +543,7 @@ describe('activity', () => {
     await a.ok({ t: 'unwatchRepo', repo });
     from = b.mark();
     b.sendInput(term.termId, 'echo after-unwatch\r');
-    await b.waitFor('activity', (m) => m.unseen, { from });
+    expect(await b.waitFor('activity', (m) => m.unseen, { from })).toMatchObject({ termId: term.termId, unseen: true });
   });
 
   it('ignores visibility from a connection that does not watch the repo, and unknown ids', async () => {
@@ -556,7 +558,7 @@ describe('activity', () => {
     await sleep(200);
     const later = b.mark();
     b.sendInput(term.termId, 'echo hidden\r');
-    await b.waitFor('activity', (m) => m.unseen, { from: later });
+    expect(await b.waitFor('activity', (m) => m.unseen, { from: later })).toMatchObject({ termId: term.termId, unseen: true });
     await outsider.expectNone('error', () => true, 200);
   });
 });
@@ -710,7 +712,11 @@ describe('persistence and pruning', () => {
     await daemon.exited;
     writeFileSync(host.statePath, '{"version":1,"repos":[');
     daemon = await host.start();
-    const names = readdirSync(host.stateDir).filter((n) => n.startsWith('state.json.corrupt-'));
+    // The socket answers before the state is loaded; connections wait for it.
+    const names = await waitUntil(() => {
+      const moved = readdirSync(host.stateDir).filter((n) => n.startsWith('state.json.corrupt-'));
+      return moved.length > 0 && moved;
+    }, 'the corrupt state file moved aside');
     expect(names).toHaveLength(1);
     expect((await (await host.client()).watch(repo)).checked).toEqual([]);
   });

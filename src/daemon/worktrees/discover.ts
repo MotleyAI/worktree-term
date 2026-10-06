@@ -1,4 +1,4 @@
-import { lstat, readdir, stat } from 'node:fs/promises';
+import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /** Most repositories one discovery reports. */
@@ -24,6 +24,12 @@ const isRepo = async (dir: string): Promise<boolean> => {
   return head && objects && refs;
 };
 
+/** Locale-independent order, as the default sort gives for strings. */
+const byCodeUnits = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
+
 /** Subdirectories worth searching, sorted: no symbolic links, hidden directories or node_modules. */
 const children = async (dir: string): Promise<string[]> => {
   try {
@@ -31,17 +37,18 @@ const children = async (dir: string): Promise<string[]> => {
     return entries
       .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
       .map((e) => e.name)
-      .sort();
+      .sort(byCodeUnits);
   } catch {
     return [];
   }
 };
 
-const isDirectory = async (path: string): Promise<boolean> => {
+/** The real path of `path` if it is a directory, else null. */
+const realDirectory = async (path: string): Promise<string | null> => {
   try {
-    return (await stat(path)).isDirectory();
+    return (await stat(path)).isDirectory() ? await realpath(path) : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -58,10 +65,11 @@ export const discoverRepos = async (roots: readonly string[], depth: number): Pr
       return;
     }
     if (level >= depth) return;
-    for (const name of await children(dir)) await visit(join(dir, name), level + 1);
+    for (const name of await children(dir)) await visit(join(dir, name), level + 1); // NOSONAR(S9382) — ordered walk keeps the cap deterministic
   };
   for (const root of roots) {
-    if (await isDirectory(root)) await visit(root, 0);
+    const real = await realDirectory(root); // NOSONAR(S9382) — ordered walk
+    if (real !== null) await visit(real, 0); // NOSONAR(S9382) — ordered walk
   }
-  return [...found].sort();
+  return [...found].sort(byCodeUnits);
 };

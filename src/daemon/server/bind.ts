@@ -71,9 +71,16 @@ export const bindSocket = async (paths: HostPaths): Promise<Listener> => {
     const bound = join(paths.runDir, randomBytes(2).toString('hex'));
     await removeFile(bound);
     await listen(server, bound);
-    await makeOwnerOnly(bound);
-    await renameFile(bound, paths.socket);
-    identity = await fileIdentity(paths.socket);
+    try {
+      await makeOwnerOnly(bound);
+      await renameFile(bound, paths.socket);
+      identity = await fileIdentity(paths.socket);
+    } catch (error) {
+      server.close();
+      for (const socket of early.splice(0)) socket.destroy();
+      await removeFile(bound).catch(() => undefined);
+      throw error;
+    }
   } finally {
     await lock.release();
   }

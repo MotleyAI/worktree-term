@@ -45,26 +45,30 @@ const startDaemon = async (paths: HostPaths, command: readonly string[]): Promis
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The connected socket, or the error when no daemon serves `path`; other failures throw. */
+const connectIfServed = async (path: string): Promise<Socket | Error> => {
+  try {
+    return await tryConnect(path);
+  } catch (error) {
+    if (error instanceof Error && isAbsent(error)) return error;
+    throw error;
+  }
+};
+
 /** Connects to this host's daemon, starting `command` first when no daemon serves the socket. */
 export const dial = async (paths: HostPaths, command: readonly string[]): Promise<Socket> => {
-  try {
-    return await tryConnect(paths.socket);
-  } catch (error) {
-    if (!isAbsent(error)) throw error;
-  }
+  const running = await connectIfServed(paths.socket);
+  if (!(running instanceof Error)) return running;
   const started = await startDaemon(paths, command);
   const deadline = Date.now() + START_WAIT_MS;
   for (;;) {
     await sleep(RETRY_MS);
-    try {
-      return await tryConnect(paths.socket);
-    } catch (error) {
-      if (!isAbsent(error)) throw error;
-      if (Date.now() >= deadline) {
-        const spawnFailure = started.failure();
-        const detail = spawnFailure === null ? '' : ` (${spawnFailure.message})`;
-        throw new Error(`daemon did not start; see ${paths.log}${detail}`, { cause: error });
-      }
+    const result = await connectIfServed(paths.socket); // NOSONAR(S9382) — retries until the daemon listens
+    if (!(result instanceof Error)) return result;
+    if (Date.now() >= deadline) {
+      const spawnFailure = started.failure();
+      const detail = spawnFailure === null ? '' : ` (${spawnFailure.message})`;
+      throw new Error(`daemon did not start; see ${paths.log}${detail}`, { cause: result });
     }
   }
 };

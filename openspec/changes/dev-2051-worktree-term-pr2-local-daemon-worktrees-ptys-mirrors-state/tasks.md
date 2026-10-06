@@ -44,3 +44,7 @@
 ## 7. Final gates
 
 - [x] 7.1 `pnpm test` green; `la-typecheck`, `la-arch-check`, `likec4 validate architecture` exit 0; `pnpm build` succeeds; `openspec validate dev-2051-worktree-term-pr2-local-daemon-worktrees-ptys-mirrors-state --strict` passes
+
+## 8. Review fixes
+
+- [x] 8.1 Canonical repo names: `watchRepo` accepts only the listed main worktree path; discovery reports real paths; tests for both

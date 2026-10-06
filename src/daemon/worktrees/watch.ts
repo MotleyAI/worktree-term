@@ -100,13 +100,7 @@ class RepoWatch implements WorktreeWatch {
     const admin = join(this.common, 'worktrees');
     const targets = this.targets(worktrees);
     for (const name of await this.adminEntries(admin)) targets.push({ path: join(admin, name), recursive: false, only: null });
-    const wanted = new Set(targets.map((t) => t.path));
-    for (const [path, { watcher }] of this.watched) {
-      if (!wanted.has(path)) {
-        watcher.close();
-        this.watched.delete(path);
-      }
-    }
+    this.unwatchAllBut(new Set(targets.map((t) => t.path)));
     for (const target of targets) {
       const inode = await inodeOf(target.path);
       if (this.closed) return;
@@ -118,7 +112,16 @@ class RepoWatch implements WorktreeWatch {
         if (target.path === this.common) throw new Error(`${this.common} is gone`);
         continue;
       }
-      this.watched.set(target.path, { watcher: this.watch(target), inode });
+      const watcher = this.watch(target);
+      if (watcher !== null) this.watched.set(target.path, { watcher, inode });
+    }
+  }
+
+  private unwatchAllBut(wanted: ReadonlySet<string>): void {
+    for (const [path, { watcher }] of this.watched) {
+      if (wanted.has(path)) continue;
+      watcher.close();
+      this.watched.delete(path);
     }
   }
 
@@ -131,10 +134,18 @@ class RepoWatch implements WorktreeWatch {
     }
   }
 
-  private watch(target: Target): FSWatcher {
-    const watcher = watch(target.path, { recursive: target.recursive }, (_event, name) => {
-      if (target.only === null || (name !== null && target.only.has(name))) this.schedule();
-    });
+  /** Watches `target`; null when it vanished since it was found, so a refresh is scheduled instead. */
+  private watch(target: Target): FSWatcher | null {
+    let watcher: FSWatcher;
+    try {
+      watcher = watch(target.path, { recursive: target.recursive }, (_event, name) => {
+        if (target.only === null || (name !== null && target.only.has(name))) this.schedule();
+      });
+    } catch (error) {
+      if (!isMissing(error) || target.path === this.common) throw error;
+      this.schedule();
+      return null;
+    }
     watcher.on('error', () => {
       watcher.close();
       this.watched.delete(target.path);

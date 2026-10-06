@@ -53,7 +53,7 @@ Frames queued to one connection but not yet written to its socket SHALL be bound
 - **THEN** the daemon's memory for that connection stays bounded and the PTY keeps running for other clients
 
 ### Requirement: Repo watching
-`watchRepo{repo}` SHALL succeed iff `git worktree list` succeeds for `repo` and `repo` resolves to the same real path as the repo's main worktree; otherwise it SHALL fail with `not-a-repo`. On success the daemon SHALL send `repoState` then `done`; watching an already watched repo SHALL send both again. `repoState` SHALL hold the current worktree list, every live terminal of the repo (including terminals whose worktree has vanished), the repo's checked worktree paths and its layouts. A repo with more than 1024 worktrees SHALL fail with `internal`. `unwatchRepo` for a repo this connection does not watch SHALL fail with `not-watched`; otherwise it SHALL end the subscription and detach this connection from that repo's terminals.
+`watchRepo{repo}` SHALL succeed iff `git worktree list` succeeds for `repo` and `repo` equals the main worktree path it lists, which is a real path; otherwise it SHALL fail with `not-a-repo`. A repo SHALL therefore have exactly one name, shared by every connection. On success the daemon SHALL send `repoState` then `done`; watching an already watched repo SHALL send both again. `repoState` SHALL hold the current worktree list, every live terminal of the repo (including terminals whose worktree has vanished), the repo's checked worktree paths and its layouts. A repo with more than 1024 worktrees SHALL fail with `internal`. `unwatchRepo` for a repo this connection does not watch SHALL fail with `not-watched`; otherwise it SHALL end the subscription and detach this connection from that repo's terminals.
 
 #### Scenario: Watch a repo
 - **WHEN** a client watches a repo with two worktrees
@@ -65,6 +65,10 @@ Frames queued to one connection but not yet written to its socket SHALL be bound
 
 #### Scenario: Linked worktree path is not a repo
 - **WHEN** a client watches the path of a linked worktree
+- **THEN** the request fails with `not-a-repo`
+
+#### Scenario: Alias of a repo is not a repo
+- **WHEN** a client watches a repo through a symbolic link or a path with a `.` segment
 - **THEN** the request fails with `not-a-repo`
 
 #### Scenario: Unwatch without watch
@@ -110,7 +114,7 @@ While a repo is watched, the daemon SHALL send every watcher `worktreesChanged` 
 - **THEN** no `worktreesChanged` is sent
 
 ### Requirement: Repo discovery
-`discoverRepos{roots, depth}` SHALL return, sorted and without duplicates, the repositories found at most `depth` directory levels below each root, the root itself counting as level 0. A repository SHALL be a directory containing a `.git` directory, or a bare repository. Directories containing a `.git` file SHALL NOT be reported. The search SHALL NOT descend into a found repository, a symbolic link, a hidden directory or `node_modules`, and SHALL skip missing roots and unreadable directories. Directories SHALL be visited in sorted order and the result SHALL hold at most the first 4096 repositories in that order.
+`discoverRepos{roots, depth}` SHALL return, sorted and without duplicates, the repositories found at most `depth` directory levels below each root, the root itself counting as level 0. A repository SHALL be a directory containing a `.git` directory, or a bare repository. Directories containing a `.git` file SHALL NOT be reported. The search SHALL NOT descend into a found repository, a symbolic link, a hidden directory or `node_modules`, and SHALL skip missing roots and unreadable directories. Directories SHALL be visited in sorted order and the result SHALL hold at most the first 4096 repositories in that order. Each root SHALL be resolved to its real path before the search, so every reported repository is a real path.
 
 #### Scenario: Depth respected
 - **WHEN** repos exist at levels 1 and 3 below a root and `depth` is 2
@@ -123,6 +127,10 @@ While a repo is watched, the daemon SHALL send every watcher `worktreesChanged` 
 #### Scenario: Deterministic cap
 - **WHEN** more than 4096 repos exist below a root
 - **THEN** two runs report the same 4096 repos
+
+#### Scenario: Root through a symbolic link
+- **WHEN** a root is a symbolic link to a directory containing a repo
+- **THEN** the repo is reported by its real path, which `watchRepo` accepts
 
 ### Requirement: Terminal creation
 `createTerm` SHALL fail with `unknown-worktree` unless the worktree is in the current list of a repo this connection watches, and with `busy` if that repo already has 1024 live terminals. Otherwise the daemon SHALL start `$SHELL -l -i` when `command` is null, or `$SHELL -l -i -c <command>` otherwise (`/bin/sh` when `SHELL` is unset or not absolute), in the worktree directory, with `TERM=xterm-256color` and `COLORTERM=truecolor`, at the requested size. A failure to start SHALL fail with `spawn-failed`. Terminal ids SHALL count up from 1 and never be reused within a daemon instance. `preset` SHALL be stored and reported as given. The requester SHALL receive `termCreated` with its `req`; every other watcher of the repo SHALL receive `termCreated` with `req` null. Creating a terminal SHALL NOT attach it.

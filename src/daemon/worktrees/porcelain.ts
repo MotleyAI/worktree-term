@@ -4,41 +4,43 @@ const HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const UNBORN = /^0+$/;
 const BRANCH_PREFIX = 'refs/heads/';
 
+const applyAttribute = (worktree: Worktree, line: string): void => {
+  const space = line.indexOf(' ');
+  const key = space < 0 ? line : line.slice(0, space);
+  const value = space < 0 ? '' : line.slice(space + 1);
+  switch (key) {
+    case 'HEAD':
+      if (!HEAD.test(value)) throw new Error(`invalid HEAD ${JSON.stringify(value)}`);
+      worktree.head = UNBORN.test(value) ? null : value;
+      break;
+    case 'branch':
+      worktree.branch = value.startsWith(BRANCH_PREFIX) ? value.slice(BRANCH_PREFIX.length) : value;
+      break;
+    case 'detached':
+      worktree.detached = true;
+      break;
+    case 'bare':
+      worktree.bare = true;
+      break;
+    case 'locked':
+      worktree.locked = true;
+      break;
+    case 'prunable':
+      worktree.prunable = true;
+      break;
+    default:
+      // Attributes of later git versions.
+      break;
+  }
+};
+
 const parseRecord = (lines: readonly string[], main: boolean): Worktree => {
   const [first, ...rest] = lines;
   if (first?.startsWith('worktree ') !== true) throw new Error('worktree record does not start with its path');
   const path = first.slice('worktree '.length);
   if (!path.startsWith('/')) throw new Error(`worktree path ${JSON.stringify(path)} is not absolute`);
   const worktree: Worktree = { path, head: null, branch: null, detached: false, locked: false, prunable: false, bare: false, main };
-  for (const line of rest) {
-    const space = line.indexOf(' ');
-    const key = space < 0 ? line : line.slice(0, space);
-    const value = space < 0 ? '' : line.slice(space + 1);
-    switch (key) {
-      case 'HEAD':
-        if (!HEAD.test(value)) throw new Error(`invalid HEAD ${JSON.stringify(value)}`);
-        worktree.head = UNBORN.test(value) ? null : value;
-        break;
-      case 'branch':
-        worktree.branch = value.startsWith(BRANCH_PREFIX) ? value.slice(BRANCH_PREFIX.length) : value;
-        break;
-      case 'detached':
-        worktree.detached = true;
-        break;
-      case 'bare':
-        worktree.bare = true;
-        break;
-      case 'locked':
-        worktree.locked = true;
-        break;
-      case 'prunable':
-        worktree.prunable = true;
-        break;
-      default:
-        // Attributes of later git versions.
-        break;
-    }
-  }
+  for (const line of rest) applyAttribute(worktree, line);
   return worktree;
 };
 

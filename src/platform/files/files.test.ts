@@ -37,10 +37,12 @@ interface Hooks {
   failWriteOf: string | null;
   /** stat and lstat report this path as owned by another user. */
   foreignOwner: string | null;
+  /** Unlinking paths under this prefix fails with EACCES. */
+  failUnlinkOf: string | null;
   calls: string[];
 }
 
-const hooks = vi.hoisted((): Hooks => ({ failWriteOf: null, foreignOwner: null, calls: [] }));
+const hooks = vi.hoisted((): Hooks => ({ failWriteOf: null, foreignOwner: null, failUnlinkOf: null, calls: [] }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof FsPromises>();
@@ -92,6 +94,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       hooks.calls.push(`rename ${String(from)} ${String(to)}`);
       await real.rename(from, to);
     },
+    unlink: async (path: PathLike): Promise<void> => {
+      if (hooks.failUnlinkOf !== null && String(path).startsWith(hooks.failUnlinkOf)) {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      }
+      await real.unlink(path);
+    },
     stat: (path: PathLike) => foreign(path, () => real.stat(path)),
     lstat: (path: PathLike, options?: { bigint?: boolean }) =>
       options?.bigint === true ? foreign(path, () => real.lstat(path, { bigint: true })) : foreign(path, () => real.lstat(path)),
@@ -108,6 +116,7 @@ beforeEach(() => {
   umask = process.umask(0);
   hooks.failWriteOf = null;
   hooks.foreignOwner = null;
+  hooks.failUnlinkOf = null;
   hooks.calls.length = 0;
 });
 
@@ -232,6 +241,21 @@ describe('atomic writes', () => {
     await expect(writing).rejects.toThrow(/ENOSPC/);
     expect(readFileSync(file, 'utf8')).toBe('previous content');
     expect(readdirSync(dir)).toEqual(['f.json']);
+  });
+
+  it('reports the write error when removing the temporary file also fails', async () => {
+    hooks.failWriteOf = dir;
+    hooks.failUnlinkOf = dir;
+    const file = join(dir, 'f.json');
+    const data = 'n'.repeat(100_000);
+    await expect(writeFileAtomic(file, data)).rejects.toThrow(/ENOSPC/);
+  });
+
+  it('reports the rename error when removing the temporary file also fails', async () => {
+    const target = join(dir, 'occupied');
+    mkdirSync(join(target, 'child'), { recursive: true });
+    hooks.failUnlinkOf = dir;
+    await expect(writeFileAtomic(target, 'x')).rejects.toMatchObject({ code: 'EISDIR' });
   });
 
   it('syncs the new content before renaming it into place', async () => {

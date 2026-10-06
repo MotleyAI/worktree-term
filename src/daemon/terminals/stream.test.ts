@@ -20,6 +20,11 @@ const resume = (guard: StreamGuard): void => {
   guard.resumed();
 };
 
+/** Runs the read check the guard schedules once its grace time is spent. */
+const runCheck = (): void => {
+  vi.advanceTimersToNextTimer();
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
   paused = false;
@@ -38,6 +43,7 @@ describe('guardStream', () => {
     vi.advanceTimersByTime(DESTROY_GRACE_MS - 1);
     expect(destroy).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
+    runCheck();
     expect(destroy).toHaveBeenCalledExactlyOnceWith(error);
   });
 
@@ -50,21 +56,23 @@ describe('guardStream', () => {
     expect(destroy).not.toHaveBeenCalled();
     resume(guard);
     vi.advanceTimersByTime(DESTROY_GRACE_MS);
+    runCheck();
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
-  it('counts only time spent reading', () => {
+  it('needs DESTROY_GRACE_MS of uninterrupted reading', () => {
     const { pty, stream, destroy } = fakePty();
     const guard = guardStream(pty, () => paused);
     stream.destroy();
     for (let i = 0; i < 3; i++) {
-      vi.advanceTimersByTime(DESTROY_GRACE_MS / 4);
+      vi.advanceTimersByTime((DESTROY_GRACE_MS * 3) / 4);
       pause(guard);
       vi.advanceTimersByTime(10 * DESTROY_GRACE_MS);
       resume(guard);
     }
     expect(destroy).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(DESTROY_GRACE_MS / 4);
+    vi.advanceTimersByTime(DESTROY_GRACE_MS);
+    runCheck();
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
@@ -75,6 +83,44 @@ describe('guardStream', () => {
     resume(guard);
     vi.advanceTimersByTime(10 * DESTROY_GRACE_MS);
     expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it('restarts the quiet period on output', () => {
+    const { pty, stream, destroy } = fakePty();
+    const guard = guardStream(pty, () => paused);
+    stream.destroy();
+    vi.advanceTimersByTime(DESTROY_GRACE_MS / 2);
+    guard.received();
+    vi.advanceTimersByTime((DESTROY_GRACE_MS * 3) / 2 - 1);
+    expect(destroy).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    runCheck();
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits when the poll after the quiet period reads output', () => {
+    const { pty, stream, destroy } = fakePty();
+    const guard = guardStream(pty, () => paused);
+    stream.destroy();
+    vi.advanceTimersByTime(DESTROY_GRACE_MS);
+    guard.received();
+    runCheck();
+    expect(destroy).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(DESTROY_GRACE_MS);
+    runCheck();
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets beforeDestroy delay the destroy', () => {
+    const { pty, stream, destroy } = fakePty();
+    const beforeDestroy = vi.fn<(go: () => void) => void>();
+    guardStream(pty, () => paused, beforeDestroy);
+    stream.destroy();
+    vi.advanceTimersByTime(10 * DESTROY_GRACE_MS);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(beforeDestroy).toHaveBeenCalledTimes(1);
+    beforeDestroy.mock.calls[0]?.[0]();
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a PTY without the read stream it guards', () => {

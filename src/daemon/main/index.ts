@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import type { HostPaths } from '../../platform/files/index.js';
-import { AlreadyRunningError, bindSocket, Daemon } from '../server/index.js';
+import { bindSocket, Daemon } from '../server/index.js';
 import { StateStore } from '../state/index.js';
 import { TerminalProcess } from '../terminals/index.js';
 import { discoverRepos, listWorktrees, watchWorktrees } from '../worktrees/index.js';
 
-export { AlreadyRunningError };
+export { AlreadyRunningError } from '../server/index.js';
 
 export interface DaemonRun {
   /** The package version announced in `hello`. */

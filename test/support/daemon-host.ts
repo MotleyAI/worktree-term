@@ -16,7 +16,7 @@ type Probed<T> = T | undefined | false;
 export const waitUntil = async <T>(probe: () => Probed<T> | Promise<Probed<T>>, what: string, timeout = 5000): Promise<T> => {
   const deadline = Date.now() + timeout;
   for (;;) {
-    const value = await probe();
+    const value = await probe(); // NOSONAR(S9382) — polling loop
     if (value !== undefined && value !== false) return value;
     if (Date.now() > deadline) throw new Error(`timed out after ${String(timeout)} ms waiting for ${what}`);
     await sleep(20);
@@ -60,7 +60,7 @@ const GIT_ENV = {
 
 /** Runs git in `cwd` and returns its trimmed stdout. */
 export const git = (cwd: string, ...args: string[]): string =>
-  execFileSync('git', args, { cwd, env: { ...process.env, ...GIT_ENV }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  execFileSync('git', args, { cwd, env: { ...process.env, ...GIT_ENV }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); // NOSONAR(S4036) — test helper; PATH is the test runner's own
 
 /** Creates a repo with one commit on `main` and returns its real path. */
 export const makeRepo = (path: string): string => {

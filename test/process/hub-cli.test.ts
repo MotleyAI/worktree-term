@@ -104,6 +104,19 @@ describe('wtd hub', () => {
     expect(host.record()?.pid).toBe(first.pid);
   });
 
+  it('leaves the running hub’s token in the file when two hubs start at once without one', async () => {
+    for (let round = 0; round < 3; round++) {
+      rmSync(host.tokenPath, { force: true });
+      const [a, b] = [host.wtd(['hub']), host.wtd(['hub'])];
+      const first = await Promise.race([a, b].map(async (hub) => ({ hub, exit: await hub.exited }))); // NOSONAR(S9382) — rounds must not overlap
+      expect(first.exit.code).toBe(1);
+      const winner = first.hub === a ? b : a;
+      await waitUntil(() => host.serving(), 'the remaining hub to accept the token in the file'); // NOSONAR(S9382) — rounds must not overlap
+      winner.kill('SIGTERM');
+      await waitExit(winner); // NOSONAR(S9382) — rounds must not overlap
+    }
+  });
+
   it('reports a port held by another process', async () => {
     await holdPort(host.port);
     const hub = host.wtd(['hub']);

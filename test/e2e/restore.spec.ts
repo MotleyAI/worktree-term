@@ -1,6 +1,6 @@
 import { waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
-import { byTestId, terminalBox, TID, worktreeEntry } from './contract.js';
+import { byTestId, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
   expect,
   isCurrent,
@@ -15,6 +15,7 @@ import {
   test,
   typeLine,
   waitScreen,
+  watcher,
   xtermOf,
 } from './fixture.js';
 
@@ -41,6 +42,27 @@ test.describe('reconnect and restore', () => {
     await typeLine(page, term, "echo AFTER''-RESTART");
     await waitScreen(page, term, 'AFTER-RESTART');
     expect(await isCurrent(page, xterm, `${terminalBox(LOCAL, term)} .xterm`)).toBe(true);
+  });
+
+  test('a terminal closed while the hub was down is removed once the page reconnects', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const closed = await newTerminal(page);
+    const kept = await newTerminal(page);
+    await ready(page, kept);
+    const xterm = await xtermOf(page, closed);
+
+    await stopHub(hub);
+    await expect(page.locator(byTestId(TID.reconnecting))).toBeVisible();
+    const direct = await watcher(hub, repo);
+    await direct.ok({ t: 'closeTerm', termId: closed });
+    direct.close();
+    await hub.startHub();
+    await expect(page.locator(byTestId(TID.reconnecting))).toBeHidden({ timeout: 15_000 });
+    await expect.poll(() => xterm.evaluate((e) => e.isConnected), { timeout: 10_000 }).toBe(false);
+    await expect(page.locator(termTab(closed))).toHaveCount(0);
+    await expect(page.locator(termTab(kept))).toBeVisible();
   });
 
   test('a new daemon instance drops the old terminals', async ({ hub, page }) => {

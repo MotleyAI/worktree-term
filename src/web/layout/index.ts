@@ -11,7 +11,7 @@ export interface TerminalTab {
   inLayout: boolean;
 }
 
-const firstTerm = (pane: Pane): number => ('term' in pane ? pane.term : firstTerm(pane.a));
+const termsOf = (pane: Pane): number[] => ('term' in pane ? [pane.term] : [...termsOf(pane.a), ...termsOf(pane.b)]);
 
 const holds = (pane: Pane, termId: number): boolean =>
   'term' in pane ? pane.term === termId : holds(pane.a, termId) || holds(pane.b, termId);
@@ -22,8 +22,8 @@ export const terminalTabs = (layout: Layout | null, live: readonly number[]): { 
   const tabs: TerminalTab[] = [];
   let active: number | null = null;
   for (const [index, tab] of (layout?.tabs ?? []).entries()) {
-    const termId = firstTerm(tab.root);
-    if (!alive.has(termId)) continue;
+    const termId = termsOf(tab.root).find((t) => alive.has(t));
+    if (termId === undefined) continue;
     tabs.push({ termId, inLayout: true });
     if (index === layout?.active) active = termId;
   }

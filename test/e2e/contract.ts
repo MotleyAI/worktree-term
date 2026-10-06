@@ -34,7 +34,7 @@ export const TID = {
   worktreeLabel: 'worktree-label',
   /** Checkbox input: checked = show checked worktrees only. */
   filterChecked: 'filter-checked',
-  /** Terminal tab; `data-term` = its first terminal's id, `aria-selected`, text contains "exited" once that terminal exited. */
+  /** Terminal tab; `data-term` = its first live terminal's id, `aria-selected`, text contains "exited" once that terminal exited. */
   termTab: 'term-tab',
   /** Close button inside a terminal tab; closes every terminal of the tab, confirming first when any is running. */
   termTabClose: 'term-tab-close',

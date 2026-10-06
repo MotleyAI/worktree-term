@@ -41,17 +41,18 @@ export interface RunningHubServer {
 export const prepareHubDirs = (paths: HubPaths): Promise<void> => preparePrivateDirs(paths);
 
 /**
- * Loads the bundle and token, then binds under the hub start lock and writes the hub record.
+ * Loads the bundle, then loads the token, binds and writes the hub record under the hub start lock.
  * Rejects with HubAlreadyRunningError when the recorded hub answers, PortInUseError when the port is taken.
  */
 export const startHubServer = async (options: HubServerOptions): Promise<RunningHubServer> => {
   const { paths, port, version, instance } = options;
   const files = await loadStaticFiles(options.webDir);
   await prepareHubDirs(paths);
-  const token = await loadToken(paths.hubToken);
   const lock = await acquireStartLock(paths.hubLock);
   let listener: Listener;
   try {
+    // Under the lock, so a concurrent start cannot replace the token a running hub holds.
+    const token = await loadToken(paths.hubToken);
     const record = await readHubRecord(paths.hubRecord);
     if (record !== null && (await hubIdentity(record.port, token))?.instance === record.instance) {
       throw new HubAlreadyRunningError('already running');

@@ -202,6 +202,12 @@ export class TerminalManager {
     if (host !== null) next[0]?.term.focus();
   }
 
+  /** Disposes the terminal `termId` of `host`, if the page has it. */
+  disposeTerm(host: number, termId: number): void {
+    const entry = this.entries.get(keyOf(host, termId));
+    if (entry !== undefined) this.dispose(entry);
+  }
+
   /** Disposes every terminal of `host`. */
   disposeHost(host: number): void {
     for (const entry of this.entries.values()) if (entry.host === host) this.dispose(entry);

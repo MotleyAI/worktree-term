@@ -26,6 +26,9 @@ const restorer = new Restorer({
   attach: (host, termId) => {
     manager.attach(host, termId);
   },
+  drop: (host, termId) => {
+    manager.disposeTerm(host, termId);
+  },
   dispose: (host) => {
     manager.disposeHost(host);
     client.store.clearHost(host);

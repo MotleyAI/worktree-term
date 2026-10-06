@@ -18,6 +18,7 @@ const harness = (attached: Record<string, number[]>, listed: Record<string, numb
     attached: (host, repo) => attached[`${String(host)} ${repo}`] ?? [],
     listed: (host, repo) => listed[`${String(host)} ${repo}`] ?? [],
     attach: (host, termId) => calls.push(`attach ${String(host)} ${String(termId)}`),
+    drop: (host, termId) => calls.push(`drop ${String(host)} ${String(termId)}`),
     dispose: (host) => calls.push(`dispose ${String(host)}`),
   };
   const finish = async (key: string, ok = true): Promise<void> => {
@@ -44,13 +45,15 @@ describe('Restorer', () => {
     expect(calls.slice(3).sort()).toEqual(['attach 0 1', 'attach 0 2']);
   });
 
-  it('re-attaches only terminals that are still listed', async () => {
+  it('re-attaches the terminals still listed and drops the others', async () => {
     const { calls, deps, finish } = harness({ '0 /a': [1, 2, 5] }, { '0 /a': [2, 5, 9] });
     const restoring = new Restorer(deps).connected(0, 'd1', ['/a']);
     await settle();
+    expect(calls.filter((c) => c.startsWith('drop'))).toEqual([]);
     await finish('0 /a');
     await restoring;
     expect(calls.filter((c) => c.startsWith('attach')).sort()).toEqual(['attach 0 2', 'attach 0 5']);
+    expect(calls.filter((c) => c.startsWith('drop'))).toEqual(['drop 0 1']);
   });
 
   it('leaves a terminal opened while the watch runs to its own attach', async () => {
@@ -72,6 +75,7 @@ describe('Restorer', () => {
     await finish('0 /b');
     await restoring;
     expect(calls.filter((c) => c.startsWith('attach'))).toEqual(['attach 0 2']);
+    expect(calls.filter((c) => c.startsWith('drop'))).toEqual([]);
   });
 
   it('keeps the terminals of a host reconnected to the same daemon instance', async () => {

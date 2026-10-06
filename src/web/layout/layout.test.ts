@@ -24,6 +24,18 @@ describe('terminalTabs', () => {
     });
   });
 
+  it('shows a split tab by its first live terminal when its first terminal is gone', () => {
+    const split: Layout = {
+      tabs: [
+        { id: 'a', root: { split: 'right', ratio: 0.5, a: { split: 'down', ratio: 0.5, a: { term: 3 }, b: { term: 4 } }, b: { term: 2 } } },
+      ],
+      active: 0,
+    };
+    expect(terminalTabs(split, [2, 4])).toEqual({ tabs: [{ termId: 4, inLayout: true }], active: 4 });
+    expect(terminalTabs(split, [2])).toEqual({ tabs: [{ termId: 2, inLayout: true }], active: 2 });
+    expect(terminalTabs(split, [])).toEqual({ tabs: [], active: null });
+  });
+
   it('adds live terminals missing from the layout as further tabs', () => {
     expect(terminalTabs(twoTabs, [5, 1, 2, 7])).toEqual({
       tabs: [

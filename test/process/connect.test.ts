@@ -39,7 +39,7 @@ describe('wtd connect', () => {
     const hello = await client.waitFor('hello', () => true, { timeout: 10_000 });
     expect(client.received[0]).toEqual({ kind: 'message', message: hello });
     expect(hello.protocol).toBe(PROTOCOL_VERSION);
-    expect(hello.protocol).toBe(2);
+    expect(hello.protocol).toBe(3);
     const [daemon, ...others] = host.daemonPids();
     if (daemon === undefined) throw new Error('no daemon is running');
     expect(others).toEqual([]);

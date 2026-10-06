@@ -36,7 +36,7 @@ describe('dist/wtd.mjs', () => {
   });
 
   it('prints its version', () => {
-    expect(wtd('--version')).toEqual({ status: 0, stdout: `wtd ${packageVersion()} (protocol 2)\n`, stderr: '' });
+    expect(wtd('--version')).toEqual({ status: 0, stdout: `wtd ${packageVersion()} (protocol 3)\n`, stderr: '' });
   });
 
   it('prints help listing every command and option', () => {
@@ -65,8 +65,6 @@ describe('dist/wtd.mjs', () => {
   });
 
   it.each([
-    ['ui', ['ui']],
-    ['hub', ['hub']],
     ['install-local', ['install-local']],
     ['install-remote', ['install-remote', 'devbox']],
   ])('%s exits 2 as not implemented', (verb, args) => {

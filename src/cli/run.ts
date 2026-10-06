@@ -1,8 +1,10 @@
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { parseArgs } from 'node:util';
 import pkg from '../../package.json' with { type: 'json' };
 import { AlreadyRunningError, runDaemon } from '../daemon/main/index.js';
-import { placeholder as runHub } from '../hub/main/index.js';
+import { HubAlreadyRunningError, openUi, runHub } from '../hub/main/index.js';
 import { dial } from '../platform/dialer/index.js';
 import { currentHostPaths } from '../platform/files/index.js';
 import { PROTOCOL_VERSION } from '../protocol/index.js';
@@ -48,7 +50,37 @@ const notImplemented = (): void => {
   throw new Error(NOT_IMPLEMENTED);
 };
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const message = (error: unknown): string =>
+  (error instanceof Error ? error.message : String(error)).replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
+
+/** The command that runs this `wtd`, without a verb. */
+const wtdCommand = (): string[] => {
+  const script = process.argv[1];
+  if (script === undefined) throw new Error('cannot tell how this wtd was started');
+  return [process.execPath, script];
+};
+
+const hub = async (io: CliIo): Promise<number> => {
+  try {
+    const wtd = wtdCommand();
+    await runHub({ version: pkg.version, paths: currentHostPaths(), wtd, webDir: join(dirname(wtd[1] ?? ''), 'web'), home: homedir() });
+    return 0;
+  } catch (error) {
+    io.stderr(`wtd hub: ${error instanceof HubAlreadyRunningError ? 'already running' : message(error)}\n`);
+    return 1;
+  }
+};
+
+const ui = async (io: CliIo): Promise<number> => {
+  try {
+    const browser = process.env['WTD_BROWSER'] ?? 'google-chrome';
+    await openUi({ version: pkg.version, paths: currentHostPaths(), wtd: wtdCommand(), home: homedir(), browser });
+    return 0;
+  } catch (error) {
+    io.stderr(`wtd ui: ${message(error)}\n`);
+    return 1;
+  }
+};
 
 const daemon = async (io: CliIo): Promise<number> => {
   try {
@@ -84,9 +116,7 @@ const bridge = (socket: Duplex): Promise<Error | null> =>
 const connect = async (io: CliIo): Promise<number> => {
   let failure: Error | null;
   try {
-    const script = process.argv[1];
-    if (script === undefined) throw new Error('cannot tell how to start the daemon');
-    failure = await bridge(await dial(currentHostPaths(), [process.execPath, script, 'daemon']));
+    failure = await bridge(await dial(currentHostPaths(), [...wtdCommand(), 'daemon']));
   } catch (error) {
     failure = error instanceof Error ? error : new Error(String(error));
   }
@@ -95,10 +125,10 @@ const connect = async (io: CliIo): Promise<number> => {
   return 1;
 };
 
-// `ui` and `hub` are implemented by DEV-2052, the installers by DEV-2054.
+// The installers are implemented by DEV-2054.
 const COMMANDS: ReadonlyMap<string, Command> = new Map([
-  ['ui', { args: [], run: placeholderRun(runHub) }],
-  ['hub', { args: [], run: placeholderRun(runHub) }],
+  ['ui', { args: [], run: ui }],
+  ['hub', { args: [], run: hub }],
   ['daemon', { args: [], run: daemon }],
   ['connect', { args: [], run: connect }],
   ['install-local', { args: [], run: placeholderRun(notImplemented) }],

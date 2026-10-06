@@ -64,12 +64,14 @@ export const layout: Layout = {
 };
 
 export const hosts: HostEntry[] = [
-  { idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', repos: [REPO] },
-  { idx: 1, name: 'devbox', remote: true, status: 'outdated', daemonVersion: '0.0.9', repos: [] },
-  { idx: 2, name: 'gpu', remote: true, status: 'connecting', daemonVersion: null, repos: [WT] },
-  { idx: 3, name: 'old', remote: true, status: 'reconnecting', daemonVersion: null, repos: [] },
-  { idx: 65535, name: 'x'.repeat(64), remote: true, status: 'down', daemonVersion: null, repos: [] },
+  { idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [REPO] },
+  { idx: 1, name: 'devbox', remote: true, status: 'outdated', daemonVersion: '0.0.9', instance: null, repos: [] },
+  { idx: 2, name: 'gpu', remote: true, status: 'connecting', daemonVersion: null, instance: null, repos: [WT] },
+  { idx: 3, name: 'old', remote: true, status: 'reconnecting', daemonVersion: null, instance: null, repos: [] },
+  { idx: 65535, name: 'x'.repeat(64), remote: true, status: 'down', daemonVersion: null, instance: null, repos: [] },
 ];
+
+export const TOKEN = '0123456789abcdef'.repeat(4);
 
 export const clientToDaemonSamples: MessageOf<'clientToDaemon'>[] = [
   hello,
@@ -136,6 +138,7 @@ export const browserToHubSamples: MessageOf<'browserToHub'>[] = [
 
 export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   hello,
+  { t: 'token', token: TOKEN },
   ...daemonToClientSamples.filter(isDaemonEvent).map((m): MessageOf<'hubToBrowser'> => ({ t: 'host', host: 0, m })),
   { t: 'hosts', hosts },
   { t: 'hosts', hosts: [] },
@@ -149,6 +152,7 @@ export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   { t: 'done', req: 1 },
   { t: 'error', req: 2, host: 1, code: 'unknown-host', message: 'no such host' },
   { t: 'error', req: null, host: null, code: 'version-mismatch', message: 'outdated' },
+  { t: 'error', req: 3, host: 0, code: 'host-unavailable', message: 'host 0 is reconnecting' },
   { t: 'reposDiscovered', req: 3, host: 0, repos: [REPO] },
 ];
 
@@ -194,7 +198,7 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'reposDiscovered',
   ],
   browserToHub: ['hello', 'host', 'addRepo', 'removeRepo', 'discoverRepos', 'restartDaemon', 'reinstallDaemon'],
-  hubToBrowser: ['hello', 'host', 'hosts', 'presets', 'done', 'error', 'reposDiscovered'],
+  hubToBrowser: ['hello', 'token', 'host', 'hosts', 'presets', 'done', 'error', 'reposDiscovered'],
 };
 
 /** Encodes a JSON value as control-message text, bypassing the protocol encoder. */

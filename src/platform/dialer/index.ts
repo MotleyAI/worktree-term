@@ -24,23 +24,27 @@ const tryConnect = (path: string): Promise<Socket> =>
     });
   });
 
-/** Starts `command` detached in its own session, its output appended to the daemon log. */
-const startDaemon = async (paths: HostPaths, command: readonly string[]): Promise<{ failure: () => Error | null }> => {
+/**
+ * Starts `command` in its own session with stdin from /dev/null and its output appended to `log`
+ * (ignored when null); resolves once it has started, rejects naming a program that cannot start.
+ */
+export const spawnDetached = async (command: readonly string[], log: string | null): Promise<void> => {
   const [file, ...args] = command;
-  if (file === undefined) throw new Error('empty daemon command');
-  await preparePrivateDirs(paths);
-  const log = await openLog(paths.log);
-  let failure: Error | null = null;
+  if (file === undefined) throw new Error('empty command');
+  const handle = log === null ? null : await openLog(log);
   try {
-    const child = spawn(file, args, { detached: true, stdio: ['ignore', log.fd, log.fd] });
-    child.once('error', (error) => {
-      failure = error;
+    const output = handle === null ? 'ignore' : handle.fd;
+    const child = spawn(file, args, { detached: true, stdio: ['ignore', output, output] });
+    await new Promise<void>((resolve, reject) => {
+      child.once('spawn', resolve);
+      child.once('error', (error) => {
+        reject(new Error(`cannot start ${file}: ${error.message}`, { cause: error }));
+      });
     });
     child.unref();
   } finally {
-    await log.close();
+    await handle?.close();
   }
-  return { failure: () => failure };
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,16 +63,19 @@ const connectIfServed = async (path: string): Promise<Socket | Error> => {
 export const dial = async (paths: HostPaths, command: readonly string[]): Promise<Socket> => {
   const running = await connectIfServed(paths.socket);
   if (!(running instanceof Error)) return running;
-  const started = await startDaemon(paths, command);
+  await preparePrivateDirs(paths);
+  try {
+    await spawnDetached(command, paths.log);
+  } catch (error) {
+    throw new Error(`daemon did not start; see ${paths.log} (${error instanceof Error ? error.message : String(error)})`, { cause: error });
+  }
   const deadline = Date.now() + START_WAIT_MS;
   for (;;) {
     await sleep(RETRY_MS);
     const result = await connectIfServed(paths.socket); // NOSONAR(S9382) — retries until the daemon listens
     if (!(result instanceof Error)) return result;
     if (Date.now() >= deadline) {
-      const spawnFailure = started.failure();
-      const detail = spawnFailure === null ? '' : ` (${spawnFailure.message})`;
-      throw new Error(`daemon did not start; see ${paths.log}${detail}`, { cause: result });
+      throw new Error(`daemon did not start; see ${paths.log}`, { cause: result });
     }
   }
 };

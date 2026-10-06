@@ -10,5 +10,6 @@
     "tsBuildInfoFile": "build/types/test.tsbuildinfo"
   },
   "include": ["test/**/*.ts", "src/**/*.test.ts", "src/protocol/test-samples.ts", "src/protocol/*.golden.json", "*.config.ts"],
+  "exclude": ["test/e2e", "src/web"],
   "references": [{ "path": "./src/protocol" }, { "path": "./tsconfig.node.json" }]
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hostPaths, type HostPaths } from '../files/index.js';
-import { dial } from './index.js';
+import { dial, spawnDetached } from './index.js';
 
 /** Stand-in daemon: logs to stdout and stderr, records its pid, serves its pid to every connection. */
 const FAKE_DAEMON = `
@@ -122,4 +122,83 @@ describe('dial', () => {
     await expect(dial(paths, [process.execPath, '-e', 'process.exit(1)'])).rejects.toThrow(`daemon did not start; see ${paths.log}`);
     expect(Date.now() - started).toBeGreaterThanOrEqual(4900);
   }, 15_000);
+});
+
+/** Stand-in program: records its pid, session and stdio targets, then idles. */
+const RECORDER = `
+const fs = require('node:fs');
+const [pids] = process.argv.slice(1);
+const stat = fs.readFileSync('/proc/self/stat', 'utf8');
+const session = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[3];
+const fd = (n) => fs.readlinkSync('/proc/self/fd/' + n);
+fs.appendFileSync(pids, process.pid + '\\n');
+fs.writeFileSync(pids + '.' + process.pid, JSON.stringify({ sid: Number(session), stdin: fd(0), stdout: fd(1), stderr: fd(2) }));
+console.log('out pid=' + process.pid);
+console.error('err pid=' + process.pid);
+setTimeout(() => process.exit(0), 30000);
+`;
+
+interface Recorded {
+  sid: number;
+  stdin: string;
+  stdout: string;
+  stderr: string;
+}
+
+const recorded = async (): Promise<{ pid: number; record: Recorded }> => {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    const [pid] = spawnedPids();
+    if (pid !== undefined && existsSync(`${pidsFile}.${String(pid)}`)) {
+      const record: unknown = JSON.parse(readFileSync(`${pidsFile}.${String(pid)}`, 'utf8'));
+      if (typeof record !== 'object' || record === null) throw new Error('bad record');
+      return { pid, record: { sid: 0, stdin: '', stdout: '', stderr: '', ...record } };
+    }
+    if (Date.now() > deadline) throw new Error('the program did not start');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
+
+describe('spawnDetached', () => {
+  const recorder = (): string[] => [process.execPath, '-e', RECORDER, pidsFile];
+
+  it('starts a program in its own session with stdin from /dev/null, appending its output to the log', async () => {
+    const log = join(dir, 'hub.log');
+    writeFileSync(log, 'before\n', { mode: 0o644 });
+    await spawnDetached(recorder(), log);
+    const { pid, record } = await recorded();
+    expect(record.sid).toBe(pid);
+    expect(record.sid).not.toBe(sessionOf(process.pid));
+    expect(record.stdin).toBe('/dev/null');
+    const deadline = Date.now() + 5000;
+    while (!readFileSync(log, 'utf8').includes(`err pid=${String(pid)}`) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const text = readFileSync(log, 'utf8');
+    expect(text.startsWith('before\n')).toBe(true);
+    expect(text).toContain(`out pid=${String(pid)}`);
+    expect(text).toContain(`err pid=${String(pid)}`);
+    expect(statSync(log).mode & 0o777).toBe(0o600);
+  });
+
+  it('ignores the stdio of a program started without a log', async () => {
+    await spawnDetached(recorder(), null);
+    const { pid, record } = await recorded();
+    expect(record).toEqual({ sid: pid, stdin: '/dev/null', stdout: '/dev/null', stderr: '/dev/null' });
+  });
+
+  it('resolves while the program keeps running', async () => {
+    await spawnDetached(recorder(), null);
+    const { pid } = await recorded();
+    expect(() => process.kill(pid, 0)).not.toThrow();
+  });
+
+  it('rejects naming a program that cannot be started', async () => {
+    const missing = join(dir, 'no-such-browser');
+    await expect(spawnDetached([missing, '--app=x'], null)).rejects.toThrow(missing);
+  });
+
+  it('rejects an empty command', async () => {
+    await expect(spawnDetached([], null)).rejects.toThrow();
+  });
 });

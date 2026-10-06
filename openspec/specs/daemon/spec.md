@@ -25,7 +25,7 @@ On every new connection the daemon SHALL send `hello` with `protocol` equal to `
 
 #### Scenario: Daemon hello
 - **WHEN** a client connects
-- **THEN** the first frame it receives is the daemon's `hello` with `protocol` 2
+- **THEN** the first frame it receives is the daemon's `hello` with `protocol` 3
 
 #### Scenario: Message before hello
 - **WHEN** a client's first message is a `watchRepo`

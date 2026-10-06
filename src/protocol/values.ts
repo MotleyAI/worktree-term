@@ -22,6 +22,8 @@ export const longText = z.string().max(4096).nullable();
 export const signal = z.string().max(32).nullable();
 export const version = z.string().min(1).max(64);
 export const instance = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+/** A hub token or one-time code. */
+export const secret = z.string().regex(/^[0-9a-f]{64}$/);
 export const errorMessage = z.string().max(1024);
 export const errorCode = z.enum([
   'bad-message',
@@ -33,6 +35,7 @@ export const errorCode = z.enum([
   'spawn-failed',
   'version-mismatch',
   'not-a-repo',
+  'host-unavailable',
   'internal',
 ]);
 

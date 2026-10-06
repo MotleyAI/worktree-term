@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": [],
+    "rootDir": ".",
+    "outDir": "../../build/types/web-test",
+    "tsBuildInfoFile": "../../build/types/web-test.tsbuildinfo"
+  },
+  "include": ["**/*.test.ts", "**/*.test.tsx"],
+  "references": [{ "path": "./tsconfig.json" }, { "path": "../protocol" }]
+}

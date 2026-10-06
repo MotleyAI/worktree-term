@@ -11,6 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,4 +38,5 @@ jobs:
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm test
+      # The perf budgets need hardware WebGL, which hosted runners lack; `pnpm test` runs them locally.
+      - run: pnpm test:ci

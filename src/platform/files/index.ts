@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { link, lstat, mkdir, open, readFile, rename, stat, unlink, chmod, type FileHandle } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { link, lstat, mkdir, open, readdir, readFile, rename, stat, unlink, chmod, type FileHandle } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -11,6 +12,12 @@ export interface HostPaths {
   lock: string;
   state: string;
   log: string;
+  configDir: string;
+  config: string;
+  hubToken: string;
+  hubLog: string;
+  hubLock: string;
+  hubRecord: string;
 }
 
 export interface HostIdentity {
@@ -27,11 +34,12 @@ const LOCK_WAIT_MS = 5000;
 
 const hasCode = (error: unknown, code: string): boolean => error instanceof Error && 'code' in error && error.code === code;
 
+const xdgBase = (value: string | undefined, fallback: string): string => (value !== undefined && isAbsolute(value) ? value : fallback);
+
 /** Paths for `identity`; throws if the socket path does not fit a unix socket address. */
 export const hostPaths = ({ env, home, host }: HostIdentity): HostPaths => {
-  const xdg = env['XDG_STATE_HOME'];
-  const base = xdg !== undefined && isAbsolute(xdg) ? xdg : join(home, '.local', 'state');
-  const stateDir = join(base, 'worktree-term');
+  const stateDir = join(xdgBase(env['XDG_STATE_HOME'], join(home, '.local', 'state')), 'worktree-term');
+  const configDir = join(xdgBase(env['XDG_CONFIG_HOME'], join(home, '.config')), 'worktree-term');
   const runDir = join(stateDir, 'run');
   const name = host.replace(/[^A-Za-z0-9._-]/g, '_');
   const socket = join(runDir, `${name}.sock`);
@@ -45,6 +53,12 @@ export const hostPaths = ({ env, home, host }: HostIdentity): HostPaths => {
     lock: join(runDir, `${name}.lock`),
     state: join(stateDir, 'state.json'),
     log: join(stateDir, 'daemon.log'),
+    configDir,
+    config: join(configDir, 'config.json'),
+    hubToken: join(stateDir, 'hub-token'),
+    hubLog: join(stateDir, 'hub.log'),
+    hubLock: join(runDir, 'hub.lock'),
+    hubRecord: join(runDir, 'hub.json'),
   };
 };
 
@@ -64,7 +78,7 @@ const privateDir = async (path: string): Promise<void> => {
 };
 
 /** Creates the state directory and `run/` owner-only, tightening looser modes. */
-export const preparePrivateDirs = async (paths: HostPaths): Promise<void> => {
+export const preparePrivateDirs = async (paths: Pick<HostPaths, 'stateDir' | 'runDir'>): Promise<void> => {
   await mkdir(dirname(paths.stateDir), { recursive: true });
   await privateDir(paths.stateDir);
   await privateDir(paths.runDir);
@@ -149,6 +163,52 @@ export const fileIdentity = async (path: string): Promise<string | null> => {
     if (hasCode(error, 'ENOENT')) return null;
     throw error;
   }
+};
+
+/**
+ * The content of the regular file at `path`, owned by this user, tightened to 0600 if looser;
+ * null when it does not exist. Refuses symbolic links, other file types and other owners.
+ */
+export const readPrivateFile = async (path: string): Promise<string | null> => {
+  let handle: FileHandle;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if (hasCode(error, 'ENOENT')) return null;
+    if (hasCode(error, 'ELOOP')) throw new Error(`${path} is a symbolic link`, { cause: error });
+    throw error;
+  }
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) throw new Error(`${path} is not a regular file`);
+    if (stats.uid !== process.getuid?.()) throw new Error(`${path} is owned by another user`);
+    if ((stats.mode & 0o077) !== 0) await handle.chmod(0o600);
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close();
+  }
+};
+
+/** A file read by `readTree`, its path relative to the tree's root with `/` separators. */
+export interface TreeFile {
+  path: string;
+  data: Uint8Array;
+}
+
+/** Every regular file under `dir`, read whole; symbolic links are not followed. */
+export const readTree = async (dir: string): Promise<TreeFile[]> => {
+  const walk = async (relative: string): Promise<TreeFile[]> => {
+    const entries = await readdir(join(dir, relative), { withFileTypes: true });
+    const nested = await Promise.all(
+      entries.map(async (entry): Promise<TreeFile[]> => {
+        const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+        if (entry.isDirectory()) return walk(path);
+        return entry.isFile() ? [{ path, data: await readFile(join(dir, path)) }] : [];
+      }),
+    );
+    return nested.flat();
+  };
+  return walk('');
 };
 
 /** Restricts `path` to its owner. */

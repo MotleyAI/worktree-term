@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "constants": {
     "MAX_FRAME": 16777216,
     "MAX_INPUT": 65536,
@@ -577,6 +577,7 @@
                 "spawn-failed",
                 "version-mismatch",
                 "not-a-repo",
+                "host-unavailable",
                 "internal"
               ]
             },
@@ -1955,6 +1956,24 @@
           "properties": {
             "t": {
               "type": "string",
+              "const": "token"
+            },
+            "token": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "t",
+            "token"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
               "const": "host"
             },
             "host": {
@@ -2014,6 +2033,7 @@
                         "spawn-failed",
                         "version-mismatch",
                         "not-a-repo",
+                        "host-unavailable",
                         "internal"
                       ]
                     },
@@ -2727,6 +2747,17 @@
                       }
                     ]
                   },
+                  "instance": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "repos": {
                     "maxItems": 256,
                     "type": "array",
@@ -2743,6 +2774,7 @@
                   "remote",
                   "status",
                   "daemonVersion",
+                  "instance",
                   "repos"
                 ],
                 "additionalProperties": false
@@ -2861,6 +2893,7 @@
                 "spawn-failed",
                 "version-mismatch",
                 "not-a-repo",
+                "host-unavailable",
                 "internal"
               ]
             },
@@ -3229,6 +3262,11 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"done\",\"req\":1}}",
       "valid": false
     },
@@ -3314,7 +3352,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -3335,6 +3373,11 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"error\",\"req\":null,\"host\":null,\"code\":\"version-mismatch\",\"message\":\"outdated\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":3,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"host 0 is reconnecting\"}",
       "valid": false
     },
     {
@@ -3500,6 +3543,26 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"error\",\"req\":null,\"code\":\"internal\",\"message\":\"x\",\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"token\",\"token\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"token\",\"token\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -3764,6 +3827,11 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"done\",\"req\":1}}",
       "valid": false
     },
@@ -3849,7 +3917,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -3870,6 +3938,11 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"error\",\"req\":null,\"host\":null,\"code\":\"version-mismatch\",\"message\":\"outdated\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":3,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"host 0 is reconnecting\"}",
       "valid": false
     },
     {
@@ -4035,6 +4108,26 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"error\",\"req\":null,\"code\":\"internal\",\"message\":\"x\",\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"token\",\"token\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"token\",\"token\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4299,6 +4392,11 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"done\",\"req\":1}}",
       "valid": false
     },
@@ -4384,7 +4482,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4405,6 +4503,11 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"error\",\"req\":null,\"host\":null,\"code\":\"version-mismatch\",\"message\":\"outdated\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":3,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"host 0 is reconnecting\"}",
       "valid": false
     },
     {
@@ -4570,6 +4673,26 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"error\",\"req\":null,\"code\":\"internal\",\"message\":\"x\",\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"token\",\"token\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"token\",\"token\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4834,6 +4957,11 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"done\",\"req\":1}}",
       "valid": true
     },
@@ -4919,7 +5047,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": true
     },
     {
@@ -4940,6 +5068,11 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"error\",\"req\":null,\"host\":null,\"code\":\"version-mismatch\",\"message\":\"outdated\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":3,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"host 0 is reconnecting\"}",
       "valid": true
     },
     {
@@ -5106,6 +5239,26 @@
       "dir": "hubToBrowser",
       "json": "{\"t\":\"error\",\"req\":null,\"code\":\"internal\",\"message\":\"x\",\"host\":1}",
       "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":0,\"code\":\"host-unavailable\",\"message\":\"x\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"token\",\"token\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"token\",\"token\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"repos\":[]}]}",
+      "valid": false
     }
   ]
 }

@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
   writeSync,
   type BigIntStats,
@@ -26,6 +27,8 @@ import {
   openLog,
   preparePrivateDirs,
   readFileIfExists,
+  readPrivateFile,
+  readTree,
   removeFile,
   renameFile,
   writeFileAtomic,
@@ -160,7 +163,37 @@ describe('host paths', () => {
       lock: '/tmp/x/worktree-term/run/box.lock',
       state: '/tmp/x/worktree-term/state.json',
       log: '/tmp/x/worktree-term/daemon.log',
+      configDir: '/home/u/.config/worktree-term',
+      config: '/home/u/.config/worktree-term/config.json',
+      hubToken: '/tmp/x/worktree-term/hub-token',
+      hubLog: '/tmp/x/worktree-term/hub.log',
+      hubLock: '/tmp/x/worktree-term/run/hub.lock',
+      hubRecord: '/tmp/x/worktree-term/run/hub.json',
     });
+  });
+
+  it('honours an absolute XDG_CONFIG_HOME', () => {
+    const paths = hostPaths({ env: { XDG_CONFIG_HOME: '/tmp/c' }, home: '/home/u', host: 'box' });
+    expect(paths.configDir).toBe('/tmp/c/worktree-term');
+    expect(paths.config).toBe('/tmp/c/worktree-term/config.json');
+  });
+
+  it.each([
+    ['relative', { XDG_CONFIG_HOME: 'rel/dir' }],
+    ['empty', { XDG_CONFIG_HOME: '' }],
+    ['unset', {}],
+  ])('falls back to ~/.config when XDG_CONFIG_HOME is %s', (_name, env) => {
+    expect(hostPaths({ env, home: '/home/u', host: 'box' }).config).toBe('/home/u/.config/worktree-term/config.json');
+  });
+
+  it('keeps hub files under the state directory whatever the configuration directory', () => {
+    const paths = hostPaths({ env: { XDG_STATE_HOME: '/s', XDG_CONFIG_HOME: '/c' }, home: '/home/u', host: 'box' });
+    expect([paths.hubToken, paths.hubLog, paths.hubLock, paths.hubRecord]).toEqual([
+      '/s/worktree-term/hub-token',
+      '/s/worktree-term/hub.log',
+      '/s/worktree-term/run/hub.lock',
+      '/s/worktree-term/run/hub.json',
+    ]);
   });
 
   it.each([
@@ -465,5 +498,74 @@ describe('start lock', () => {
     writeFileSync(lockFile(), other);
     await lock.release();
     expect(readFileSync(lockFile(), 'utf8')).toBe(other);
+  });
+});
+
+describe('private file reads', () => {
+  it('reads an owner-only file', async () => {
+    const path = join(dir, 'secret');
+    writeFileSync(path, 'content', { mode: 0o600 });
+    expect(await readPrivateFile(path)).toBe('content');
+  });
+
+  it('returns null for a missing file', async () => {
+    expect(await readPrivateFile(join(dir, 'missing'))).toBeNull();
+  });
+
+  it('tightens a looser mode to 0600', async () => {
+    const path = join(dir, 'secret');
+    writeFileSync(path, 'content', { mode: 0o640 });
+    expect(await readPrivateFile(path)).toBe('content');
+    expect(modeOf(path)).toBe(0o600);
+  });
+
+  it('refuses a symbolic link, naming the path', async () => {
+    const target = join(dir, 'target');
+    writeFileSync(target, 'content', { mode: 0o600 });
+    const path = join(dir, 'link');
+    symlinkSync(target, path);
+    await expect(readPrivateFile(path)).rejects.toThrow(`${path} is a symbolic link`);
+  });
+
+  it('refuses a directory, naming the path', async () => {
+    const path = join(dir, 'sub');
+    mkdirSync(path);
+    await expect(readPrivateFile(path)).rejects.toThrow(`${path} is not a regular file`);
+  });
+
+  it('refuses a FIFO without blocking on it', async () => {
+    const path = join(dir, 'fifo');
+    expect(spawnSync('mkfifo', [path]).status).toBe(0);
+    await expect(readPrivateFile(path)).rejects.toThrow(`${path} is not a regular file`);
+  });
+});
+
+describe('tree reads', () => {
+  it('reads every regular file with its path relative to the root', async () => {
+    mkdirSync(join(dir, 'a', 'b'), { recursive: true });
+    writeFileSync(join(dir, 'top.txt'), 'top');
+    writeFileSync(join(dir, 'a', 'b', 'deep.js'), 'deep');
+    const files = await readTree(dir);
+    expect(files.map((f) => [f.path, Buffer.from(f.data).toString()]).sort()).toEqual([
+      ['a/b/deep.js', 'deep'],
+      ['top.txt', 'top'],
+    ]);
+  });
+
+  it('does not follow symbolic links', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'wtd-outside-'));
+    try {
+      writeFileSync(join(outside, 'secret'), 'x');
+      symlinkSync(outside, join(dir, 'linked-dir'));
+      symlinkSync(join(outside, 'secret'), join(dir, 'linked-file'));
+      expect(await readTree(dir)).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('fails for a missing directory', async () => {
+    const missing = join(dir, 'missing');
+    await expect(readTree(missing)).rejects.toThrow();
   });
 });

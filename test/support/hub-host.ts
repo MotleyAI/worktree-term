@@ -55,10 +55,20 @@ const canBind = (port: number): Promise<boolean> =>
     });
   });
 
+const PORT_SLICES = 32;
+const SLICE_SIZE = 375;
+
+/** This test worker's slice of ports, so up to 32 concurrent workers never pick the same one. */
+const sliceStart = (): number => {
+  const worker = Number(process.env['TEST_PARALLEL_INDEX'] ?? process.env['VITEST_POOL_ID'] ?? 0);
+  return 20_000 + (worker % PORT_SLICES) * SLICE_SIZE;
+};
+
 /** A free TCP port on 127.0.0.1, below the ephemeral range so outgoing connections never take it meanwhile. */
 export const freePort = async (): Promise<number> => {
+  const start = sliceStart();
   for (let attempt = 0; attempt < 100; attempt++) {
-    const port = randomInt(20_000, 32_000);
+    const port = randomInt(start, start + SLICE_SIZE);
     if (await canBind(port)) return port; // NOSONAR(S9382) — retries until a port is free
   }
   throw new Error('no free port');

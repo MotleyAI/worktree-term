@@ -130,17 +130,20 @@ test.describe('checked filter', () => {
     const [a = '', b = ''] = worktrees;
     hub.writeRepos([repo]);
     await openUi(hub, page);
+    const echoed = (path: string, checked: boolean, from: number): boolean =>
+      wire.receivedFromHost(LOCAL, from).some((m) => m.t === 'checkedChanged' && m.worktree === path && m.checked === checked);
+    const start = wire.markReceived();
     await page.locator(checkbox(a)).check();
     await page.locator(checkbox(b)).check();
+    // Until the daemon confirms, a re-render shows the stored (unchecked) state again.
+    await expect.poll(() => echoed(a, true, start) && echoed(b, true, start)).toBe(true);
     await selectWorktree(page, b);
     await page.locator(byTestId(TID.filterChecked)).check();
     await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([a, b].sort());
 
     const from = wire.markReceived();
     await page.locator(checkbox(b)).uncheck();
-    await expect
-      .poll(() => wire.receivedFromHost(LOCAL, from).some((m) => m.t === 'checkedChanged' && m.worktree === b && !m.checked))
-      .toBe(true);
+    await expect.poll(() => echoed(b, false, from)).toBe(true);
     await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
     expect((await listedWorktrees(page)).sort()).toEqual([a, b].sort());
     await expect(page.locator(checkbox(b))).not.toBeChecked();

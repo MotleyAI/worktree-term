@@ -82,7 +82,7 @@ const daemonEvents = [
     layouts: z.array(z.strictObject({ worktree: path, layout })).max(MAX_ENTRIES),
   }),
   message('worktreesChanged', { repo: path, worktrees: z.array(worktree).max(MAX_ENTRIES) }),
-  message('termCreated', { req, term: terminal }),
+  message('termCreated', { req: req.nullable(), term: terminal }),
   message('termExited', { termId, code: z.int(), signal }),
   message('termClosed', { termId }),
   message('detached', { termId, reason: z.literal('lagging') }),
@@ -128,6 +128,9 @@ export const messageSchemas = {
 export type Direction = keyof typeof messageSchemas;
 
 export type MessageOf<D extends Direction> = z.infer<(typeof messageSchemas)[D]>;
+
+export type Worktree = z.infer<typeof worktree>;
+export type Terminal = z.infer<typeof terminal>;
 
 // No valid message nests deeper; checked before parsing so hostile nesting cannot exhaust the stack.
 const MAX_NESTING = 32;

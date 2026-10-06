@@ -32,6 +32,7 @@ export const errorCode = z.enum([
   'busy',
   'spawn-failed',
   'version-mismatch',
+  'not-a-repo',
   'internal',
 ]);
 

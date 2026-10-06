@@ -1,19 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeMessage, encodeMessage, ProtocolError, type Direction } from './index.js';
-import {
-  DIRECTIONS,
-  featWorktree,
-  hello,
-  hosts,
-  liveTerminal,
-  MESSAGE_TYPES,
-  raw,
-  REPO,
-  samples,
-  SHA1,
-  utf8,
-  WT,
-} from './test-samples.js';
+import { DIRECTIONS, featWorktree, hello, hosts, liveTerminal, MESSAGE_TYPES, raw, REPO, samples, SHA1, utf8, WT } from './test-samples.js';
 
 const decodes = (dir: Direction, value: unknown): boolean => {
   try {
@@ -245,6 +232,16 @@ describe('request correlation', () => {
     expect(decodes('hubToBrowser', { t: 'error', req: null, host: null, code: 'internal', message: 'x' })).toBe(true);
   });
 
+  it('accepts a broadcast termCreated with a null req', () => {
+    const message = { t: 'termCreated', req: null, term: liveTerminal } as const;
+    expect(decodeMessage('daemonToClient', raw(message))).toEqual(message);
+    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: message })).toBe(true);
+  });
+
+  it('requires req on a termCreated, even if null', () => {
+    expect(decodes('daemonToClient', { t: 'termCreated', term: liveTerminal })).toBe(false);
+  });
+
   it('requires req on an error, even if null', () => {
     expect(decodes('daemonToClient', { t: 'error', code: 'internal', message: 'x' })).toBe(false);
   });
@@ -295,6 +292,7 @@ describe('value limits', () => {
     'busy',
     'spawn-failed',
     'version-mismatch',
+    'not-a-repo',
     'internal',
   ];
 
@@ -391,6 +389,10 @@ describe('value limits', () => {
   it('rejects 1025 worktrees', () => {
     const wts = paths(1025).map((path) => ({ ...featWorktree, path }));
     expectRejected('daemonToClient', raw({ t: 'worktreesChanged', repo: REPO, worktrees: wts }));
+  });
+
+  it('accepts the not-a-repo error code', () => {
+    expect(decodes('daemonToClient', { t: 'error', req: 1, code: 'not-a-repo', message: 'x' })).toBe(true);
   });
 
   it('rejects an unknown error code', () => {

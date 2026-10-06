@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "constants": {
     "MAX_FRAME": 16777216,
     "MAX_INPUT": 65536,
@@ -576,6 +576,7 @@
                 "busy",
                 "spawn-failed",
                 "version-mismatch",
+                "not-a-repo",
                 "internal"
               ]
             },
@@ -916,9 +917,16 @@
               "const": "termCreated"
             },
             "req": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 4294967295
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "term": {
               "type": "object",
@@ -2005,6 +2013,7 @@
                         "busy",
                         "spawn-failed",
                         "version-mismatch",
+                        "not-a-repo",
                         "internal"
                       ]
                     },
@@ -2345,9 +2354,16 @@
                       "const": "termCreated"
                     },
                     "req": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 4294967295
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 4294967295
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "term": {
                       "type": "object",
@@ -2844,6 +2860,7 @@
                 "busy",
                 "spawn-failed",
                 "version-mismatch",
+                "not-a-repo",
                 "internal"
               ]
             },
@@ -3047,6 +3064,11 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
@@ -3063,6 +3085,11 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}",
       "valid": false
     },
     {
@@ -3217,6 +3244,11 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
@@ -3233,6 +3265,11 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}}",
       "valid": false
     },
     {
@@ -3562,6 +3599,11 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": true
     },
@@ -3578,6 +3620,11 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}",
       "valid": true
     },
     {
@@ -3732,6 +3779,11 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
@@ -3748,6 +3800,11 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}}",
       "valid": false
     },
     {
@@ -4077,6 +4134,11 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
@@ -4093,6 +4155,11 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}",
       "valid": false
     },
     {
@@ -4247,6 +4314,11 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
@@ -4263,6 +4335,11 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}}",
       "valid": false
     },
     {
@@ -4592,6 +4669,11 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
@@ -4608,6 +4690,11 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}",
       "valid": false
     },
     {
@@ -4762,6 +4849,11 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"error\",\"req\":5,\"code\":\"not-a-repo\",\"message\":\"not a repository\"}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": true
     },
@@ -4778,6 +4870,11 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":3,\"term\":{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"bell\":false}}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"bell\":true}}}",
       "valid": true
     },
     {

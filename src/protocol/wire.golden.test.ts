@@ -92,8 +92,18 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'createTerm', req: 1, worktree: WT, preset: '', command: null, cols: 80, rows: 24 },
   { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [], active: 1 } },
   { t: 'setLayout', req: 1, worktree: WT, layout: { ...layout, active: 2 } },
-  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', root: { split: 'right', ratio: 0.5, a: { term: 5 }, b: { term: 5 } } }], active: 0 } },
-  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', root: { split: 'right', ratio: 0.96, a: { term: 1 }, b: { term: 2 } } }], active: 0 } },
+  {
+    t: 'setLayout',
+    req: 1,
+    worktree: WT,
+    layout: { tabs: [{ id: 'a', root: { split: 'right', ratio: 0.5, a: { term: 5 }, b: { term: 5 } } }], active: 0 },
+  },
+  {
+    t: 'setLayout',
+    req: 1,
+    worktree: WT,
+    layout: { tabs: [{ id: 'a', root: { split: 'right', ratio: 0.96, a: { term: 1 }, b: { term: 2 } } }], active: 0 },
+  },
   { t: 'host', host: 0, m: hello },
   { t: 'host', host: 0, m: { t: 'shutdown' } },
   { t: 'host', host: 65536, m: { t: 'detach', req: 1, termId: 1 } },
@@ -101,9 +111,7 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'error', req: null, code: 'internal', message: 'x', host: 1 },
 ];
 
-const allJson = [
-  ...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))]),
-];
+const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
 
 const currentSnapshot = (): WireSnapshot => ({
   protocolVersion: PROTOCOL_VERSION,

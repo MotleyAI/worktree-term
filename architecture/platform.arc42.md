@@ -39,5 +39,5 @@ flowchart TD
 
 1. Knows nothing of protocol, daemon, hub or web. [enforced: arch_check:model-truth]
 2. Only `dialer` connects to or spawns a daemon. [enforced: test:test/architecture/dependencies.test.ts]
-3. Files and directories it creates are owner-only. [review]
-4. File writes are atomic. [review]
+3. Files and directories it creates are owner-only. [enforced: test:src/platform/files/files.test.ts]
+4. File writes are atomic. [enforced: test:src/platform/files/files.test.ts]

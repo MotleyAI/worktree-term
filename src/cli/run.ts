@@ -1,9 +1,10 @@
+import type { Duplex } from 'node:stream';
 import { parseArgs } from 'node:util';
 import pkg from '../../package.json' with { type: 'json' };
-import { placeholder as runDaemon } from '../daemon/main/index.js';
+import { AlreadyRunningError, runDaemon } from '../daemon/main/index.js';
 import { placeholder as runHub } from '../hub/main/index.js';
-import { placeholder as dial } from '../platform/dialer/index.js';
-import { placeholder as installFiles } from '../platform/files/index.js';
+import { dial } from '../platform/dialer/index.js';
+import { currentHostPaths } from '../platform/files/index.js';
 import { PROTOCOL_VERSION } from '../protocol/index.js';
 
 export interface CliIo {
@@ -33,23 +34,75 @@ const NOT_IMPLEMENTED = 'not implemented';
 interface Command {
   /** Positional arguments after the verb. */
   args: readonly string[];
-  run: (args: readonly string[]) => Promise<void>;
+  /** Runs the command and resolves with its exit code. */
+  run: (io: CliIo) => Promise<number>;
 }
 
 /** Adapts a synchronous placeholder entry to a command. */
-const placeholderRun = (entry: () => void) => (): Promise<void> => {
+const placeholderRun = (entry: () => void) => (): Promise<number> => {
   entry();
-  return Promise.resolve();
+  return Promise.resolve(0);
 };
 
-// `daemon` and `connect` are implemented by DEV-2051, `ui` and `hub` by DEV-2052, the installers by DEV-2054.
+const notImplemented = (): void => {
+  throw new Error(NOT_IMPLEMENTED);
+};
+
+const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const daemon = async (io: CliIo): Promise<number> => {
+  try {
+    await runDaemon({ version: pkg.version, paths: currentHostPaths(), env: process.env });
+    return 0;
+  } catch (error) {
+    io.stderr(`wtd daemon: ${error instanceof AlreadyRunningError ? 'already running' : message(error)}\n`);
+    return 1;
+  }
+};
+
+/** Whether a socket error only means the daemon closed the connection. */
+const isPeerGone = (error: Error): boolean => 'code' in error && (error.code === 'ECONNRESET' || error.code === 'EPIPE');
+
+/** Relays stdin to `socket` and `socket` to stdout until the socket closes; resolves with any failure. */
+const bridge = (socket: Duplex): Promise<Error | null> =>
+  new Promise((resolve) => {
+    let failure: Error | null = null;
+    socket.on('error', (error) => {
+      if (!isPeerGone(error)) failure = error;
+    });
+    socket.once('close', () => {
+      process.stdin.unpipe(socket);
+      process.stdin.destroy();
+      process.stdout.write('', () => {
+        resolve(failure);
+      });
+    });
+    socket.pipe(process.stdout, { end: false });
+    process.stdin.pipe(socket);
+  });
+
+const connect = async (io: CliIo): Promise<number> => {
+  let failure: Error | null;
+  try {
+    const script = process.argv[1];
+    if (script === undefined) throw new Error('cannot tell how to start the daemon');
+    failure = await bridge(await dial(currentHostPaths(), [process.execPath, script, 'daemon']));
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error(String(error));
+  }
+  if (failure === null) return 0;
+  io.stderr(`wtd connect: ${failure.message}\n`);
+  return 1;
+};
+
+// `ui` and `hub` are implemented by DEV-2052, the installers by DEV-2054.
 const COMMANDS: ReadonlyMap<string, Command> = new Map([
   ['ui', { args: [], run: placeholderRun(runHub) }],
   ['hub', { args: [], run: placeholderRun(runHub) }],
-  ['daemon', { args: [], run: placeholderRun(runDaemon) }],
-  ['connect', { args: [], run: placeholderRun(dial) }],
-  ['install-local', { args: [], run: placeholderRun(installFiles) }],
-  ['install-remote', { args: ['alias'], run: placeholderRun(installFiles) }],
+  ['daemon', { args: [], run: daemon }],
+  ['connect', { args: [], run: connect }],
+  ['install-local', { args: [], run: placeholderRun(notImplemented) }],
+  ['install-remote', { args: ['alias'], run: placeholderRun(notImplemented) }],
 ]);
 
 class UsageError extends Error {
@@ -95,7 +148,7 @@ const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => 
   const extra = args[command.args.length];
   if (extra !== undefined) throw new UsageError(`${verb}: unexpected argument '${extra}'`);
   try {
-    await command.run(args);
+    return await command.run(io);
   } catch (error) {
     if (error instanceof Error && error.message === NOT_IMPLEMENTED) {
       io.stderr(`wtd ${verb}: ${NOT_IMPLEMENTED}\n`);
@@ -103,7 +156,6 @@ const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => 
     }
     throw error;
   }
-  return 0;
 };
 
 /** Runs `wtd` with `argv` (without node and script) and returns the exit code. */

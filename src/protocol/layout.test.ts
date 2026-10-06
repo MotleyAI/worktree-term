@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeMessage, encodeMessage, ProtocolError } from './index.js';
+import { decodeMessage, encodeMessage, layoutSchema, ProtocolError } from './index.js';
 import { raw, WT, type Layout, type Pane } from './test-samples.js';
 
 const setLayout = (layout: unknown): string => raw({ t: 'setLayout', req: 1, worktree: WT, layout });
@@ -116,9 +116,7 @@ describe('layout validity', () => {
   });
 
   it('rejects an unknown split direction', () => {
-    expect(accepts({ tabs: [{ id: 't', root: { split: 'left', ratio: 0.5, a: { term: 1 }, b: { term: 2 } } }], active: 0 })).toBe(
-      false,
-    );
+    expect(accepts({ tabs: [{ id: 't', root: { split: 'left', ratio: 0.5, a: { term: 1 }, b: { term: 2 } } }], active: 0 })).toBe(false);
   });
 
   it('rejects a pane that is both a terminal and a split', () => {
@@ -134,5 +132,14 @@ describe('layout validity', () => {
   it('refuses to encode a layout with a duplicate terminal', () => {
     const layout = oneTab(split({ term: 5 }, { term: 5 }));
     expect(() => encodeMessage('clientToDaemon', { t: 'setLayout', req: 1, worktree: WT, layout })).toThrow(ProtocolError);
+  });
+});
+
+describe('exported layout schema', () => {
+  it('accepts what setLayout accepts and rejects what it rejects', () => {
+    const valid = oneTab(split({ term: 1 }, { term: 2 }));
+    const invalid = oneTab(split({ term: 5 }, { term: 5 }));
+    expect(layoutSchema.safeParse(valid).success).toBe(true);
+    expect(layoutSchema.safeParse(invalid).success).toBe(false);
   });
 });

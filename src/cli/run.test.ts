@@ -46,7 +46,7 @@ const expectUsageError = async (result: Result, mentions: RegExp): Promise<void>
 
 describe('wtd --version', () => {
   it('prints the package and protocol versions', async () => {
-    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 1)\n`, stderr: '' });
+    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 2)\n`, stderr: '' });
   });
 });
 
@@ -88,8 +88,6 @@ describe('not-yet-implemented commands', () => {
   it.each([
     ['ui', ['ui']],
     ['hub', ['hub']],
-    ['daemon', ['daemon']],
-    ['connect', ['connect']],
     ['install-local', ['install-local']],
     ['install-remote', ['install-remote', 'devbox']],
   ])('%s prints "not implemented" and exits 2', async (verb, argv) => {

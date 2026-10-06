@@ -86,7 +86,7 @@ flowchart TD
 4. Code passes the strict compiler config and the strict lint config with zero findings; suppressions state a reason. [enforced: test:test/architecture/static.test.ts]
 5. Input from outside the process is schema-parsed at the boundary; unparsed data never travels inward. [review]
 6. Errors are never swallowed: a catch rethrows, reports, or returns a typed failure. [review]
-7. Nothing listens beyond loopback or an owner-only unix socket. [review]
+7. Nothing listens beyond loopback or an owner-only unix socket. [review] [enforced: test:test/process/hub-server.test.ts]
 8. Every production change ships with tests in its tier: unit beside the code, `test/process`, `test/e2e`; `test/integration` holds only opt-in real-SSH tests. Mocks are typed against the real module. [review]
 
 ## Rationale

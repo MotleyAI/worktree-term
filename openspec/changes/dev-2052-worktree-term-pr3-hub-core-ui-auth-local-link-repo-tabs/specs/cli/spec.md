@@ -7,6 +7,21 @@
 - **WHEN** the user runs `wtd --version`
 - **THEN** stdout is `wtd <package version> (protocol 3)` followed by a newline, stderr is empty, and the exit code is 0
 
+### Requirement: Connect command
+`wtd connect` SHALL connect to this host's daemon socket, starting the daemon first if no daemon is serving it, and then relay bytes unchanged from stdin to the socket and from the socket to stdout. When stdin ends it SHALL half-close the socket; when the socket closes it SHALL flush stdout and exit 0. If the daemon cannot be reached or started, or the socket fails, it SHALL print one line naming the cause to stderr and exit 1.
+
+#### Scenario: Bridge over a pipe with auto-start
+- **WHEN** no daemon is running and a process runs `wtd connect` with piped stdio
+- **THEN** a daemon is started and the first frame on stdout is the daemon's `hello` with `protocol` 3
+
+#### Scenario: Requests relayed
+- **WHEN** the client writes `hello` and a `watchRepo` frame to `wtd connect`'s stdin
+- **THEN** the daemon's `repoState` and `done` frames appear on stdout unchanged
+
+#### Scenario: Socket close ends the bridge
+- **WHEN** the client sends `shutdown` through `wtd connect`
+- **THEN** the daemon exits, `wtd connect` exits 0, and the next `wtd connect` starts a daemon with a different `instance`
+
 ## ADDED Requirements
 
 ### Requirement: Hub command

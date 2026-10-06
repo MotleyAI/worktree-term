@@ -1,0 +1,151 @@
+import { signal } from '@preact/signals';
+import type { HostEntry, Layout, MessageOf, Terminal, Worktree } from '../../protocol/index.js';
+
+type DaemonEvent = Extract<MessageOf<'hubToBrowser'>, { t: 'host' }>['m'];
+
+/** Where the page stands with the hub. */
+export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'auth' | 'outdated';
+
+/** What the page knows of one watched repo. */
+export interface RepoState {
+  worktrees: readonly Worktree[];
+  terminals: readonly Terminal[];
+  checked: readonly string[];
+  layouts: ReadonlyMap<string, Layout>;
+  /** Why the repo's watch failed, if it did. */
+  error: { code: string; message: string } | null;
+}
+
+const EMPTY: RepoState = { worktrees: [], terminals: [], checked: [], layouts: new Map(), error: null };
+
+export const repoKey = (host: number, repo: string): string => `${String(host)}:${repo}`;
+
+/** The page's view of the hub and its daemons, as signals. */
+export class HubStore {
+  readonly status = signal<ConnectionStatus>('connecting');
+  readonly hosts = signal<readonly HostEntry[]>([]);
+  /** Repo states by `repoKey`. */
+  readonly repos = signal<ReadonlyMap<string, RepoState>>(new Map());
+  /** A problem the hub reported outside any request. */
+  readonly notice = signal<string | null>(null);
+
+  repo(host: number, repo: string): RepoState | null {
+    return this.repos.value.get(repoKey(host, repo)) ?? null;
+  }
+
+  /** Terminal ids the daemon lists for `repo`. */
+  terminalIds(host: number, repo: string): number[] {
+    return (this.repo(host, repo)?.terminals ?? []).map((t) => t.termId);
+  }
+
+  repoError(host: number, repo: string, error: { code: string; message: string }): void {
+    this.update(host, repo, (state) => ({ ...state, error }));
+  }
+
+  /** Forgets every repo state of `host`. */
+  clearHost(host: number): void {
+    const prefix = `${String(host)}:`;
+    this.repos.value = new Map([...this.repos.value].filter(([key]) => !key.startsWith(prefix)));
+  }
+
+  /** Applies a daemon event of `host` to the repo states. */
+  apply(host: number, m: DaemonEvent): void {
+    switch (m.t) {
+      case 'repoState':
+        this.update(host, m.repo, () => ({
+          worktrees: m.worktrees,
+          terminals: m.terminals,
+          checked: m.checked,
+          layouts: new Map(m.layouts.map((l) => [l.worktree, l.layout])),
+          error: null,
+        }));
+        return;
+      case 'worktreesChanged':
+        this.update(host, m.repo, (state) => ({ ...state, worktrees: m.worktrees }));
+        return;
+      case 'termCreated':
+        this.inRepoOf(host, m.term.worktree, (state) =>
+          state.terminals.some((t) => t.termId === m.term.termId) ? state : { ...state, terminals: [...state.terminals, m.term] },
+        );
+        return;
+      case 'termExited':
+        this.withTerminal(host, m.termId, (t) => ({ ...t, exit: { code: m.code, signal: m.signal } }));
+        return;
+      case 'activity':
+        this.withTerminal(host, m.termId, (t) => ({ ...t, unseen: m.unseen, bell: m.bell }));
+        return;
+      case 'termClosed':
+        this.forHost(host, (state) =>
+          state.terminals.some((t) => t.termId === m.termId)
+            ? { ...state, terminals: state.terminals.filter((t) => t.termId !== m.termId) }
+            : state,
+        );
+        return;
+      case 'checkedChanged':
+        this.inRepoOf(host, m.worktree, (state) => ({
+          ...state,
+          checked: m.checked ? [...new Set([...state.checked, m.worktree])] : state.checked.filter((p) => p !== m.worktree),
+        }));
+        return;
+      case 'layoutChanged':
+        this.setLayout(host, m.worktree, m.layout);
+        return;
+      case 'done':
+      case 'error':
+      case 'detached':
+      case 'reposDiscovered':
+        return;
+    }
+  }
+
+  /** Sets the layout of `worktree`, as the daemon will once it applies our `setLayout`. */
+  setLayout(host: number, worktree: string, layout: Layout): void {
+    this.inRepoOf(host, worktree, (state) => ({ ...state, layouts: new Map([...state.layouts, [worktree, layout]]) }));
+  }
+
+  /** The repo of `host` that `worktree` belongs to. */
+  repoOf(host: number, worktree: string): string | null {
+    const prefix = `${String(host)}:`;
+    for (const [key, state] of this.repos.value) {
+      if (!key.startsWith(prefix)) continue;
+      if (state.worktrees.some((w) => w.path === worktree) || state.terminals.some((t) => t.worktree === worktree)) {
+        return key.slice(prefix.length);
+      }
+    }
+    return null;
+  }
+
+  private update(host: number, repo: string, change: (state: RepoState) => RepoState): void {
+    const key = repoKey(host, repo);
+    const next = new Map(this.repos.value);
+    next.set(key, change(next.get(key) ?? EMPTY));
+    this.repos.value = next;
+  }
+
+  private inRepoOf(host: number, worktree: string, change: (state: RepoState) => RepoState): void {
+    const repo = this.repoOf(host, worktree);
+    if (repo !== null) this.update(host, repo, change);
+  }
+
+  private forHost(host: number, change: (state: RepoState) => RepoState): void {
+    const prefix = `${String(host)}:`;
+    const next = new Map(this.repos.value);
+    let changed = false;
+    for (const [key, state] of this.repos.value) {
+      if (!key.startsWith(prefix)) continue;
+      const updated = change(state);
+      if (updated === state) continue;
+      next.set(key, updated);
+      changed = true;
+    }
+    if (changed) this.repos.value = next;
+  }
+
+  private withTerminal(host: number, termId: number, change: (t: Terminal) => Terminal): void {
+    this.forHost(host, (state) =>
+      state.terminals.some((t) => t.termId === termId)
+        ? { ...state, terminals: state.terminals.map((t) => (t.termId === termId ? change(t) : t)) }
+        : state,
+    );
+  }
+}

@@ -20,6 +20,7 @@ import {
   offset,
   path,
   req,
+  secret,
   signal,
   size,
   termId,
@@ -98,6 +99,7 @@ const hostEntry = z.strictObject({
   remote: z.boolean(),
   status: z.enum(['connecting', 'connected', 'reconnecting', 'down', 'outdated']),
   daemonVersion: version.nullable(),
+  instance: instance.nullable(),
   repos: z.array(path).max(MAX_HOST_REPOS),
 });
 
@@ -115,6 +117,7 @@ export const messageSchemas = {
   ]),
   hubToBrowser: z.discriminatedUnion('t', [
     hello,
+    message('token', { token: secret }),
     message('host', { host: hostIdx, m: z.discriminatedUnion('t', daemonEvents) }),
     message('hosts', { hosts: z.array(hostEntry).max(MAX_HOSTS) }),
     message('presets', { presets: z.array(z.strictObject({ name, command: longText })).max(MAX_PRESETS) }),
@@ -130,6 +133,7 @@ export type Direction = keyof typeof messageSchemas;
 export type MessageOf<D extends Direction> = z.infer<(typeof messageSchemas)[D]>;
 
 export type Worktree = z.infer<typeof worktree>;
+export type HostEntry = z.infer<typeof hostEntry>;
 export type Terminal = z.infer<typeof terminal>;
 
 // No valid message nests deeper; checked before parsing so hostile nesting cannot exhaust the stack.
@@ -184,3 +188,19 @@ export const decodeMessage = <D extends Direction>(dir: D, data: string | Uint8A
 
 /** Encodes a control message of direction `dir` as JSON text; refuses values that would not decode. */
 export const encodeMessage = <D extends Direction>(dir: D, msg: MessageOf<D>): string => JSON.stringify(validate(dir, msg));
+
+const codeResponse = z.strictObject({ code: secret });
+
+export type CodeResponse = z.infer<typeof codeResponse>;
+
+const parseCodeResponse = (value: unknown): CodeResponse => {
+  const result = codeResponse.safeParse(value);
+  if (!result.success) throw new ProtocolError(`invalid code response: ${z.prettifyError(result.error)}`);
+  return result.data;
+};
+
+/** Decodes the hub's one-time code response from JSON text or UTF-8 bytes. */
+export const decodeCodeResponse = (data: string | Uint8Array): CodeResponse => parseCodeResponse(parseJson(toText(data)));
+
+/** Encodes a one-time code response; refuses values that would not decode. */
+export const encodeCodeResponse = (response: CodeResponse): string => JSON.stringify(parseCodeResponse(response));

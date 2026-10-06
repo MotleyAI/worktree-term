@@ -108,7 +108,8 @@ test.describe('terminal lifetime', () => {
       for (const [n, { term, xterm }] of handles.entries()) {
         expect(await isCurrent(page, xterm, `${terminalBox(LOCAL, term)} .xterm`)).toBe(true);
         const container = containers[n];
-        expect(container !== undefined && (await isCurrent(page, container, terminalBox(LOCAL, term)))).toBe(true);
+        if (container === undefined) throw new Error(`no container for terminal ${String(term)}`);
+        expect(await isCurrent(page, container, terminalBox(LOCAL, term))).toBe(true);
       }
     }
   });

@@ -471,7 +471,8 @@ describe('hub code response', () => {
   });
 
   it('rejects an extra token field', () => {
-    expect(() => decodeCodeResponse(raw({ code: TOKEN, token: TOKEN }))).toThrow(ProtocolError);
+    const text = raw({ code: TOKEN, token: TOKEN });
+    expect(() => decodeCodeResponse(text)).toThrow(ProtocolError);
   });
 
   it.each([
@@ -482,7 +483,8 @@ describe('hub code response', () => {
     ['an array', [TOKEN]],
     ['null', null],
   ])('rejects %s', (_name, value) => {
-    expect(() => decodeCodeResponse(raw(value))).toThrow(ProtocolError);
+    const text = raw(value);
+    expect(() => decodeCodeResponse(text)).toThrow(ProtocolError);
   });
 
   it('rejects invalid JSON', () => {

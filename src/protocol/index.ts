@@ -12,4 +12,16 @@ export {
   type Frame,
 } from './frames.js';
 export { layout as layoutSchema, type Layout } from './layout.js';
-export { decodeMessage, encodeMessage, messageSchemas, type Direction, type MessageOf, type Terminal, type Worktree } from './messages.js';
+export {
+  decodeCodeResponse,
+  decodeMessage,
+  encodeCodeResponse,
+  encodeMessage,
+  messageSchemas,
+  type CodeResponse,
+  type Direction,
+  type HostEntry,
+  type MessageOf,
+  type Terminal,
+  type Worktree,
+} from './messages.js';

@@ -49,6 +49,7 @@ test.describe('selection', () => {
     hub.writeRepos([first.repo, second.repo]);
     await openUi(hub, page);
     await expect(page.locator(repoTab(first.repo))).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(worktreeEntry(first.repo))).toBeVisible();
     const listed = await listedWorktrees(page);
     expect(listed[0]).toBe(first.repo);
     await expect(page.locator(worktreeEntry(first.repo))).toHaveAttribute('aria-selected', 'true');

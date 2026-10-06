@@ -39,7 +39,6 @@ export const ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
     '@xterm/addon-fit',
     '@xterm/addon-web-links',
     '@xterm/addon-unicode11',
-    '@xterm/addon-search',
   ],
   'web.ui': ['preact', '@preact/signals'],
   'web.main': ['preact'],

@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
   writeSync,
   type BigIntStats,
@@ -26,6 +27,8 @@ import {
   openLog,
   preparePrivateDirs,
   readFileIfExists,
+  readPrivateFile,
+  readTree,
   removeFile,
   renameFile,
   writeFileAtomic,
@@ -495,5 +498,74 @@ describe('start lock', () => {
     writeFileSync(lockFile(), other);
     await lock.release();
     expect(readFileSync(lockFile(), 'utf8')).toBe(other);
+  });
+});
+
+describe('private file reads', () => {
+  it('reads an owner-only file', async () => {
+    const path = join(dir, 'secret');
+    writeFileSync(path, 'content', { mode: 0o600 });
+    expect(await readPrivateFile(path)).toBe('content');
+  });
+
+  it('returns null for a missing file', async () => {
+    expect(await readPrivateFile(join(dir, 'missing'))).toBeNull();
+  });
+
+  it('tightens a looser mode to 0600', async () => {
+    const path = join(dir, 'secret');
+    writeFileSync(path, 'content', { mode: 0o640 });
+    expect(await readPrivateFile(path)).toBe('content');
+    expect(modeOf(path)).toBe(0o600);
+  });
+
+  it('refuses a symbolic link, naming the path', async () => {
+    const target = join(dir, 'target');
+    writeFileSync(target, 'content', { mode: 0o600 });
+    const path = join(dir, 'link');
+    symlinkSync(target, path);
+    await expect(readPrivateFile(path)).rejects.toThrow(`${path} is a symbolic link`);
+  });
+
+  it('refuses a directory, naming the path', async () => {
+    const path = join(dir, 'sub');
+    mkdirSync(path);
+    await expect(readPrivateFile(path)).rejects.toThrow(`${path} is not a regular file`);
+  });
+
+  it('refuses a FIFO without blocking on it', async () => {
+    const path = join(dir, 'fifo');
+    expect(spawnSync('mkfifo', [path]).status).toBe(0);
+    await expect(readPrivateFile(path)).rejects.toThrow(`${path} is not a regular file`);
+  });
+});
+
+describe('tree reads', () => {
+  it('reads every regular file with its path relative to the root', async () => {
+    mkdirSync(join(dir, 'a', 'b'), { recursive: true });
+    writeFileSync(join(dir, 'top.txt'), 'top');
+    writeFileSync(join(dir, 'a', 'b', 'deep.js'), 'deep');
+    const files = await readTree(dir);
+    expect(files.map((f) => [f.path, Buffer.from(f.data).toString()]).sort()).toEqual([
+      ['a/b/deep.js', 'deep'],
+      ['top.txt', 'top'],
+    ]);
+  });
+
+  it('does not follow symbolic links', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'wtd-outside-'));
+    try {
+      writeFileSync(join(outside, 'secret'), 'x');
+      symlinkSync(outside, join(dir, 'linked-dir'));
+      symlinkSync(join(outside, 'secret'), join(dir, 'linked-file'));
+      expect(await readTree(dir)).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('fails for a missing directory', async () => {
+    const missing = join(dir, 'missing');
+    await expect(readTree(missing)).rejects.toThrow();
   });
 });

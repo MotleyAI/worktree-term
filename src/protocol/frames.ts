@@ -172,7 +172,7 @@ export const encodeStreamData = (frame: DataFrame): Uint8Array => {
 export const decodeStreamData = (frame: Frame): DataFrame => readData(frame.kind, frame.payload, 0);
 
 /** Encodes a data frame as a binary WebSocket message: kind, 2-byte host index, data payload. */
-export const encodeWsData = (host: number, frame: DataFrame): Uint8Array => {
+export const encodeWsData = (host: number, frame: DataFrame): Uint8Array<ArrayBuffer> => {
   if (!hostIdx.safeParse(host).success) throw new ProtocolError(`invalid host index ${String(host)}`);
   const valid = validData(frame);
   const out = new Uint8Array(WS_HEADER + dataHeader(valid) + valid.data.length);

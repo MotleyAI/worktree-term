@@ -241,7 +241,8 @@ export class DaemonHost {
       }
     }
     await waitUntil(() => this.daemonPids().length === 0, 'daemons to exit').catch(() => undefined);
-    rmSync(this.dir, { recursive: true, force: true });
+    // Shells hung up with the daemon may still be writing their history into HOME.
+    rmSync(this.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 
   /** Whether the socket file exists. */

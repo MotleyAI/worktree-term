@@ -186,7 +186,7 @@ describe('routing', () => {
         ).toBe(true);
       const daemonData = proxy.fromDaemon.filter((f) => f.kind !== FrameKind.control);
       expect(daemonData.some((f) => f.kind === FrameKind.snapshot)).toBe(true);
-      expect(client.data.map((d) => d.raw.subarray(0, 3))).toEqual(daemonData.map((f) => Uint8Array.from([f.kind, 0, 0])));
+      expect(client.data.map((d) => Buffer.from(d.raw.subarray(0, 3)))).toEqual(daemonData.map((f) => Buffer.from([f.kind, 0, 0])));
       expect(client.data.map((d) => Buffer.from(d.raw.subarray(3)))).toEqual(daemonData.map((f) => Buffer.from(f.payload)));
       await proxy.close();
     } finally {
@@ -262,13 +262,13 @@ describe('routing', () => {
     await connected(a);
     await connected(b);
     await a.watch(0, repo);
+    await b.watch(0, repo);
     const term = await b.create(0, wt, { command: 'exec sleep 60' });
-    expect(a.daemonEvents(0, 'done').map((m) => m.req)).toEqual([1]);
-    expect(b.daemonEvents(0, 'done')).toEqual([]);
     await a.waitEvent(0, 'termCreated', (m) => m.term.termId === term.termId);
+    expect(a.daemonEvents(0, 'done').map((m) => m.req)).toEqual([1]);
+    expect(b.daemonEvents(0, 'done').map((m) => m.req)).toEqual([1]);
     expect(a.daemonEvents(0, 'termCreated').map((m) => m.req)).toEqual([null]);
-    expect(b.daemonEvents(0, 'termCreated').map((m) => m.req)).toEqual([1]);
-    expect(b.daemonEvents(0, 'repoState')).toEqual([]);
+    expect(b.daemonEvents(0, 'termCreated').map((m) => m.req)).toEqual([2]);
   });
 
   it.each([

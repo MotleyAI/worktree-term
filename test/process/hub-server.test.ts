@@ -427,7 +427,8 @@ describe('WebSocket authentication', () => {
     ['no credential', () => ['wtd']],
     ['a credential without wtd', () => [`wtd.token.${token}`]],
   ])('refuses %s and starts no session', async (_name, protocols) => {
-    expect(await refusal(host.open(protocols()))).toBe(401);
+    // Raw upgrade: the ws client itself refuses to offer a duplicated subprotocol.
+    expect((await host.upgrade(protocols())).status).toBe(401);
     await sleep(500);
     expect(host.daemonPids()).toEqual([]);
   });

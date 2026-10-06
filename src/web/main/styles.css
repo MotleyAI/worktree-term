@@ -1,0 +1,162 @@
+:root {
+  color-scheme: dark;
+  --bg: #1e1e1e;
+  --panel: #252526;
+  --border: #3c3c3c;
+  --text: #d4d4d4;
+  --muted: #858585;
+  --accent: #0e639c;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+#app,
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  margin: 4rem auto;
+  font-size: 1.2rem;
+}
+
+.repo-tabs,
+.term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  min-height: 30px;
+  padding: 0 4px;
+}
+
+.repo-tabs .spacer {
+  flex: 1;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.repo-tab.active,
+.term-tab.active {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.reconnecting {
+  color: #e5c07b;
+  margin-right: 8px;
+}
+
+.banner {
+  padding: 6px 10px;
+  background: #5a1d1d;
+  border-bottom: 1px solid var(--border);
+}
+
+.banner button {
+  border-color: var(--text);
+  margin-left: 6px;
+}
+
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 240px;
+  overflow: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.worktree {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.worktree[aria-selected='true'] {
+  background: var(--accent);
+}
+
+.worktree.prunable,
+.worktree.gone {
+  color: var(--muted);
+}
+
+.worktree .label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.terminal-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.repo-error {
+  padding: 6px 10px;
+  color: #f48771;
+}
+
+.term-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.term-tab .close {
+  padding: 0 4px;
+}
+
+.terminal-area {
+  flex: 1;
+  min-height: 0;
+}
+
+.wtd-terminals {
+  position: fixed;
+  pointer-events: none;
+}
+
+.wtd-terminal {
+  position: absolute;
+  inset: 0;
+  padding: 2px 4px;
+  pointer-events: auto;
+}
+
+.wtd-probe {
+  visibility: hidden;
+  pointer-events: none;
+}

@@ -43,6 +43,7 @@ model {
       metadata {
         package 'src/hub'
         arc42 'architecture/hub.arc42.md'
+        specs ['hub']
       }
       server = component 'Server'
       links = component 'Links'
@@ -63,6 +64,7 @@ model {
       metadata {
         package 'src/web'
         arc42 'architecture/web.arc42.md'
+        specs ['web']
       }
       client = component 'Client'
       terminals = component 'Terminals'

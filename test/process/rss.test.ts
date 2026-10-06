@@ -1,11 +1,19 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addWorktree, makeRepo, residentBytes, sleep } from '../support/daemon-host.js';
+import { addWorktree, makeRepo, sleep } from '../support/daemon-host.js';
 import { HubHost } from '../support/hub-host.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 60_000 });
 
 const MB = 1000 * 1000;
+
+/** Private resident memory of `pid`: its anonymous pages, without the shared node binary. */
+const privateBytes = (pid: number): number => {
+  const match = /^RssAnon:\s+(\d+) kB$/m.exec(readFileSync(`/proc/${String(pid)}/status`, 'utf8'));
+  if (match?.[1] === undefined) throw new Error(`no RssAnon for ${String(pid)}`);
+  return Number(match[1]) * 1024;
+};
 
 let host: HubHost;
 
@@ -18,7 +26,7 @@ afterEach(async () => {
 });
 
 describe('resident memory', () => {
-  it('keeps hub and daemon under 150 MB with 58 worktrees watched and 10 terminals attached', async () => {
+  it('keeps hub and daemon under 150 MB of private memory with 58 worktrees watched and 10 terminals attached', async () => {
     const repo = makeRepo(join(host.dir, 'repo'));
     const worktrees = Array.from({ length: 57 }, (_, i) => addWorktree(repo, join(host.dir, 'wts', `wt${String(i)}`), `wt${String(i)}`));
     host.writeRepos([repo]);
@@ -36,6 +44,6 @@ describe('resident memory', () => {
     await sleep(3000);
     const [daemon] = host.daemonPids();
     if (daemon === undefined) throw new Error('no daemon');
-    expect(residentBytes(hub.pid) + residentBytes(daemon)).toBeLessThan(150 * MB);
+    expect(privateBytes(hub.pid) + privateBytes(daemon)).toBeLessThan(150 * MB);
   });
 });

@@ -1,4 +1,5 @@
 import { test as base, expect, type BrowserContext, type ElementHandle, type Page } from '@playwright/test';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DaemonClient } from '../support/daemon-client.js';
 import { addWorktree, git, makeRepo, waitUntil } from '../support/daemon-host.js';
@@ -41,6 +42,8 @@ export const runUi = async (hub: HubHost): Promise<string> => {
   const ui = hub.wtd(['ui']);
   const exit = await ui.exited;
   if (exit.code !== 0) throw new Error(`wtd ui exited ${JSON.stringify(exit)}: ${ui.stderr}`);
+  // The browser runs detached; wait until it has recorded its call.
+  await waitUntil(() => hub.browserCalls().length > before, 'the browser to start');
   const call = hub.browserCalls()[before];
   const arg = call?.args[0];
   if (arg?.startsWith('--app=') !== true) throw new Error(`unexpected browser call ${JSON.stringify(call)}`);
@@ -80,6 +83,7 @@ export const detachedWorktree = (repo: string, dir: string): { path: string; hea
 
 /** A daemon client that watches `repo` (the daemon must be running). */
 export const watcher = async (hub: HubHost, repo: string): Promise<DaemonClient> => {
+  await waitUntil(() => existsSync(hub.socket), 'the daemon socket', 10_000);
   const client = await hub.client();
   await client.watch(repo);
   return client;

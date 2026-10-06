@@ -14,6 +14,7 @@ PR 1 (DEV-1989) left every daemon and platform element as a placeholder. This ch
 - **BREAKING** (wire): `PROTOCOL_VERSION` 2 — `termCreated.req` may be null (broadcast to other watchers) and the error code `not-a-repo` is added.
 - Socket moves from `$XDG_RUNTIME_DIR` to `$XDG_STATE_HOME/worktree-term/run/<host>.sock`, which survives the end of the last login session on remote hosts.
 - Architecture: daemon and platform `[review]` principles upgraded to `[enforced: test:…]` as their tests land; `daemon` and `platform` specs attached to their nodes.
+- CI: a GitHub Actions workflow runs `pnpm lint` and `pnpm test` on every push and pull request.
 
 ## Capabilities
 
@@ -32,3 +33,4 @@ PR 1 (DEV-1989) left every daemon and platform element as a placeholder. This ch
 - Dependencies (exact pins): `@homebridge/node-pty-prebuilt-multiarch@0.14.1` (added to pnpm `allowBuilds`), `@xterm/headless@6.0.0`, `@xterm/addon-serialize@0.14.0`.
 - Architecture: `architecture/model/typescript.c4` (specs metadata), `architecture/daemon.arc42.md` (socket location, enforcement tags), `architecture/platform.arc42.md` (enforcement tags).
 - Wire: `wire.golden.json` re-blessed for version 2; `frozen.golden.json` unchanged.
+- CI: `.github/workflows/ci.yml` (Node 22, pnpm, `living-architecture` from PyPI for `la-arch-check`).

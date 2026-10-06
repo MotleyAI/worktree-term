@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+      # la-arch-check, run by the architecture tests.
+      - run: uv tool install living-architecture==0.2.3
+      - run: git config --global user.name ci && git config --global user.email ci@example.com
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test

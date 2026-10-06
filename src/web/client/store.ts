@@ -59,7 +59,7 @@ export class HubStore {
   clearHost(host: number): void {
     const prefix = `${String(host)}:`;
     this.repos.value = new Map([...this.repos.value].filter(([key]) => !key.startsWith(prefix)));
-    for (const key of [...this.reported.keys()]) if (key.startsWith(prefix)) this.reported.delete(key);
+    for (const key of this.reported.keys()) if (key.startsWith(prefix)) this.reported.delete(key);
   }
 
   /** Applies a daemon event of `host` to the repo states. */

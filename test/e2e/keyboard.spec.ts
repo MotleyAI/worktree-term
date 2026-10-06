@@ -219,7 +219,9 @@ test.describe('shortcuts and the terminal program', () => {
     await page.locator(terminalBox(LOCAL, right)).click();
     await page.keyboard.press('Control+Shift+KeyV');
     await page.keyboard.press('Enter');
-    await waitScreen(page, right, 'COPY-ME-42: command not found');
+    const screen = await waitScreen(page, right, 'COPY-ME-42: command not found');
+    expect(screen).toMatch(/(^|\s)COPY-ME-42: command not found/);
+    expect(screen).not.toContain('COPY-ME-42COPY-ME-42');
   });
 
   test('a failed copy is reported on the page', async ({ hub, page }) => {

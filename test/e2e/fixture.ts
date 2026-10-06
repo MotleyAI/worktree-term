@@ -201,7 +201,7 @@ export const confirmClose = async (page: Page): Promise<void> => {
 /** The mark shown inside the element `selector` finds; null without one. */
 export const markOf = async (page: Page, selector: string): Promise<string | null> => {
   const mark = page.locator(selector).locator(byTestId(TID.mark));
-  return (await mark.count()) === 0 ? null : mark.getAttribute('data-mark');
+  return (await mark.count()) === 0 ? null : mark.getAttribute('data-mark'); // NOSONAR(S7761) — a Playwright locator, which has no dataset
 };
 
 /** Types `line` and Enter into the terminal. */

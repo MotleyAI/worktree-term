@@ -148,6 +148,8 @@ export class View {
   private readonly focusRecords = signal(new Map<string, { termId: number; root: Pane }>());
   /** The layout the page last stored per host and worktree, to tell its echo from a change. */
   private readonly stored = new Map<string, string>();
+  /** Per host and worktree, a terminal its full layout misses that the page shows anyway. */
+  private readonly outside = signal(new Map<string, number>());
 
   readonly tabs = computed<RepoTab[]>(() => repoTabs(this.client.store.hosts.value));
   readonly tab = computed<RepoTab | null>(() => {
@@ -195,7 +197,7 @@ export class View {
     const layout = this.layout.value;
     const live = new Set(terminals.map((t) => t.termId));
     const byId = (termId: number): Terminal | null => terminals.find((t) => t.termId === termId) ?? null;
-    const { tabs, active } = terminalTabs(layout, [...live]);
+    const { tabs, active } = terminalTabs(layout, [...live], this.outside.value.get(`${String(tab?.host)}:${worktree}`) ?? null);
     const prefix = `${String(tab?.host)}:${worktree}:`;
     return {
       tabs: tabs.map((t) => {
@@ -224,7 +226,10 @@ export class View {
   readonly panes = computed<ShownPane[]>(() => {
     const tab = this.activeTab.value;
     if (tab === null) return [];
-    return paneRects(tab.root, this.localArea.value).map((p) => ({ ...p, terminal: tab.terminals.find((t) => t.termId === p.termId) ?? null }));
+    return paneRects(tab.root, this.localArea.value).map((p) => ({
+      ...p,
+      terminal: tab.terminals.find((t) => t.termId === p.termId) ?? null,
+    }));
   });
   readonly dividers = computed<Divider[]>(() => {
     const tab = this.activeTab.value;
@@ -305,7 +310,22 @@ export class View {
     const tab = this.tab.value;
     const worktree = this.worktree.value;
     if (tab === null || worktree === null) return;
-    this.storeLayout(tab.host, worktree, selectTab(this.storedLayout(tab.host, tab.repo, worktree), termId));
+    const layout = this.storedLayout(tab.host, tab.repo, worktree);
+    // A full layout cannot take the tab, so it is only shown.
+    const full = tabOf(layout, termId) < 0 && !canAddTab(layout);
+    this.showOutside(tab.host, worktree, full ? termId : null);
+    if (!full) this.storeLayout(tab.host, worktree, selectTab(layout, termId));
+  }
+
+  /** Shows `termId` in the worktree although its layout misses it; null shows the layout's active tab. */
+  private showOutside(host: number, worktree: string, termId: number | null): void {
+    const key = `${String(host)}:${worktree}`;
+    const current = this.outside.peek();
+    if (termId === null ? !current.has(key) : current.get(key) === termId) return;
+    const outside = new Map(current);
+    if (termId === null) outside.delete(key);
+    else outside.set(key, termId);
+    this.outside.value = outside;
   }
 
   /** Makes the pane of `termId` in the shown tab the focused one. */
@@ -417,9 +437,10 @@ export class View {
     const shortcut = keymap(event);
     if (shortcut === null) return false;
     if (event.type !== 'keydown') return true;
-    // A terminal pastes on the browser's own paste event.
-    if (!(inTerminal && shortcut.action.t === 'paste')) event.preventDefault();
-    if (shortcut.act && !this.modal.peek()) this.act(shortcut.action);
+    // A terminal pastes on the browser's own paste event; acting too would paste twice.
+    const nativePaste = inTerminal && shortcut.action.t === 'paste';
+    if (!nativePaste) event.preventDefault();
+    if (shortcut.act && !nativePaste && !this.modal.peek()) this.act(shortcut.action);
     return true;
   }
 
@@ -571,13 +592,18 @@ export class View {
     let next: Layout;
     if (op.t === 'split' && terminals.some((t) => t.termId === op.target) && canSplit(latest, op.target)) {
       next = split(latest, op.target, op.dir, termId);
+    } else if (canAddTab(latest)) next = selectTab(latest, termId);
+    else {
+      this.showOutside(host, worktree, termId);
+      return;
     }
-    else if (canAddTab(latest)) next = selectTab(latest, termId);
-    else return;
     const tab = next.tabs[next.active];
     batch(() => {
       if (tab !== undefined) {
-        this.focusRecords.value = new Map(this.focusRecords.peek()).set(`${String(host)}:${worktree}:${tab.id}`, { termId, root: tab.root });
+        this.focusRecords.value = new Map(this.focusRecords.peek()).set(`${String(host)}:${worktree}:${tab.id}`, {
+          termId,
+          root: tab.root,
+        });
       }
       this.storeLayout(host, worktree, next);
     });

@@ -11,7 +11,7 @@ export const COMMANDS = {
   /** Prints a line every 0.3 s, so it never becomes idle. */
   ticker: 'while :; do echo TICK; sleep 0.3; done',
   /** Rings the bell once, well after start, then stays silent. */
-  ring: "sleep 1.5; printf '\\a'; exec sleep 600",
+  ring: String.raw`sleep 1.5; printf '\a'; exec sleep 600`,
   /** Prints one line, then stays silent. */
   oneLine: "echo ONE''-LINE; exec sleep 600",
   /** Prints nothing. */

@@ -622,20 +622,21 @@ export class View {
       }
     }
     const shown = panes.filter((p) => this.manager.has(tab.host, p.termId));
-    this.showOnly(tab.host, shown);
+    this.showOnly(tab.host, shown, this.drag.value !== null);
     const focusKey = `${String(tab.host)}:${shown.map((p) => p.termId).join(',')}:${String(focused)}:${String(modal)}`;
     if (focusKey === this.focusKey) return;
     this.focusKey = focusKey;
     if (!modal && focused !== null && this.manager.has(tab.host, focused)) this.manager.focus(tab.host, focused);
   }
 
-  private showOnly(host: number | null, panes: readonly PaneRect[]): void {
+  private showOnly(host: number | null, panes: readonly PaneRect[], dragging = false): void {
     const key = `${String(host)}:${JSON.stringify(panes.map((p) => [p.termId, p.rect]))}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
     this.manager.show(
       host,
       panes.map((p) => ({ termId: p.termId, box: terminalBoxOf(p.rect) })),
+      dragging,
     );
   }
 }

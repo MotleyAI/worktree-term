@@ -189,7 +189,8 @@ test.describe('preset picker', () => {
     const box = await boxOf(picker);
     const area = await boxOf(page.locator(terminalBox(LOCAL, first)));
     const point = { x: area.x + 5, y: area.y + area.height - 5 };
-    expect(point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height).toBe(false);
+    const inside = point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+    expect(inside).toBe(false);
     await page.mouse.click(point.x, point.y);
     await expect(picker).toHaveCount(0);
     await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on

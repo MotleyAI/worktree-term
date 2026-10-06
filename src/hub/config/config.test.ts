@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -258,5 +258,35 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     rmSync(path);
     expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: [], presets: SHELL }, problem: null });
+  });
+});
+
+describe('README', () => {
+  const readme = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
+
+  /** The text of the section headed `## <title>`. */
+  const section = (title: string): string => {
+    const start = readme.indexOf(`## ${title}\n`);
+    if (start < 0) throw new Error(`README has no section ${title}`);
+    const end = readme.indexOf('\n## ', start + 1);
+    return readme.slice(start, end < 0 ? undefined : end);
+  };
+
+  const jsonBlocks = (text: string): string[] => [...text.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map((m) => m[1] ?? '');
+
+  it('closes every code fence', () => {
+    expect(readme.match(/^```/gm)?.length ?? 0).toSatisfy((n: number) => n % 2 === 0);
+  });
+
+  it('gives configuration examples that the hub accepts', () => {
+    const blocks = jsonBlocks(section('Configuration'));
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const block of blocks) expect(() => parseConfig(block, HOME)).not.toThrow();
+    expect(parseConfig(blocks[0] ?? '', HOME).presets).toEqual([CLAUDE, ...SHELL]);
+  });
+
+  it('tells Claude Code to ring the bell', () => {
+    const [settings] = jsonBlocks(section('Attention marks'));
+    expect(JSON.parse(settings ?? '')).toEqual({ preferredNotifChannel: 'terminal_bell' });
   });
 });

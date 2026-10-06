@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal } from '../../protocol/index.js';
-import { aggregate, mark, MARK_ORDER, type Mark } from './marks.js';
+import { aggregate, mark, MARK_ORDER, markTitle, type Mark } from './marks.js';
 
 let nextId = 1;
 
@@ -79,5 +79,12 @@ describe('aggregate', () => {
 
   it('shows a group’s first-ranked mark with the number of terminals per mark', () => {
     expect(aggregate([done, output, done, input, quiet], 'group')).toEqual({ mark: 'input', counts: { done: 2, output: 1, input: 1 } });
+  });
+});
+
+describe('markTitle', () => {
+  it('gives one line per mark present, in rank order', () => {
+    expect(markTitle({ output: 2, input: 1, done: 3 })).toBe('input: 1\ndone: 3\noutput: 2');
+    expect(markTitle({})).toBe('');
   });
 });

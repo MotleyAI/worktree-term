@@ -78,7 +78,8 @@ describe('closeTargets', () => {
     const close = vi.fn<(termId: number) => Promise<void>>((termId) => (termId === 2 ? Promise.reject(failure) : Promise.resolve()));
     await expect(closeTargets([1, 2], [1, 2], close)).rejects.toBe(failure);
     const other = new Error('session closed');
-    await expect(closeTargets([1], [1], () => Promise.reject(other))).rejects.toBe(other);
+    const failing = (): Promise<void> => Promise.reject(other);
+    await expect(closeTargets([1], [1], failing)).rejects.toBe(other);
   });
 
   it('sends nothing when no target is live', async () => {

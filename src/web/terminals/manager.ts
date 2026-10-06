@@ -131,6 +131,7 @@ export class TerminalManager {
   /** Shown terminals waiting for a WebGL addon, given one per frame after the frame that shows them. */
   private readonly upgrades = new Set<Entry>();
   private upgrading = false;
+  private fitting = false;
 
   constructor(private readonly client: HubClient) {
     this.layer.className = 'wtd-terminals';
@@ -282,8 +283,12 @@ export class TerminalManager {
     });
   }
 
-  /** Shows exactly `panes` of `host` (none for null), each over its box, hiding the others; fits them and tells the daemons. */
-  show(host: number | null, panes: readonly ShownPane[]): void {
+  /**
+   * Shows exactly `panes` of `host` (none for null), each over its box, hiding the others; fits them
+   * and tells the daemons. With `fitLater` the terminals fit in the frame after the one showing the
+   * boxes, as while a divider is dragged.
+   */
+  show(host: number | null, panes: readonly ShownPane[], fitLater = false): void {
     const next = host === null ? [] : panes.flatMap(({ termId, box }) => this.placed(host, termId, box));
     for (const entry of this.shown) {
       if (next.includes(entry)) continue;
@@ -304,10 +309,22 @@ export class TerminalManager {
       }
       this.attachIfNeeded(entry);
     }
-    this.fitAll(next);
     this.shown = next;
+    if (fitLater) this.fitLater();
+    else this.fitAll(next);
     this.syncVisible();
     this.upgradeLater();
+  }
+
+  private fitLater(): void {
+    if (this.fitting) return;
+    this.fitting = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.fitting = false;
+        this.fitAll(this.shown);
+      });
+    });
   }
 
   private upgradeLater(): void {

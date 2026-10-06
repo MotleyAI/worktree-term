@@ -254,8 +254,10 @@ describe('split', () => {
 
   it('throws when the split is not possible', () => {
     expect(split(oneTab(panes(range(1, 7))), 1, 'right', 99).tabs[0]?.root).toBeDefined();
-    expect(() => split(oneTab(panes(range(1, 8))), 1, 'right', 99)).toThrow(Error);
-    expect(() => split(manyTabs(64), 100, 'down', 101)).toThrow(Error);
+    const full = oneTab(panes(range(1, 8)));
+    const crowded = manyTabs(64);
+    expect(() => split(full, 1, 'right', 99)).toThrow(Error);
+    expect(() => split(crowded, 100, 'down', 101)).toThrow(Error);
   });
 
   it('does not change the layout it is given', () => {

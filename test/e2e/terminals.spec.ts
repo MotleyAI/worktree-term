@@ -17,6 +17,7 @@ import {
   watcher,
   xtermOf,
 } from './fixture.js';
+import { installStreamCheck } from './stream.js';
 
 test.describe('terminal tabs', () => {
   test('a new terminal runs a shell in the worktree, becomes the active tab and is listed in every page', async ({
@@ -158,48 +159,23 @@ test.describe('terminal lifetime', () => {
 });
 
 test.describe('attach and acknowledgement', () => {
-  test('50 MiB of numbered lines arrive once, in order, without the page being detached', async ({ hub, page, wire }) => {
-    test.setTimeout(300_000);
+  test('50 MiB of numbered lines arrive once, in order, without the page being detached', async ({ hub, page }) => {
+    test.setTimeout(120_000);
     const LAST = 6_000_000;
+    await page.addInitScript(installStreamCheck);
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const term = await newTerminal(page);
     await ready(page, term);
+    await page.evaluate(([h, t, last]) => window.__wtdStream?.watch(h, t, last), [LOCAL, term, LAST] as const);
     await typeLine(page, term, `printf 'SEQ''-START\\n'; seq 1 ${String(LAST)}; printf 'SEQ''-END\\n'`);
-    const screen = await waitScreen(page, term, 'SEQ-END', 240_000);
+    const screen = await waitScreen(page, term, 'SEQ-END', 90_000);
     expect(screen).toContain(`${String(LAST)}\nSEQ-END`);
 
-    const frames = wire.dataOf(LOCAL, term);
-    expect(frames.filter((f) => f.kind === 'snapshot')).toHaveLength(1);
-    const outputs: Uint8Array[] = [];
-    let position = -1;
-    for (const frame of frames) {
-      if (frame.kind === 'input') continue;
-      if (frame.kind === 'snapshot') {
-        position = frame.offset;
-        continue;
-      }
-      expect(frame.offset).toBe(position);
-      position = frame.offset + frame.data.length;
-      outputs.push(frame.data);
-    }
-    const output = Buffer.concat(outputs);
-    const marker = output.indexOf('SEQ-START\r\n');
-    expect(marker).toBeGreaterThanOrEqual(0);
-    const start = marker + 'SEQ-START\r\n'.length;
-    const end = output.indexOf('SEQ-END', start);
-    expect(end - start).toBeGreaterThan(50 * 1024 * 1024);
-    let at = start;
-    for (let i = 1; i <= LAST; i++) {
-      const line = `${String(i)}\r\n`;
-      if (output.toString('latin1', at, at + line.length) !== line) {
-        throw new Error(`line ${String(i)} missing or out of order at byte ${String(at - start)}`);
-      }
-      at += line.length;
-    }
-    expect(at).toBe(end);
-    expect(wire.receivedFromHost(LOCAL).filter((m) => m.t === 'detached')).toEqual([]);
+    const result = await page.evaluate(([h, t]) => window.__wtdStream?.result(h, t) ?? null, [LOCAL, term] as const);
+    expect(result).toMatchObject({ snapshots: 1, gaps: 0, detached: 0, lines: LAST, done: true, error: null });
+    expect(result?.bytes).toBeGreaterThan(50 * 1024 * 1024);
   });
 });
 

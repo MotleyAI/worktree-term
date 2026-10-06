@@ -2,7 +2,7 @@
 export interface RestoreDeps {
   /** Watches `repo`; resolves true once the watch is done, false when it failed. */
   watch: (host: number, repo: string) => Promise<boolean>;
-  /** Terminals of `repo` the page has terminal objects for. */
+  /** Terminals of `repo` the page has terminal objects for; read before the watch. */
   attached: (host: number, repo: string) => number[];
   /** Terminals of `repo` the daemon lists. */
   listed: (host: number, repo: string) => number[];
@@ -27,9 +27,11 @@ export class Restorer {
   }
 
   private async restoreRepo(host: number, repo: string): Promise<void> {
+    // Terminals opened while the watch runs are attached by their own open.
+    const before = this.deps.attached(host, repo);
     if (!(await this.deps.watch(host, repo))) return;
     const listed = new Set(this.deps.listed(host, repo));
-    for (const termId of this.deps.attached(host, repo)) {
+    for (const termId of before) {
       if (listed.has(termId)) this.deps.attach(host, termId);
     }
   }

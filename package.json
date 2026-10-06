@@ -17,7 +17,9 @@
     "typecheck": "tsc -b",
     "lint": "tsc -b && eslint . --max-warnings 0",
     "format": "prettier --write .",
-    "test": "vitest run --project unit --project process --project architecture && playwright test",
+    "test": "pnpm test:vitest && playwright test",
+    "test:ci": "pnpm test:vitest && playwright test --project e2e",
+    "test:vitest": "vitest run --project unit --project process --project architecture",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {

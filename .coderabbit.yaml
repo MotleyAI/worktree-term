@@ -3,5 +3,5 @@
 reviews:
   auto_review:
     enabled: true
-    drafts: true  # Enable reviews on draft PRs
-    base_branches: ['.*']  # Enable reviews on PRs against every base branch, not just the default
+    drafts: true # Enable reviews on draft PRs
+    base_branches: ['.*'] # Enable reviews on PRs against every base branch, not just the default

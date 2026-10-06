@@ -53,6 +53,17 @@ describe('Restorer', () => {
     expect(calls.filter((c) => c.startsWith('attach')).sort()).toEqual(['attach 0 2', 'attach 0 5']);
   });
 
+  it('leaves a terminal opened while the watch runs to its own attach', async () => {
+    const attached: Record<string, number[]> = { '0 /a': [1] };
+    const { calls, deps, finish } = harness(attached, { '0 /a': [1, 2] });
+    const restoring = new Restorer(deps).connected(0, 'd1', ['/a']);
+    await settle();
+    attached['0 /a'] = [1, 2];
+    await finish('0 /a');
+    await restoring;
+    expect(calls.filter((c) => c.startsWith('attach'))).toEqual(['attach 0 1']);
+  });
+
   it('attaches nothing for a repo whose watch failed', async () => {
     const { calls, deps, finish } = harness({ '0 /a': [1], '0 /b': [2] }, { '0 /a': [1], '0 /b': [2] });
     const restoring = new Restorer(deps).connected(0, 'd1', ['/a', '/b']);

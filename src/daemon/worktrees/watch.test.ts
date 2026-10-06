@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worktree } from '../../protocol/index.js';
 import { watchWorktrees, type WorktreeWatch } from './index.js';
 
@@ -90,12 +90,16 @@ describe('watchWorktrees', () => {
     try {
       git(reftable, 'commit', '-q', '--allow-empty', '-m', 'second');
       const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: reftable, encoding: 'utf8' }).trim();
-      await sleep(600);
-      expect(changes.at(-1)?.[0]?.head).toBe(head);
+      await vi.waitFor(
+        () => {
+          expect(changes.at(-1)?.[0]?.head).toBe(head);
+        },
+        { timeout: 5_000 },
+      );
     } finally {
       other.close();
     }
-  });
+  }, 15_000);
 
   it('stops reporting once closed', async () => {
     watch?.close();

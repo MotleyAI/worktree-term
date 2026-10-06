@@ -196,9 +196,10 @@ export class Session {
     this.hosts = [new HostLink(0, this, context)];
   }
 
-  /** Sends the configuration problem, if any, and the hosts, then connects every host. */
+  /** Sends the configuration problem, if any, the presets and the hosts, then connects every host. */
   start(): void {
     if (this.snapshot.problem !== null) this.error(null, null, 'internal', `invalid configuration: ${this.snapshot.problem}`);
+    this.message({ t: 'presets', presets: this.snapshot.config.presets });
     this.hostsChanged();
     for (const host of this.hosts) host.connect();
   }

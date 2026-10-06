@@ -37,6 +37,11 @@ export class WebglLru<K, A extends Disposable> {
     return addon;
   }
 
+  /** `key` is shown: moves it to the front without giving it WebGL. */
+  touch(key: K): void {
+    this.order = [key, ...this.order.filter((k) => k !== key)];
+  }
+
   /** `addon` of `key` lost its context; ignored unless it is the key's current addon. */
   lost(key: K, addon: A): void {
     if (this.addons.get(key) === addon) this.drop(key);

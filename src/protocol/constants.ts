@@ -1,7 +1,7 @@
 const KiB = 1024;
 const MiB = 1024 * KiB;
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Largest stream frame payload. */
 export const MAX_FRAME = 16 * MiB;

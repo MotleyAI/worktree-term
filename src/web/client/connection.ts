@@ -184,6 +184,7 @@ export class HubClient {
   private async closed(credential: Credential, opened: boolean): Promise<void> {
     this.ws = null;
     this.hostStates = new Map();
+    this.store.sessionClosed();
     this.pending.failAll('the connection to the hub closed');
     if (this.stopped) return;
     this.store.status.value = 'reconnecting';
@@ -266,6 +267,7 @@ export class HubClient {
         }
         return;
       case 'presets':
+        this.store.setPresets(m.presets);
         return;
     }
   }

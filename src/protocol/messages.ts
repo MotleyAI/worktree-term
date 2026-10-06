@@ -19,6 +19,8 @@ import {
   name,
   offset,
   path,
+  presetCommand,
+  presetName,
   req,
   secret,
   signal,
@@ -44,6 +46,8 @@ const worktree = z.strictObject({
   main: z.boolean(),
 });
 
+const attentionState = z.enum(['working', 'idle', 'input']);
+
 const terminal = z.strictObject({
   termId,
   worktree: path,
@@ -52,10 +56,12 @@ const terminal = z.strictObject({
   rows: size,
   exit: z.strictObject({ code: z.int(), signal }).nullable(),
   unseen: z.boolean(),
-  bell: z.boolean(),
+  state: attentionState,
 });
 
 const repos = z.array(path).max(MAX_DISCOVERED);
+
+export const preset = z.strictObject({ name: presetName, command: presetCommand });
 
 const daemonRequests = [
   message('watchRepo', { req, repo: path }),
@@ -87,7 +93,7 @@ const daemonEvents = [
   message('termExited', { termId, code: z.int(), signal }),
   message('termClosed', { termId }),
   message('detached', { termId, reason: z.literal('lagging') }),
-  message('activity', { termId, unseen: z.boolean(), bell: z.boolean() }),
+  message('activity', { termId, unseen: z.boolean(), state: attentionState }),
   message('checkedChanged', { worktree: path, checked: z.boolean() }),
   message('layoutChanged', { worktree: path, layout }),
   message('reposDiscovered', { req, repos }),
@@ -120,7 +126,7 @@ export const messageSchemas = {
     message('token', { token: secret }),
     message('host', { host: hostIdx, m: z.discriminatedUnion('t', daemonEvents) }),
     message('hosts', { hosts: z.array(hostEntry).max(MAX_HOSTS) }),
-    message('presets', { presets: z.array(z.strictObject({ name, command: longText })).max(MAX_PRESETS) }),
+    message('presets', { presets: z.array(preset).max(MAX_PRESETS) }),
     message('done', { req }),
     message('error', { req: req.nullable(), host: hostIdx.nullable(), code: errorCode, message: errorMessage }),
     message('reposDiscovered', { req, host: hostIdx, repos }),
@@ -135,6 +141,8 @@ export type MessageOf<D extends Direction> = z.infer<(typeof messageSchemas)[D]>
 export type Worktree = z.infer<typeof worktree>;
 export type HostEntry = z.infer<typeof hostEntry>;
 export type Terminal = z.infer<typeof terminal>;
+export type AttentionState = z.infer<typeof attentionState>;
+export type Preset = z.infer<typeof preset>;
 
 // No valid message nests deeper; checked before parsing so hostile nesting cannot exhaust the stack.
 const MAX_NESTING = 32;

@@ -1,1 +1,1 @@
-export { followArea, TerminalManager } from './manager.js';
+export { followArea, TerminalManager, type Box, type ShownPane, type TerminalKeyFilter } from './manager.js';

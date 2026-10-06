@@ -18,10 +18,13 @@ export {
   encodeCodeResponse,
   encodeMessage,
   messageSchemas,
+  preset as presetSchema,
+  type AttentionState,
   type CodeResponse,
   type Direction,
   type HostEntry,
   type MessageOf,
+  type Preset,
   type Terminal,
   type Worktree,
 } from './messages.js';

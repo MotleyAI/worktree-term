@@ -1,16 +1,20 @@
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { readFileIfExists } from '../../platform/files/index.js';
+import { presetSchema, type Preset } from '../../protocol/index.js';
 
 export const DEFAULT_PORT = 7417;
 
 const MAX_REPOS = 256;
 const MAX_PATH = 4096;
+const MAX_PRESETS = 64;
+const DEFAULT_PRESETS: readonly Preset[] = [{ name: 'shell', command: null }];
 
 /** The hub configuration, `~/` already expanded. */
 export interface HubConfig {
   port: number;
   repos: string[];
+  presets: Preset[];
 }
 
 /** An unusable configuration; the message is one line. */
@@ -30,6 +34,12 @@ const repoPath = z
 const configSchema = z.strictObject({
   port: z.int().min(1024).max(65535).optional(),
   repos: z.array(repoPath).max(MAX_REPOS).optional(),
+  presets: z
+    .array(presetSchema)
+    .min(1)
+    .max(MAX_PRESETS)
+    .refine((list) => new Set(list.map((p) => p.name)).size === list.length, 'preset names must be unique')
+    .optional(),
 });
 
 const oneLine = (text: string): string => text.replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
@@ -51,14 +61,18 @@ const expand = (path: string, home: string): string => {
 
 /** Parses `config.json` text (null for a missing file); throws ConfigError naming the first problem. */
 export const parseConfig = (text: string | null, home: string): HubConfig => {
-  if (text === null) return { port: DEFAULT_PORT, repos: [] };
+  if (text === null) return { port: DEFAULT_PORT, repos: [], presets: [...DEFAULT_PRESETS] };
   const result = configSchema.safeParse(parseJson(text));
   if (!result.success) {
     const [issue] = result.error.issues;
     const where = issue === undefined || issue.path.length === 0 ? '' : `${issue.path.map(String).join('.')}: `;
     throw new ConfigError(oneLine(`${where}${issue?.message ?? 'invalid configuration'}`));
   }
-  return { port: result.data.port ?? DEFAULT_PORT, repos: (result.data.repos ?? []).map((repo) => expand(repo, home)) };
+  return {
+    port: result.data.port ?? DEFAULT_PORT,
+    repos: (result.data.repos ?? []).map((repo) => expand(repo, home)),
+    presets: result.data.presets ?? [...DEFAULT_PRESETS],
+  };
 };
 
 /** Reads and parses the configuration at `path`; throws ConfigError naming the file and the problem. */

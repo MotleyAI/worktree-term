@@ -344,8 +344,8 @@ export class Daemon {
     const spawn = this.options.services.spawnTerminal(
       { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env: this.options.env },
       {
-        activity: (unseen, bell) => {
-          this.broadcast(repo, { t: 'activity', termId, unseen, bell });
+        activity: (unseen, state) => {
+          this.broadcast(repo, { t: 'activity', termId, unseen, state });
         },
         exited: (code, signal) => {
           this.broadcast(repo, { t: 'termExited', termId, code, signal });
@@ -529,5 +529,5 @@ const describe = (term: TermEntry): Terminal => ({
   rows: term.process.rows,
   exit: term.process.exit,
   unseen: term.process.unseen,
-  bell: term.process.bell,
+  state: term.process.state,
 });

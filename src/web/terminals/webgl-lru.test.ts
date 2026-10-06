@@ -53,6 +53,22 @@ describe('WebglLru', () => {
     expect(created).toHaveLength(2);
   });
 
+  it('touches a terminal to the front without giving it WebGL', () => {
+    const { created, create } = factory();
+    const lru = new WebglLru(WEBGL_LIMIT, create);
+    for (let key = 1; key <= 8; key++) lru.show(key);
+    lru.touch(9);
+    expect(created).toHaveLength(8);
+    expect(lru.rendererOf(9)).toBeNull();
+    lru.touch(1);
+    lru.show(9);
+    // 2 is now the least recently shown WebGL terminal; 1 was touched after it.
+    expect(lru.rendererOf(2)).toBe('dom');
+    expect(lru.rendererOf(1)).toBe('webgl');
+    expect(lru.webglKeys()).toEqual([9, 1, 8, 7, 6, 5, 4, 3]);
+    expectConsistent(lru, created);
+  });
+
   it('evicts the least recently shown terminal to DOM when a ninth enters', () => {
     const { created, create } = factory();
     const lru = new WebglLru(WEBGL_LIMIT, create);

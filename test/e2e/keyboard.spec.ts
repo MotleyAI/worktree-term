@@ -67,6 +67,7 @@ test.describe('worktree navigation', () => {
     const { repo } = makeRepoWith(hub, 'app', ['a', 'b']);
     hub.writeRepos([repo]);
     await openUi(hub, page);
+    await expect.poll(async () => (await listedWorktrees(page)).length).toBe(3);
     const listed = await listedWorktrees(page);
     const first = listed[0] ?? '';
     const last = listed.at(-1) ?? '';
@@ -249,6 +250,7 @@ test.describe('shortcuts and the terminal program', () => {
 test.describe('shortcuts while a picker or dialog is open', () => {
   /** Two tabs in the first listed worktree, the first one active; returns that worktree and the tabs. */
   const twoTabsInFirst = async (page: Page): Promise<{ worktree: string; first: number }> => {
+    await expect.poll(async () => (await listedWorktrees(page)).length).toBe(2);
     const [worktree = ''] = await listedWorktrees(page);
     await selectWorktree(page, worktree);
     const first = await newTerminal(page);

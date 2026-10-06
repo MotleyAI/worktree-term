@@ -10,6 +10,7 @@ import {
   MAX_TABS,
   neighbour,
   paneRects,
+  pruneTo,
   ratioAt,
   selectTab,
   setRatio,
@@ -454,5 +455,22 @@ describe('successor', () => {
   it('gives nothing for a tab’s only pane or a terminal it does not hold', () => {
     expect(successor(leaf(1), 1)).toBeNull();
     expect(successor(right(leaf(1), leaf(2)), 9)).toBeNull();
+  });
+});
+
+describe('pruneTo', () => {
+  it('keeps a pane whose terminals are all live, unchanged', () => {
+    const root = right(leaf(1), down(leaf(2), leaf(3), 0.3));
+    expect(pruneTo(root, new Set([1, 2, 3]))).toBe(root);
+  });
+
+  it('lets a split give way to its remaining side', () => {
+    expect(pruneTo(right(leaf(1), down(leaf(2), leaf(3), 0.3), 0.7), new Set([1, 3]))).toEqual(right(leaf(1), leaf(3), 0.7));
+    expect(pruneTo(right(leaf(1), down(leaf(2), leaf(3))), new Set([2, 3]))).toEqual(down(leaf(2), leaf(3)));
+  });
+
+  it('gives nothing when no terminal is live', () => {
+    expect(pruneTo(right(leaf(1), leaf(2)), new Set([9]))).toBeNull();
+    expect(pruneTo(leaf(1), new Set())).toBeNull();
   });
 });

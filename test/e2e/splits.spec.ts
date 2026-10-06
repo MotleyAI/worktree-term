@@ -290,6 +290,56 @@ test.describe('dragging dividers', () => {
     });
   }
 
+  test('echoes of earlier writes of the page arriving during a drag neither end it nor move the shown tab', async ({ hub, page }) => {
+    // Holds every hub message while `holding`, then delivers them in order, as a slow link would.
+    let holding = false;
+    const held: string[] = [];
+    let deliver: (m: string) => void = () => undefined;
+    await page.routeWebSocket(/./, (ws) => {
+      const server = ws.connectToServer();
+      deliver = (m) => {
+        ws.send(m);
+      };
+      ws.onMessage((m) => {
+        server.send(m);
+      });
+      server.onMessage((m) => {
+        if (typeof m !== 'string') ws.send(m);
+        else if (holding) held.push(m);
+        else ws.send(m);
+      });
+    });
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const [left = 0, right = 0, other = 0] = await createTerms(client, repo, 3);
+    await storeTabs(client, repo, [split('right', leaf(left), leaf(right)), leaf(other)]);
+    await expect.poll(() => paneIds(page)).toEqual([left, right]);
+    await page.locator(terminalBox(LOCAL, left)).click();
+
+    holding = true;
+    await page.keyboard.press('Alt+ArrowRight');
+    await expect.poll(() => paneIds(page)).toEqual([other]);
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect.poll(() => paneIds(page)).toEqual([left, right]);
+    await startDrag(page, '', 'right', await pointFor(page, left, right, 'right', 0.3));
+    await expect.poll(() => shareOf(page, left, right, 'right')).toBeCloseTo(0.3, 1);
+    holding = false;
+    for (const m of held.splice(0)) deliver(m);
+
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(await paneIds(page)).toEqual([left, right]);
+    await page.mouse.move(await pointFor(page, left, right, 'right', 0.7), 300, { steps: 5 });
+    await expect.poll(() => shareOf(page, left, right, 'right')).toBeCloseTo(0.7, 1);
+    await page.mouse.up();
+    const stored = await client.waitFor('layoutChanged', (m) => {
+      const root = activeRoot(m.layout);
+      return root !== undefined && 'split' in root && Math.abs(root.ratio - 0.7) < 0.05;
+    });
+    expect(stored.layout.active).toBe(0);
+  });
+
   test('a pane closed elsewhere during a drag ends the drag and shows the layout without it', async ({ hub, page, wire }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);

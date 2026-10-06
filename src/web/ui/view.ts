@@ -1,6 +1,6 @@
 import { batch, computed, effect, signal } from '@preact/signals';
 import type { HostEntry, Layout, Preset, Terminal } from '../../protocol/index.js';
-import { repoKey, type DaemonEvent, type HubClient, type RepoState } from '../client/index.js';
+import { repoKey, type HubClient, type RepoState } from '../client/index.js';
 import {
   canAddTab,
   canSplit,
@@ -121,10 +121,13 @@ export interface CloseRequest {
 
 interface Drag {
   host: number;
+  repo: string;
   worktree: string;
   tab: number;
   divider: Divider;
   layout: Layout;
+  /** The stored layout the drag started from, as JSON. */
+  base: string;
 }
 
 interface Picker {
@@ -146,8 +149,6 @@ export class View {
   private readonly drag = signal<Drag | null>(null);
   /** The focused pane per tab key, with the tab's panes when it was last resolved; replaced when the user chooses a pane. */
   private readonly focusRecords = signal(new Map<string, { termId: number; root: Pane }>());
-  /** The layout the page last stored per host and worktree, to tell its echo from a change. */
-  private readonly stored = new Map<string, string>();
   /** Per host and worktree, a terminal its full layout misses that the page shows anyway. */
   private readonly outside = signal(new Map<string, number>());
 
@@ -275,8 +276,8 @@ export class View {
     effect(() => {
       this.checkClosing();
     });
-    client.onEvent((host, m) => {
-      this.event(host, m);
+    effect(() => {
+      this.checkDrag();
     });
     manager.onFocus((host, termId) => {
       if (host === this.tab.peek()?.host) this.focusPane(termId);
@@ -410,7 +411,7 @@ export class View {
     const layout = this.layout.value;
     const index = shown?.index ?? null;
     if (tab === null || worktree === null || index === null || layout === null) return;
-    this.drag.value = { host: tab.host, worktree, tab: index, divider, layout };
+    this.drag.value = { host: tab.host, repo: tab.repo, worktree, tab: index, divider, layout, base: JSON.stringify(layout) };
   }
 
   /** Moves the dragged divider to the client point `x`, `y`. */
@@ -614,19 +615,25 @@ export class View {
   }
 
   private storeLayout(host: number, worktree: string, layout: Layout): void {
-    this.stored.set(`${String(host)}:${worktree}`, JSON.stringify(layout));
-    this.client.store.setLayout(host, worktree, layout);
-    this.client.request(host, { t: 'setLayout', worktree, layout }).catch((error: unknown) => {
-      this.client.store.revertLayout(host, worktree);
-      console.warn('storing the layout failed', error);
-    });
+    this.client.store.writeLayout(host, worktree, layout);
+    this.client.request(host, { t: 'setLayout', worktree, layout }).then(
+      () => {
+        this.client.store.layoutWritten(host, worktree);
+      },
+      (error: unknown) => {
+        this.client.store.layoutWritten(host, worktree);
+        console.warn('storing the layout failed', error);
+      },
+    );
   }
 
-  private event(host: number, m: DaemonEvent): void {
+  /** Ends a drag once its worktree's stored layout changes underneath it, as when another page closes a pane. */
+  private checkDrag(): void {
+    const repos = this.client.store.repos.value;
     const drag = this.drag.peek();
-    if (m.t !== 'layoutChanged' || drag?.host !== host || drag.worktree !== m.worktree) return;
-    // Our own layout coming back is no change.
-    if (JSON.stringify(m.layout) !== this.stored.get(`${String(host)}:${m.worktree}`)) this.drag.value = null;
+    if (drag === null) return;
+    const layout = repos.get(repoKey(drag.host, drag.repo))?.layouts.get(drag.worktree) ?? null;
+    if (JSON.stringify(layout) !== drag.base) this.drag.value = null;
   }
 
   /** Opens the selected worktree's terminals on their first view, shows the panes of its active tab and focuses one. */

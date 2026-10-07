@@ -54,7 +54,7 @@ Running `wtd` with no arguments, an unknown command, an unknown option, or `inst
 
 #### Scenario: Bridge over a pipe with auto-start
 - **WHEN** no daemon is running and a process runs `wtd connect` with piped stdio
-- **THEN** a daemon is started and the first frame on stdout is the daemon's `hello` with `protocol` 3
+- **THEN** a daemon is started and the first frame on stdout is the daemon's `hello` with `protocol` 4
 
 #### Scenario: Requests relayed
 - **WHEN** the client writes `hello` and a `watchRepo` frame to `wtd connect`'s stdin

@@ -676,6 +676,7 @@ describe('remote hosts', () => {
     }, 'an SSH process for box');
     client.close();
     await waitUntil(() => pids.every((pid) => !alive(pid)), 'the session’s SSH processes to be killed', 5000);
+    expect(pids.filter(alive)).toEqual([]);
   });
 
   it('ends the SSH processes of a closed session', async () => {

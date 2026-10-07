@@ -66,6 +66,7 @@ export const runHub = async ({ version, paths, wtd, webDir, home }: HubRun): Pro
       version,
       instance,
       hostName: hostname(),
+      bundle: wtd[1] ?? '',
       report: (error) => {
         console.error(error);
       },

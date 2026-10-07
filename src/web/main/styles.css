@@ -222,7 +222,9 @@ button {
 
 .preset-picker,
 .preset-choices,
-.close-dialog {
+.close-dialog,
+.confirm-dialog,
+.add-repo-dialog {
   background: var(--panel);
   border: 1px solid var(--border);
   padding: 8px;
@@ -232,7 +234,9 @@ button {
 
 /* Undo the user agent's centring and colours of an open dialog. */
 dialog.preset-picker,
-dialog.close-dialog {
+dialog.close-dialog,
+dialog.confirm-dialog,
+dialog.add-repo-dialog {
   right: auto;
   margin: 0;
   color: inherit;
@@ -247,7 +251,9 @@ dialog.close-dialog {
   z-index: 10;
 }
 
-.close-dialog {
+.close-dialog,
+.confirm-dialog,
+.add-repo-dialog {
   position: fixed;
   top: 30%;
   left: 50%;
@@ -257,7 +263,9 @@ dialog.close-dialog {
 
 .preset-picker .title,
 .preset-choices .title,
-.close-dialog .title {
+.close-dialog .title,
+.confirm-dialog .title,
+.add-repo-dialog .title {
   margin-bottom: 6px;
   color: var(--muted);
 }
@@ -282,13 +290,17 @@ dialog.close-dialog {
   color: var(--muted);
 }
 
-.close-dialog .buttons {
+.close-dialog .buttons,
+.confirm-dialog .buttons,
+.add-repo-dialog .buttons {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
 }
 
-.close-dialog .buttons button {
+.close-dialog .buttons button,
+.confirm-dialog .buttons button,
+.add-repo-dialog .buttons button {
   border-color: var(--border);
 }
 
@@ -324,4 +336,49 @@ dialog.close-dialog {
 .wtd-probe {
   visibility: hidden;
   pointer-events: none;
+}
+
+.repo-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.repo-tab .close,
+.add-repo {
+  padding: 0 4px;
+}
+
+.remove-repo::before {
+  content: '×';
+}
+
+.host-status {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.add-repo-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 420px;
+}
+
+.add-repo-options {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.add-repo-options button {
+  text-align: left;
+}
+
+.add-repo-dialog .error {
+  color: #f38ba8;
 }

@@ -1,13 +1,15 @@
-import type { JSX } from 'preact';
+import type { JSX, TargetedKeyboardEvent } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { HostEntry, Preset, Terminal } from '../../protocol/index.js';
 import { repoKey, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
+import { hasBanner, hostAction } from './hosts.js';
 import { aggregate, markTitle, type Aggregate } from './marks.js';
 import { pickerKey } from './picker.js';
 import type { SidebarEntry } from './sidebar.js';
-import { PANE_HEADER, type CloseRequest, type ShownPane, type ShownTab, type View } from './view.js';
+import type { RepoTab } from './repo-tabs.js';
+import { PANE_HEADER, type AddRepoDialog, type CloseRequest, type Confirmation, type ShownPane, type ShownTab, type View } from './view.js';
 
 export interface AppProps {
   client: HubClient;
@@ -35,17 +37,232 @@ const OutdatedUi = () => (
   </div>
 );
 
-const OutdatedHost = ({ host, client }: { host: HostEntry; client: HubClient }) => {
-  const restart = (): void => {
-    if (!window.confirm(`Restart the daemon on ${host.name}? Every terminal on ${host.name} will be killed.`)) return;
-    client.restartDaemon(host.idx).catch(report('restarting the daemon'));
+/** The banner of a `down` or `outdated` host, with its action. */
+const HostBanner = ({ host, view }: { host: HostEntry; view: View }) => {
+  const action = hostAction(host);
+  const what = host.status === 'outdated' ? `outdated daemon ${host.daemonVersion ?? '(unknown version)'}` : 'down';
+  return (
+    <div class="banner host-banner" data-testid="host-banner" data-host={String(host.idx)}>
+      {host.name}: {what}
+      {host.reason === null ? '' : ` (${host.reason})`}{' '}
+      {action !== null && (
+        <button
+          type="button"
+          data-testid="host-action"
+          onClick={() => {
+            view.requestHostAction(host);
+          }}
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
+};
+
+/** Handles Enter and Escape on a dialog: Enter confirms unless a button has the focus, Escape cancels. */
+const dialogKeys =
+  (confirm: (() => void) | null, cancel: () => void) =>
+  (event: TargetedKeyboardEvent<HTMLElement>): void => {
+    if (event.key !== 'Escape' && (event.key !== 'Enter' || confirm === null)) return;
+    // A focused control acts on its own.
+    if (event.key === 'Enter' && event.target !== event.currentTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Enter') confirm?.();
+    else cancel();
+  };
+
+/** What a confirmation asks, and what it lists. */
+const ConfirmBody = ({ confirmation }: { confirmation: Confirmation }) => {
+  if (confirmation.t === 'removeRepo') {
+    return <div class="title">Remove {confirmation.label} from the repo tabs?</div>;
+  }
+  const { host, action, recalled } = confirmation;
+  const title = action.kind === 'restart' ? `Restart the daemon on ${host.name}?` : `${action.label} wtd on ${host.name}?`;
+  if (recalled === null) {
+    return (
+      <>
+        <div class="title">{title}</div>
+        <p>Every running terminal on {host.name} will be killed.</p>
+      </>
+    );
+  }
+  return (
+    <>
+      <div class="title">{title}</div>
+      <p>These running terminals on {host.name} will be killed:</p>
+      <ul>
+        {recalled.terminals.map((t, i) => (
+          <li
+            key={String(i)} // NOSONAR(S6479) — a static list that may repeat a worktree and preset, so it has no other unique key
+            data-testid="confirm-target"
+          >
+            {t.worktree}: {t.preset}
+          </li>
+        ))}
+      </ul>
+      <p data-testid="confirm-seen">Last seen {new Date(recalled.at).toLocaleString()}.</p>
+    </>
+  );
+};
+
+/** The in-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed. */
+const ConfirmDialog = ({ view, confirmation }: { view: View; confirmation: Confirmation }) => {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    dialog.current?.focus();
+  }, []);
+  const confirm = (): void => {
+    view.confirm();
+  };
+  const cancel = (): void => {
+    view.cancelConfirmation();
   };
   return (
-    <div class="banner" data-testid="host-outdated">
-      {host.name}: the daemon is outdated ({host.daemonVersion ?? 'unknown version'}).{' '}
-      <button type="button" data-testid="restart-daemon" onClick={restart}>
-        Restart daemon
-      </button>
+    <dialog
+      open
+      class="confirm-dialog"
+      data-testid="confirm-dialog"
+      aria-label="Confirm"
+      tabIndex={-1}
+      ref={dialog}
+      onKeyDown={dialogKeys(confirm, cancel)}
+    >
+      <ConfirmBody confirmation={confirmation} />
+      <div class="buttons">
+        <button type="button" data-testid="confirm-ok" onClick={confirm}>
+          {confirmation.t === 'removeRepo' ? 'Remove' : confirmation.action.label}
+        </button>
+        <button type="button" data-testid="confirm-cancel" onClick={cancel}>
+          Cancel
+        </button>
+      </div>
+    </dialog>
+  );
+};
+
+/** The add-repo dialog: a host, the repos discovered there, a filter and a typed path. */
+const AddRepoBox = ({ client, view, dialog }: { client: HubClient; view: View; dialog: AddRepoDialog }) => {
+  const filter = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    filter.current?.focus();
+  }, []);
+  const close = (): void => {
+    view.closeAddRepo();
+  };
+  return (
+    <dialog open class="add-repo-dialog" data-testid="add-repo-dialog" aria-label="Add repo" onKeyDown={dialogKeys(null, close)}>
+      <div class="title">Add repo</div>
+      <select
+        data-testid="add-repo-host"
+        value={String(dialog.host)}
+        onChange={(event) => {
+          view.changeAddRepoHost(Number(event.currentTarget.value));
+        }}
+      >
+        {client.store.hosts.value.map((h) => (
+          <option key={h.idx} value={String(h.idx)} disabled={h.status !== 'connected'}>
+            {h.name} ({h.status})
+          </option>
+        ))}
+      </select>
+      <input
+        type="text"
+        ref={filter}
+        data-testid="add-repo-filter"
+        placeholder="Filter discovered repos"
+        value={dialog.filter}
+        onInput={(event) => {
+          view.setAddRepoField('filter', event.currentTarget.value);
+        }}
+      />
+      <div class="add-repo-options" role="listbox">
+        {dialog.discovered === null && <div class="hint">Discovering…</div>}
+        {view.offered.value.map((repo) => (
+          <button
+            type="button"
+            key={repo}
+            role="option"
+            aria-selected={false}
+            data-testid="add-repo-option"
+            title={repo}
+            onClick={() => {
+              view.chooseRepo(repo);
+            }}
+          >
+            {repo}
+          </button>
+        ))}
+      </div>
+      <input
+        type="text"
+        data-testid="add-repo-path"
+        placeholder="Or type an absolute path and press Enter"
+        value={dialog.path}
+        onInput={(event) => {
+          view.setAddRepoField('path', event.currentTarget.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          view.chooseRepo(event.currentTarget.value);
+        }}
+      />
+      {dialog.error !== null && (
+        <div class="error" data-testid="add-repo-error">
+          {dialog.error}
+        </div>
+      )}
+      <div class="buttons">
+        <button type="button" onClick={close}>
+          Close
+        </button>
+      </div>
+    </dialog>
+  );
+};
+
+/** One repo tab: its label, the host's status while not connected, attention marks and a remove action. */
+const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; view: View; tab: RepoTab; selected: boolean }) => {
+  const key = repoKey(tab.host, tab.repo);
+  const status = client.store.hosts.value.find((h) => h.idx === tab.host)?.status ?? null;
+  const select = (): void => {
+    view.selectRepo(tab);
+  };
+  return (
+    <div
+      class={`repo-tab${selected ? ' active' : ''}`}
+      role="tab"
+      data-testid="repo-tab"
+      title={tab.repo}
+      aria-selected={selected ? 'true' : 'false'}
+      tabIndex={0}
+      onClick={select}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        select();
+      }}
+    >
+      {tab.label}
+      {status !== null && status !== 'connected' && (
+        <span class="host-status" data-testid="host-status">
+          {status}
+        </span>
+      )}
+      <Mark of={aggregate(client.store.repos.value.get(key)?.terminals ?? [], 'group')} />
+      <button
+        type="button"
+        class="close remove-repo"
+        data-testid="remove-repo"
+        title="Remove repo"
+        aria-label="Remove repo"
+        onClick={(event) => {
+          event.stopPropagation();
+          view.requestRemoveRepo(tab);
+        }}
+      />
     </div>
   );
 };
@@ -362,13 +579,14 @@ const CloseDialog = ({ view, request }: { view: View; request: CloseRequest }) =
       tabIndex={-1}
       ref={dialog}
       onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== 'Escape') return;
-        // A focused button acts on its own click.
-        if (event.key === 'Enter' && event.target !== event.currentTarget) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.key === 'Enter') view.confirmClose();
-        else view.cancelClose();
+        dialogKeys(
+          () => {
+            view.confirmClose();
+          },
+          () => {
+            view.cancelClose();
+          },
+        )(event);
       }}
     >
       <div class="title">Close running terminals?</div>
@@ -478,30 +696,27 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
   if (status === 'outdated') return <OutdatedUi />;
   const selected = view.tab.value;
   const notice = view.notice.value ?? client.store.notice.value;
+  const confirmation = view.confirmation.value;
+  const addRepo = view.addRepo.value;
   return (
     <div class="app">
       <div class="repo-tabs" role="tablist">
         {view.tabs.value.map((t) => {
           const key = repoKey(t.host, t.repo);
           const isSelected = selected !== null && repoKey(selected.host, selected.repo) === key;
-          return (
-            <button
-              type="button"
-              key={key}
-              class={`repo-tab${isSelected ? ' active' : ''}`}
-              role="tab"
-              data-testid="repo-tab"
-              title={t.repo}
-              aria-selected={isSelected ? 'true' : 'false'}
-              onClick={() => {
-                view.selectRepo(t);
-              }}
-            >
-              {t.label}
-              <Mark of={aggregate(client.store.repos.value.get(key)?.terminals ?? [], 'group')} />
-            </button>
-          );
+          return <RepoTabButton key={key} client={client} view={view} tab={t} selected={isSelected} />;
         })}
+        <button
+          type="button"
+          class="add-repo"
+          data-testid="add-repo"
+          title="Add repo"
+          onClick={() => {
+            view.openAddRepo();
+          }}
+        >
+          + Add repo
+        </button>
         <span class="spacer" />
         {status === 'reconnecting' && (
           <span class="reconnecting" data-testid="reconnecting">
@@ -520,11 +735,9 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
           Checked only
         </label>
       </div>
-      {client.store.hosts.value
-        .filter((h) => h.status === 'outdated')
-        .map((h) => (
-          <OutdatedHost key={h.idx} host={h} client={client} />
-        ))}
+      {client.store.hosts.value.filter(hasBanner).map((h) => (
+        <HostBanner key={h.idx} host={h} view={view} />
+      ))}
       {notice !== null && (
         <div class="banner notice" data-testid="notice">
           {notice}
@@ -541,6 +754,8 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
         </div>
       )}
       <Workspace client={client} manager={manager} view={view} />
+      {confirmation !== null && <ConfirmDialog view={view} confirmation={confirmation} />}
+      {addRepo !== null && <AddRepoBox client={client} view={view} dialog={addRepo} />}
     </div>
   );
 };

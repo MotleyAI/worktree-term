@@ -127,6 +127,21 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'presets', presets: [{ name: '   ', command: null }] },
   { t: 'presets', presets: [{ name: 'p', command: '' }] },
   { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', root: ninePanes }], active: 0 } },
+  { t: 'discoverRepos', req: 1, roots: ['GitHub'], depth: 3 },
+  { t: 'discoverRepos', req: 1, roots: ['~user/x'], depth: 3 },
+  { t: 'discoverRepos', req: 1, roots: ['~/'], depth: 3 },
+  { t: 'watchRepo', req: 1, repo: '~/x' },
+  { t: 'addRepo', req: 1, host: 0, repo: '~/x' },
+  {
+    t: 'hosts',
+    hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [] }],
+  },
+  {
+    t: 'hosts',
+    hosts: [
+      { idx: 1, name: 'box', remote: true, status: 'down', reason: 'r'.repeat(1025), daemonVersion: null, instance: null, repos: [] },
+    ],
+  },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -198,8 +213,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for protocol version 4', () => {
-    expect(previousSchema.parse(wireJson).protocolVersion).toBe(4);
+  it('is blessed for protocol version 5', () => {
+    expect(previousSchema.parse(wireJson).protocolVersion).toBe(5);
   });
 
   it('records every sample as valid in its own direction', () => {

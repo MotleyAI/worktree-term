@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { discoverRepos } from './index.js';
 
 let root: string;
@@ -12,6 +12,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   chmodSync(root, 0o700);
   rmSync(root, { recursive: true, force: true });
 });
@@ -125,4 +126,34 @@ describe('discoverRepos', () => {
     expect(first).toEqual(expected);
     expect(second).toEqual(expected);
   }, 30_000);
+
+  describe('home-relative roots', () => {
+    beforeEach(() => {
+      mkdirSync(join(root, 'home'));
+      vi.stubEnv('HOME', join(root, 'home'));
+    });
+
+    it('expands ~ and ~/… against the home directory and reports each repo once', async () => {
+      const app = repo('home', 'GitHub', 'app');
+      expect(await discoverRepos(['~', '~/GitHub'], 3)).toEqual([app]);
+    });
+
+    it('counts depth from the expanded root', async () => {
+      const near = repo('home', 'near');
+      repo('home', 'a', 'b', 'far');
+      expect(await discoverRepos(['~'], 2)).toEqual([near]);
+    });
+
+    it('reports repos by their real paths when the home is a symbolic link', async () => {
+      const app = repo('realhome', 'src', 'app');
+      vi.stubEnv('HOME', join(root, 'linkhome'));
+      symlinkSync(join(root, 'realhome'), join(root, 'linkhome'));
+      expect(await discoverRepos(['~/src'], 1)).toEqual([app]);
+    });
+
+    it('skips a missing home-relative root', async () => {
+      const one = repo('home', 'one');
+      expect(await discoverRepos(['~/missing', '~'], 1)).toEqual([one]);
+    });
+  });
 });

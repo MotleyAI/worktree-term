@@ -1,9 +1,10 @@
 import { PROTOCOL_VERSION, type DataFrame, type MessageOf } from '../../protocol/index.js';
-import { ConfigSource, type ConfigSnapshot, type HubConfig } from '../config/index.js';
-import { LocalDaemon, type DaemonPaths } from '../links/index.js';
+import { ConfigEditor, ConfigSource, type ConfigSnapshot, type HubConfig } from '../config/index.js';
+import { installOnRemote, LocalDaemon, RemoteDaemon, type DaemonEndpoint, type DaemonPaths } from '../links/index.js';
+import { HostCoordinator } from './coordinator.js';
 import { localHostName } from './hosts.js';
 import { DaemonRestarter } from './restart.js';
-import { Session, type BrowserChannel, type SessionContext } from './session.js';
+import { Session, type BrowserChannel, type SessionContext, type SessionHost } from './session.js';
 
 export { hubError, type BrowserChannel } from './session.js';
 
@@ -23,6 +24,8 @@ export interface RouterOptions {
   instance: string;
   /** This host's name as the OS reports it. */
   hostName: string;
+  /** The running `wtd.mjs`, installed on remote hosts by `reinstallDaemon`. */
+  bundle: string;
   /** Reports an unexpected failure. */
   report: (error: unknown) => void;
 }
@@ -37,21 +40,82 @@ export interface RoutedSession {
   close: () => void;
 }
 
+/** How long a reinstall's installation step may take. */
+const INSTALL_MS = 120_000;
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 /** Routes every browser session to its own daemon links. */
 export class Router {
   private readonly context: SessionContext;
   private readonly config: ConfigSource;
+  private readonly editor: ConfigEditor;
+  private readonly local: LocalDaemon;
+  private readonly hello: SessionContext['hello'];
+  private readonly sessions = new Set<Session>();
+  private readonly coordinators = new Map<string, HostCoordinator>();
 
   constructor(private readonly options: RouterOptions) {
-    const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: options.version, instance: options.instance } as const;
-    const daemon = new LocalDaemon(options.paths, options.daemonCommand);
+    this.hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: options.version, instance: options.instance };
+    this.local = new LocalDaemon(options.paths, options.daemonCommand);
     this.config = new ConfigSource(options.configPath, options.home, options.config);
+    this.editor = new ConfigEditor(options.configPath, options.home);
     this.context = {
-      daemon,
-      restarter: new DaemonRestarter(daemon, hello),
-      hello,
-      hostName: localHostName(options.hostName),
+      hello: this.hello,
+      endpoint: (host) => this.endpoint(host),
+      coordinator: (host) => this.coordinator(host),
+      listsRepo: (host, repo) => this.editor.lists(host.ssh === null ? null : host.name, repo),
+      editRepos: (host, change, repo) => {
+        const name = host.ssh === null ? null : host.name;
+        return change === 'add' ? this.editor.addRepo(name, repo) : this.editor.removeRepo(name, repo);
+      },
+      reposEdited: (host, repos) => {
+        for (const session of this.sessions) session.showRepos(host, repos);
+      },
     };
+  }
+
+  /** The hosts of a session reading `config`: the local host, then the remote hosts in order. */
+  private hostsOf(config: HubConfig): SessionHost[] {
+    const local: SessionHost = {
+      idx: 0,
+      name: localHostName(this.options.hostName),
+      ssh: null,
+      repos: [...config.repos],
+      roots: config.roots,
+    };
+    return [
+      local,
+      ...config.hosts.map((host, i) => ({ idx: i + 1, name: host.name, ssh: host.ssh, repos: [...host.repos], roots: host.roots })),
+    ];
+  }
+
+  private endpoint(host: SessionHost): DaemonEndpoint {
+    return host.ssh === null ? this.local : new RemoteDaemon(this.options.paths, host.ssh);
+  }
+
+  private coordinator(host: SessionHost): HostCoordinator {
+    const key = host.ssh === null ? 'local' : `remote:${host.name}:${host.ssh}`;
+    let coordinator = this.coordinators.get(key);
+    if (coordinator === undefined) {
+      const restarter = new DaemonRestarter(this.endpoint(host), this.hello);
+      const alias = host.ssh;
+      coordinator = new HostCoordinator({
+        restart: () => restarter.restart(),
+        reinstall: async () => {
+          if (alias === null) throw new Error('the local daemon is restarted, not reinstalled');
+          const { paths, bundle, version } = this.options;
+          await installOnRemote(paths, alias, bundle, version, INSTALL_MS).catch((error: unknown) => {
+            throw new Error(`install: ${messageOf(error)}`, { cause: error });
+          });
+          await restarter.replaceOther(version).catch((error: unknown) => {
+            throw new Error(`restart: ${messageOf(error)}`, { cause: error });
+          });
+        },
+      });
+      this.coordinators.set(key, coordinator);
+    }
+    return coordinator;
   }
 
   /** Starts a session for `channel`, reading its configuration snapshot now. */
@@ -63,8 +127,9 @@ export class Router {
     const pending: ((s: Session) => void)[] = [];
     const start = (): void => {
       if (closed || snapshot === null || !greeted || session !== null) return;
-      const started = new Session(channel, this.context, snapshot);
+      const started = new Session(channel, this.context, snapshot, this.hostsOf(snapshot.config));
       session = started;
+      this.sessions.add(started);
       started.start();
       for (const action of pending.splice(0)) action(started);
     };
@@ -100,7 +165,10 @@ export class Router {
       close: () => {
         closed = true;
         pending.length = 0;
-        session?.close();
+        if (session !== null) {
+          this.sessions.delete(session);
+          session.close();
+        }
       },
     };
   }

@@ -141,7 +141,7 @@ describe('single instance', () => {
 });
 
 describe('handshake', () => {
-  it('greets every connection with hello for protocol 4, the package version and one instance id', async () => {
+  it('greets every connection with hello for protocol 5, the package version and one instance id', async () => {
     await host.start();
     const a = await host.rawClient();
     const b = await host.rawClient();
@@ -149,7 +149,7 @@ describe('handshake', () => {
     const helloB = await b.waitFor('hello');
     expect(a.received[0]).toEqual({ kind: 'message', message: helloA });
     expect(helloA.protocol).toBe(PROTOCOL_VERSION);
-    expect(helloA.protocol).toBe(4);
+    expect(helloA.protocol).toBe(5);
     expect(helloA.version).toBe(packageVersion());
     expect(helloA.instance).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
     expect(helloB.instance).toBe(helloA.instance);

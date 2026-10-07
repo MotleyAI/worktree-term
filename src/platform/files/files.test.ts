@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -24,13 +25,17 @@ import {
   fileIdentity,
   hostPaths,
   makeOwnerOnly,
+  makePrivateDirs,
   openLog,
+  ownedEntry,
+  pathExists,
   preparePrivateDirs,
   readFileIfExists,
   readPrivateFile,
   readTree,
   removeFile,
   renameFile,
+  sshControlPath,
   writeFileAtomic,
 } from './index.js';
 
@@ -169,6 +174,7 @@ describe('host paths', () => {
       hubLog: '/tmp/x/worktree-term/hub.log',
       hubLock: '/tmp/x/worktree-term/run/hub.lock',
       hubRecord: '/tmp/x/worktree-term/run/hub.json',
+      unitFile: '/home/u/.config/systemd/user/worktree-term-daemon.service',
     });
   });
 
@@ -176,6 +182,7 @@ describe('host paths', () => {
     const paths = hostPaths({ env: { XDG_CONFIG_HOME: '/tmp/c' }, home: '/home/u', host: 'box' });
     expect(paths.configDir).toBe('/tmp/c/worktree-term');
     expect(paths.config).toBe('/tmp/c/worktree-term/config.json');
+    expect(paths.unitFile).toBe('/tmp/c/systemd/user/worktree-term-daemon.service');
   });
 
   it.each([
@@ -183,7 +190,9 @@ describe('host paths', () => {
     ['empty', { XDG_CONFIG_HOME: '' }],
     ['unset', {}],
   ])('falls back to ~/.config when XDG_CONFIG_HOME is %s', (_name, env) => {
-    expect(hostPaths({ env, home: '/home/u', host: 'box' }).config).toBe('/home/u/.config/worktree-term/config.json');
+    const paths = hostPaths({ env, home: '/home/u', host: 'box' });
+    expect(paths.config).toBe('/home/u/.config/worktree-term/config.json');
+    expect(paths.unitFile).toBe('/home/u/.config/systemd/user/worktree-term-daemon.service');
   });
 
   it('keeps hub files under the state directory whatever the configuration directory', () => {
@@ -226,6 +235,31 @@ describe('host paths', () => {
     const socket = `${xdg}/worktree-term/run/box.sock`;
     expect(Buffer.byteLength(socket)).toBe(108);
     expect(() => hostPaths({ env: { XDG_STATE_HOME: xdg }, home: '/home/u', host: 'box' })).toThrow(socket);
+  });
+});
+
+describe('SSH control path', () => {
+  const pathsUnder = (stateHome: string): ReturnType<typeof hostPaths> =>
+    hostPaths({ env: { XDG_STATE_HOME: stateHome }, home: '/home/u', host: 'b' });
+
+  it('is ssh-%C in the run directory', () => {
+    expect(sshControlPath(pathsUnder('/s'))).toBe('/s/worktree-term/run/ssh-%C');
+  });
+
+  it('accepts a control path of 107 bytes once %C is substituted', () => {
+    const stateHome = '/' + 'a'.repeat(43);
+    expect(Buffer.byteLength(`${stateHome}/worktree-term/run/ssh-${'0'.repeat(40)}`)).toBe(107);
+    expect(sshControlPath(pathsUnder(stateHome))).toBe(`${stateHome}/worktree-term/run/ssh-%C`);
+  });
+
+  it.each([
+    ['ASCII', '/' + 'a'.repeat(44)],
+    ['multi-byte', '/' + 'é'.repeat(22)],
+  ])('refuses an %s control path of 108 bytes once %C is substituted, naming it', (_name, stateHome) => {
+    const path = `${stateHome}/worktree-term/run/ssh-%C`;
+    expect(Buffer.byteLength(path.replace('%C', '0'.repeat(40)))).toBe(108);
+    const paths = pathsUnder(stateHome);
+    expect(() => sshControlPath(paths)).toThrow(path);
   });
 });
 
@@ -379,6 +413,73 @@ describe('file helpers', () => {
     expect(await fileIdentity(file)).not.toBe(first);
     rmSync(file);
     expect(await fileIdentity(file)).toBeNull();
+  });
+});
+
+describe('private directories and existence', () => {
+  it('creates missing directories owner-only, leaving an existing parent as it is', async () => {
+    mkdirSync(join(dir, 'open'), { mode: 0o755 });
+    chmodSync(join(dir, 'open'), 0o755);
+    await makePrivateDirs(join(dir, 'open', 'a', 'b'));
+    expect(statSync(join(dir, 'open')).mode & 0o777).toBe(0o755);
+    expect(statSync(join(dir, 'open', 'a')).mode & 0o777).toBe(0o700);
+    expect(statSync(join(dir, 'open', 'a', 'b')).mode & 0o777).toBe(0o700);
+    await makePrivateDirs(join(dir, 'open', 'a', 'b'));
+  });
+
+  it('tells whether a path exists, following symbolic links', async () => {
+    writeFileSync(join(dir, 'f'), '');
+    symlinkSync(join(dir, 'f'), join(dir, 'link'));
+    symlinkSync(join(dir, 'missing'), join(dir, 'dangling'));
+    expect(await pathExists(join(dir, 'f'))).toBe(true);
+    expect(await pathExists(join(dir, 'link'))).toBe(true);
+    expect(await pathExists(join(dir, 'dangling'))).toBe(false);
+    expect(await pathExists(join(dir, 'f', 'below'))).toBe(false);
+  });
+});
+
+describe('atomic writes with a mode', () => {
+  it('writes an owner-only file with the given owner bits', async () => {
+    await writeFileAtomic(join(dir, 'run'), '#!/bin/sh\n', 0o755);
+    expect(statSync(join(dir, 'run')).mode & 0o777).toBe(0o700);
+  });
+});
+
+describe('owned entries', () => {
+  it('reports a missing path as absent', async () => {
+    expect(await ownedEntry(join(dir, 'missing'), 'directory')).toBe(false);
+  });
+
+  it('reports an owned path of the expected kind as present, without following a symbolic link', async () => {
+    mkdirSync(join(dir, 'd'));
+    writeFileSync(join(dir, 'f'), '');
+    symlinkSync(join(dir, 'missing-target'), join(dir, 'l'));
+    expect(await ownedEntry(join(dir, 'd'), 'directory')).toBe(true);
+    expect(await ownedEntry(join(dir, 'f'), 'file')).toBe(true);
+    expect(await ownedEntry(join(dir, 'l'), 'symlink')).toBe(true);
+  });
+
+  it.each([
+    ['a symbolic link where a directory is expected', 'directory'],
+    ['a file where a directory is expected', 'directory'],
+    ['a directory where a file is expected', 'file'],
+    ['a directory where a symbolic link is expected', 'symlink'],
+  ] as const)('refuses %s, naming the path', async (name, kind) => {
+    const path = join(dir, 'p');
+    if (name.startsWith('a symbolic link')) {
+      mkdirSync(join(dir, 'target'));
+      symlinkSync(join(dir, 'target'), path);
+    } else if (name.startsWith('a file')) writeFileSync(path, '');
+    else mkdirSync(path);
+    await expect(ownedEntry(path, kind)).rejects.toThrow(path);
+  });
+
+  it('refuses a path owned by another user, naming it', async () => {
+    const path = join(dir, 'theirs');
+    mkdirSync(path);
+    hooks.foreignOwner = path;
+    await expect(ownedEntry(path, 'directory')).rejects.toThrow(path);
+    await expect(ownedEntry(path, 'directory')).rejects.toThrow(/another user/);
   });
 });
 

@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostPaths, type HostPaths } from '../files/index.js';
-import { dial, spawnDetached } from './index.js';
+import { dial, spawnDetached, sshCommand } from './index.js';
 
 /** Stand-in daemon: logs to stdout and stderr, records its pid, serves its pid to every connection. */
 const FAKE_DAEMON = `
@@ -35,6 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const socket of sockets.splice(0)) socket.destroy();
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
   for (const pid of spawnedPids()) {
@@ -47,13 +48,15 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const spawnedPids = (): number[] =>
-  existsSync(pidsFile)
-    ? readFileSync(pidsFile, 'utf8')
+const pidsIn = (file: string): number[] =>
+  existsSync(file)
+    ? readFileSync(file, 'utf8')
         .split('\n')
         .filter((line) => line !== '')
         .map(Number)
     : [];
+
+const spawnedPids = (): number[] => pidsIn(pidsFile);
 
 const fakeDaemon = (): string[] => [process.execPath, '-e', FAKE_DAEMON, paths.socket, pidsFile];
 
@@ -122,6 +125,166 @@ describe('dial', () => {
     await expect(dial(paths, [process.execPath, '-e', 'process.exit(1)'])).rejects.toThrow(`daemon did not start; see ${paths.log}`);
     expect(Date.now() - started).toBeGreaterThanOrEqual(4900);
   }, 15_000);
+});
+
+describe('dial through systemd', () => {
+  let unitPaths: HostPaths;
+  let calls: string;
+  let unitPids: string;
+
+  /** A stand-in systemctl recording its arguments; `start` launches the fake daemon unless it exits `status`. */
+  const fakeSystemctl = (status: number): string => {
+    const daemon = join(dir, 'daemon.cjs');
+    writeFileSync(daemon, FAKE_DAEMON.replace('process.argv.slice(1)', 'process.argv.slice(2)'));
+    const script = join(dir, 'systemctl');
+    writeFileSync(
+      script,
+      `#!/bin/sh
+printf '%s\\n' "$*" >> '${calls}'
+if [ "$*" = "--user start worktree-term-daemon.service" ]; then
+  [ ${String(status)} -ne 0 ] && exit ${String(status)}
+  setsid '${process.execPath}' '${daemon}' '${unitPaths.socket}' '${unitPids}' </dev/null >/dev/null 2>&1 &
+fi
+exit 0
+`,
+    );
+    chmodSync(script, 0o755);
+    return script;
+  };
+
+  const recordedCalls = (): string[] =>
+    existsSync(calls)
+      ? readFileSync(calls, 'utf8')
+          .split('\n')
+          .filter((l) => l !== '')
+      : [];
+
+  const installUnit = (): void => {
+    mkdirSync(join(dir, 'c', 'systemd', 'user'), { recursive: true });
+    writeFileSync(unitPaths.unitFile, '[Service]\n');
+  };
+
+  const directDaemon = (): string[] => [process.execPath, '-e', FAKE_DAEMON, unitPaths.socket, pidsFile];
+
+  beforeEach(() => {
+    unitPaths = hostPaths({ env: { XDG_STATE_HOME: dir, XDG_CONFIG_HOME: join(dir, 'c') }, home: '/nonexistent', host: 'box' });
+    calls = join(dir, 'systemctl.calls');
+    unitPids = join(dir, 'unit-pids');
+  });
+
+  afterEach(() => {
+    for (const pid of pidsIn(unitPids)) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // Already gone.
+      }
+    }
+  });
+
+  it('starts the unit through WTD_SYSTEMCTL instead of the daemon command when the unit file exists', async () => {
+    installUnit();
+    vi.stubEnv('WTD_SYSTEMCTL', fakeSystemctl(0));
+    const socket = track(await dial(unitPaths, directDaemon()));
+    const [pid] = pidsIn(unitPids);
+    if (pid === undefined) throw new Error('systemctl started no daemon');
+    expect(await readAll(socket)).toBe(String(pid));
+    expect(recordedCalls()).toEqual(['--user start worktree-term-daemon.service']);
+    expect(spawnedPids()).toEqual([]);
+  });
+
+  it('falls back to the daemon command when systemctl fails', async () => {
+    installUnit();
+    vi.stubEnv('WTD_SYSTEMCTL', fakeSystemctl(1));
+    const socket = track(await dial(unitPaths, directDaemon()));
+    const [pid] = spawnedPids();
+    if (pid === undefined) throw new Error('the daemon command was not started');
+    expect(await readAll(socket)).toBe(String(pid));
+    expect(sessionOf(pid)).toBe(pid);
+    expect(recordedCalls()).toEqual(['--user start worktree-term-daemon.service']);
+    expect(pidsIn(unitPids)).toEqual([]);
+  });
+
+  it('starts the daemon command directly without a unit file', async () => {
+    vi.stubEnv('WTD_SYSTEMCTL', fakeSystemctl(0));
+    const socket = track(await dial(unitPaths, directDaemon()));
+    const [pid] = spawnedPids();
+    if (pid === undefined) throw new Error('the daemon command was not started');
+    expect(await readAll(socket)).toBe(String(pid));
+    expect(recordedCalls()).toEqual([]);
+  });
+
+  it('runs no systemctl when a daemon serves the socket', async () => {
+    installUnit();
+    vi.stubEnv('WTD_SYSTEMCTL', fakeSystemctl(0));
+    mkdirSync(unitPaths.runDir, { recursive: true, mode: 0o700 });
+    const server = createServer((c) => c.end('existing'));
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(unitPaths.socket, resolve));
+    expect(await readAll(track(await dial(unitPaths, directDaemon())))).toBe('existing');
+    expect(recordedCalls()).toEqual([]);
+  });
+});
+
+describe('sshCommand', () => {
+  const REMOTE = '"$HOME/.local/bin/wtd" connect';
+  const options = (): string[] => [
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'ConnectTimeout=10',
+    '-o',
+    'ControlMaster=auto',
+    '-o',
+    'ControlPersist=10m',
+    '-o',
+    `ControlPath=${paths.runDir}/ssh-%C`,
+    '-o',
+    'ServerAliveInterval=15',
+  ];
+
+  it('puts the options, --, the alias and the remote command as one argument, in that order', () => {
+    vi.stubEnv('WTD_SSH', undefined);
+    expect(sshCommand(paths, 'box', REMOTE)).toEqual(['ssh', ...options(), '--', 'box', REMOTE]);
+  });
+
+  it('runs WTD_SSH when set', () => {
+    vi.stubEnv('WTD_SSH', '/opt/fake ssh');
+    expect(sshCommand(paths, 'box', REMOTE)).toEqual(['/opt/fake ssh', ...options(), '--', 'box', REMOTE]);
+  });
+
+  it('runs ssh when WTD_SSH is empty', () => {
+    vi.stubEnv('WTD_SSH', '');
+    expect(sshCommand(paths, 'box', REMOTE)[0]).toBe('ssh');
+  });
+
+  it.each([['box'], ['user@box.example.org'], ['h'.repeat(255)], ['box-1_2.3']])('accepts alias %j', (alias) => {
+    expect(sshCommand(paths, alias, REMOTE).at(-2)).toBe(alias);
+  });
+
+  it.each([
+    ['an option-like alias', '-oProxyCommand=touch /tmp/x'],
+    ['a leading dash', '-box'],
+    ['an empty alias', ''],
+    ['a 256-character alias', 'h'.repeat(256)],
+    ['a space', 'my box'],
+    ['a tab', 'my\tbox'],
+    ['a newline', 'box\nx'],
+    ['an escape character', 'box\u001b'],
+    ['a NUL', 'box\u0000'],
+    ['a DEL', 'box\u007f'],
+  ])('refuses %s', (_name, alias) => {
+    expect(() => sshCommand(paths, alias, REMOTE)).toThrow(/alias/i);
+  });
+
+  it('names a refused alias', () => {
+    expect(() => sshCommand(paths, '-oProxyCommand=touch /tmp/x', REMOTE)).toThrow('-oProxyCommand=touch /tmp/x');
+  });
+
+  it('refuses a control path that does not fit a unix socket address', () => {
+    const long = hostPaths({ env: { XDG_STATE_HOME: '/' + 'a'.repeat(44) }, home: '/nonexistent', host: 'b' });
+    expect(() => sshCommand(long, 'box', REMOTE)).toThrow(`${long.runDir}/ssh-%C`);
+  });
 });
 
 /** Stand-in program: records its pid, session and stdio targets, then idles. */

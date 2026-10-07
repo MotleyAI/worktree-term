@@ -1,10 +1,11 @@
-import { existsSync, readFileSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FLOW_HIGH, FrameKind, PROTOCOL_VERSION, type Terminal } from '../../src/protocol/index.js';
 import { addWorktree, alive, DaemonHost, makeRepo, residentBytes, sleep, waitUntil, type WtdProcess } from '../support/daemon-host.js';
 import { FakeDaemon, SocketProxy } from '../support/fake-daemon.js';
+import { currentNodeDir, FakeSsh, installRemote, type FakeRemote } from '../support/fake-ssh.js';
 import type { HubClient, HubMessageOf } from '../support/hub-client.js';
 import { HubHost } from '../support/hub-host.js';
 import { REPO_ROOT } from '../support/exec.js';
@@ -24,9 +25,12 @@ let host: HubHost;
 let hub: WtdProcess;
 let repo: string;
 let wt: string;
+let ssh: FakeSsh;
 
 beforeEach(async () => {
   host = await HubHost.createHub();
+  ssh = new FakeSsh(join(host.dir, 'ssh'));
+  host.sshProgram = ssh.program;
   repo = makeRepo(join(host.dir, 'repo'));
   wt = addWorktree(repo, join(host.dir, 'wt'), 'wt');
   host.writeRepos([repo]);
@@ -34,6 +38,10 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Stop the hub first, so it starts no SSH runs while the fake remotes go away.
+  for (const pid of host.hubPids()) process.kill(pid, 'SIGKILL');
+  await waitUntil(() => host.hubPids().length === 0, 'hubs to exit').catch(() => undefined);
+  await ssh.cleanup();
   await host.cleanup();
 });
 
@@ -152,6 +160,7 @@ describe('daemon links and host status', () => {
       name: hostname().slice(0, 64) || 'local',
       remote: false,
       status: 'connected',
+      reason: null,
       daemonVersion: packageVersion(),
       instance: ANY_INSTANCE,
       repos: [repo],
@@ -176,10 +185,14 @@ describe('daemon links and host status', () => {
   it.each([
     ['an older', 3],
     ['a newer', 99],
-  ])('reports a daemon of %s protocol as outdated with its version, keeping the link', async (_name, protocol) => {
-    const fake = await FakeDaemon.listen(host.socket, { protocol, version: '9.9.9' });
+  ])('reports a daemon of %s protocol as outdated with its version and instance, keeping the link', async (_name, protocol) => {
+    const fake = await FakeDaemon.listen(host.socket, { protocol, version: '9.9.9', instance: 'old_D-1' });
     const client = await host.session();
-    expect(await client.waitHost(0, (h) => h.status === 'outdated')).toMatchObject({ daemonVersion: '9.9.9', instance: null });
+    expect(await client.waitHost(0, (h) => h.status === 'outdated')).toMatchObject({
+      daemonVersion: '9.9.9',
+      instance: 'old_D-1',
+      reason: null,
+    });
     await sleep(1000);
     expect(fake.connections).toBe(1);
     expect(client.hosts()[0]?.status).toBe('outdated');
@@ -305,18 +318,6 @@ describe('routing', () => {
     expect(b.daemonEvents(0, 'termCreated').map((m) => m.req)).toEqual([2]);
   });
 
-  it.each([
-    ['addRepo', { t: 'addRepo', host: 0, repo: '/x' }],
-    ['removeRepo', { t: 'removeRepo', host: 0, repo: '/x' }],
-    ['discoverRepos', { t: 'discoverRepos', host: 0 }],
-    ['reinstallDaemon', { t: 'reinstallDaemon', host: 0 }],
-  ] as const)('answers %s as not implemented', async (_name, body) => {
-    const client = await host.session();
-    const reply = await client.hubRequest(body);
-    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, code: 'internal' } });
-    expect(reply.m.t === 'error' ? reply.m.message : '').toMatch(/not implemented/i);
-  });
-
   it('relays a snapshot near the frame limit intact', async () => {
     const client = await watching();
     const awk = `awk 'BEGIN { for (l = 0; l < 5100; l++) { s = ""; for (c = 0; c < 500; c++) s = s "\\033[31ma\\033[32mb"; print s } }'; echo BIG-DONE`;
@@ -393,6 +394,24 @@ describe('daemon restart', () => {
     await waitUntil(() => host.daemonPids().length === 1, 'one daemon');
     const direct = await host.client();
     expect((await direct.handshake()).protocol).toBe(PROTOCOL_VERSION);
+  });
+
+  it('restarts a newer daemon whose messages after hello are not valid for the hub’s protocol', async () => {
+    const fake = await FakeDaemon.listen(host.socket, {
+      protocol: PROTOCOL_VERSION + 1,
+      instance: 'newer_1',
+      afterHello: ['{"t":"frobnicated","widgets":[1,2,3]}', '{"t":"repoState","repo":7}'],
+    });
+    const client = await host.session();
+    await client.waitHost(0, (h) => h.status === 'outdated');
+    const from = client.mark();
+    const reply = await client.hubRequest({ t: 'restartDaemon', host: 0 }, 15_000);
+    expect(reply).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+    expect(fake.shutdowns).toBe(1);
+    await fake.closed;
+    const entry = await client.waitHost(0, (h) => h.status === 'connected', { from, timeout: 10_000 });
+    expect(entry.instance).not.toBe('newer_1');
+    expect(entry.daemonVersion).toBe(packageVersion());
   });
 
   it('shares one restart between concurrent requests from two sessions', async () => {
@@ -473,5 +492,552 @@ describe('session end and hub shutdown', () => {
     await client.waitClosed();
     expect(client.closeCode).toBe(1001);
     expect(await hub.exited).toEqual({ code: 0, signal: null });
+  });
+});
+
+const REMOTE_TIMEOUT = 20_000;
+const INSTALL_TIMEOUT = 150_000;
+
+interface RemoteHostConfig {
+  name: string;
+  ssh: string;
+  repos?: readonly string[];
+  roots?: readonly string[];
+}
+
+/** Writes `config.json` with the local repo, `hosts` and any other keys. */
+const configure = (hosts: readonly RemoteHostConfig[], extra: Record<string, unknown> = {}): void => {
+  host.writeConfig({ port: host.port, repos: [repo], hosts, ...extra });
+};
+
+/** A remote whose PATH offers this runner's Node, so the hub's installer finds one there. */
+const nodeRemote = (alias: string): FakeRemote =>
+  ssh.addHost(alias, { path: `${currentNodeDir(join(ssh.dir, `node-${alias}`))}:${ssh.pathWithoutNode}` });
+
+/** The remote `box`, installed, holding one repo, configured as host 1. */
+const installedBox = async (): Promise<{ remote: FakeRemote; remoteRepo: string }> => {
+  const remote = nodeRemote('box');
+  await installRemote(host, ssh, 'box');
+  const remoteRepo = makeRepo(join(remote.home, 'src', 'app'));
+  configure([{ name: 'box', ssh: 'box', repos: [remoteRepo] }]);
+  return { remote, remoteRepo };
+};
+
+const connectedHost = (client: HubClient, idx: number, from = 0, timeout = REMOTE_TIMEOUT): Promise<{ instance: string | null }> =>
+  client.waitHost(idx, (h) => h.status === 'connected', { from, timeout });
+
+/** Instance of host `idx` once `connected`. */
+const remoteInstance = async (client: HubClient, idx: number, from = 0): Promise<string> => {
+  const { instance } = await connectedHost(client, idx, from);
+  if (instance === null) throw new Error('connected without an instance');
+  return instance;
+};
+
+/** Reads `config.json` as JSON. */
+const configFile = (): unknown => JSON.parse(readFileSync(host.configPath, 'utf8'));
+
+describe('remote hosts', () => {
+  it('lists configured remote hosts after the local host, in configuration order', async () => {
+    ssh.failHost('b-alias', 'ssh: Could not resolve hostname b-alias');
+    ssh.failHost('a-alias', 'ssh: Could not resolve hostname a-alias');
+    configure([
+      { name: 'b', ssh: 'b-alias' },
+      { name: 'a', ssh: 'a-alias', repos: ['/srv/a'] },
+    ]);
+    const client = await host.session();
+    expect(client.hosts().map((h) => [h.idx, h.name, h.remote, h.repos])).toEqual([
+      [0, hostname().slice(0, 64) || 'local', false, [repo]],
+      [1, 'b', true, []],
+      [2, 'a', true, ['/srv/a']],
+    ]);
+  });
+
+  it('connects a remote host through its SSH command, reporting its name, index and the remote daemon’s instance', async () => {
+    const { remote, remoteRepo } = await installedBox();
+    const client = await host.session();
+    const entry = await connectedHost(client, 1);
+    expect(entry).toEqual({
+      idx: 1,
+      name: 'box',
+      remote: true,
+      status: 'connected',
+      reason: null,
+      daemonVersion: packageVersion(),
+      instance: ANY_INSTANCE,
+      repos: [remoteRepo],
+    });
+    expect(remote.daemonPids()).toHaveLength(1);
+    expect((await remote.hello()).instance).toBe(entry.instance);
+    const link = ssh.calls().find((call) => call.alias === 'box' && call.command.includes('connect'));
+    expect(link?.command).toBe('"$HOME/.local/bin/wtd" connect');
+    expect(link?.args.slice(0, 12)).toEqual([
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=10',
+      '-o',
+      'ControlMaster=auto',
+      '-o',
+      'ControlPersist=10m',
+      '-o',
+      `ControlPath=${host.runDir}/ssh-%C`,
+      '-o',
+      'ServerAliveInterval=15',
+    ]);
+  });
+
+  it('round-trips requests, terminals and output through a remote host', async () => {
+    const { remoteRepo } = await installedBox();
+    const client = await host.session();
+    await connectedHost(client, 1);
+    const state = await client.watch(1, remoteRepo);
+    expect(state.worktrees.map((w) => w.path)).toEqual([remoteRepo]);
+    const term = await client.create(1, remoteRepo);
+    await client.attach(1, term.termId);
+    client.sendInput(1, term.termId, 'echo remote-$((40+2))-trip\r');
+    await client.waitOutput(1, term.termId, 'remote-42-trip', 10_000);
+    expect(client.daemonEvents(0, 'termCreated')).toEqual([]);
+  });
+
+  it('reports reconnecting, then connected to the same daemon, when the SSH process is killed', async () => {
+    await installedBox();
+    const client = await host.session();
+    const first = await remoteInstance(client, 1);
+    const pids = await waitUntil(() => {
+      const live = ssh.livePids('box');
+      return live.length > 0 ? live : undefined;
+    }, 'the hub’s SSH process');
+    const from = client.mark();
+    for (const pid of pids) process.kill(pid, 'SIGKILL');
+    expect(await client.waitHost(1, (h) => h.status === 'reconnecting', { from })).toMatchObject({ instance: null });
+    expect(await remoteInstance(client, 1, from)).toBe(first);
+  });
+
+  it('reports a host whose SSH command keeps failing as down, naming SSH’s last error line', async () => {
+    ssh.failHost('box', 'ssh: Could not resolve hostname box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    expect(await client.waitHost(1, (h) => h.status === 'reconnecting')).toMatchObject({
+      reason: 'ssh: Could not resolve hostname box',
+      instance: null,
+    });
+    expect(await client.waitHost(1, (h) => h.status === 'down', { timeout: 10_000 })).toMatchObject({
+      reason: 'ssh: Could not resolve hostname box',
+      daemonVersion: null,
+      instance: null,
+    });
+    expect(client.hosts()[0]?.status).toBe('connected');
+  });
+
+  it('reports a remote without wtd as down, with a reason', async () => {
+    ssh.addHost('box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    const entry = await client.waitHost(1, (h) => h.status === 'down', { timeout: 10_000 });
+    expect(entry.reason).toEqual(expect.stringMatching(/\S/));
+  });
+
+  it('keeps its memory bounded and the reason short when SSH writes 8 MiB to standard error without a newline', async () => {
+    const before = residentBytes(hub.pid);
+    ssh.spewHost('box', 8 * MiB);
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    const entry = await client.waitHost(1, (h) => h.status === 'down', { timeout: 30_000 });
+    expect(entry.reason?.length ?? 0).toBeGreaterThan(0);
+    expect(entry.reason?.length ?? 0).toBeLessThanOrEqual(1024);
+    expect(residentBytes(hub.pid) - before).toBeLessThan(16 * MiB);
+  });
+
+  it('ends an SSH process that writes over 1 MiB to standard error instead of leaving its link stalled', async () => {
+    await installedBox();
+    ssh.noisyHost('box', 2 * MiB);
+    const client = await host.session();
+    const entry = await client.waitHost(1, (h) => h.status === 'reconnecting' || h.status === 'down', { timeout: REMOTE_TIMEOUT });
+    expect(entry.reason).toMatch(/^x{1,1024}$/);
+  });
+
+  it('answers requests to a down remote host with host-unavailable', async () => {
+    ssh.failHost('box', 'ssh: Could not resolve hostname box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    await client.waitHost(1, (h) => h.status === 'reconnecting' || h.status === 'down');
+    const reply = await client.request(1, { t: 'watchRepo', repo: '/srv/app' });
+    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: 1, code: 'host-unavailable' } });
+  });
+
+  it('kills SSH processes of a closed session that ignore SIGTERM', async () => {
+    ssh.addHost('box');
+    ssh.hangHost('box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    const pids = await waitUntil(() => {
+      const live = ssh.livePids('box');
+      return live.length > 0 && live;
+    }, 'an SSH process for box');
+    client.close();
+    await waitUntil(() => pids.every((pid) => !alive(pid)), 'the session’s SSH processes to be killed', 5000);
+    expect(pids.filter(alive)).toEqual([]);
+  });
+
+  it('ends the SSH processes of a closed session', async () => {
+    await installedBox();
+    const client = await host.session();
+    await connectedHost(client, 1);
+    const pids = ssh.livePids('box');
+    expect(pids.length).toBeGreaterThan(0);
+    client.close();
+    await waitUntil(() => pids.every((pid) => !alive(pid)), 'the session’s SSH processes to end', 5000);
+  });
+});
+
+describe('remote daemon restart and reinstall', () => {
+  it('restarts a connected remote daemon into a new instance', async () => {
+    const { remote } = await installedBox();
+    const client = await host.session();
+    const old = await remoteInstance(client, 1);
+    const [oldPid] = remote.daemonPids();
+    const from = client.mark();
+    const reply = await client.hubRequest({ t: 'restartDaemon', host: 1 }, 20_000);
+    expect(reply).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+    expect(await remoteInstance(client, 1, from)).not.toBe(old);
+    await waitUntil(() => oldPid !== undefined && !alive(oldPid), 'the old remote daemon to exit');
+    await waitUntil(() => remote.daemonPids().length === 1, 'one remote daemon');
+  });
+
+  it(
+    'reinstalls an outdated remote: installs the hub’s bundle, shuts the old daemon down and connects to the new one',
+    async () => {
+      const { remote } = await installedBox();
+      const releases = remote.releases();
+      const fake = await FakeDaemon.listen(remote.socket, { protocol: 4, version: '0.0.4', instance: 'old_remote' });
+      const client = await host.session();
+      expect(await client.waitHost(1, (h) => h.status === 'outdated', { timeout: REMOTE_TIMEOUT })).toMatchObject({
+        daemonVersion: '0.0.4',
+        instance: 'old_remote',
+      });
+      const from = client.mark();
+      const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 1 }, INSTALL_TIMEOUT);
+      expect(reply).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+      expect(fake.shutdowns).toBeGreaterThanOrEqual(1);
+      const entry = await connectedHost(client, 1, from);
+      expect(entry).toMatchObject({ daemonVersion: packageVersion() });
+      expect(remote.releases()).toHaveLength(2);
+      expect(remote.releases()).toEqual(expect.arrayContaining(releases));
+      expect(remote.current()).not.toBe(join('versions', releases[0] ?? ''));
+    },
+    INSTALL_TIMEOUT + 30_000,
+  );
+
+  it(
+    'installs wtd on a down remote that never had it and connects',
+    async () => {
+      const remote = nodeRemote('box');
+      configure([{ name: 'box', ssh: 'box' }]);
+      const client = await host.session();
+      await client.waitHost(1, (h) => h.status === 'down', { timeout: 10_000 });
+      const from = client.mark();
+      const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 1 }, INSTALL_TIMEOUT);
+      expect(reply).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+      expect(await connectedHost(client, 1, from)).toMatchObject({ daemonVersion: packageVersion() });
+      expect(remote.releases()).toHaveLength(1);
+      expect(existsSync(remote.shim)).toBe(true);
+    },
+    INSTALL_TIMEOUT + 30_000,
+  );
+
+  it(
+    'reports an installation failure as internal, naming the install step and the missing Node',
+    async () => {
+      ssh.addHost('box');
+      configure([{ name: 'box', ssh: 'box' }]);
+      const client = await host.session();
+      await client.waitHost(1, (h) => h.status === 'down', { timeout: 10_000 });
+      const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 1 }, INSTALL_TIMEOUT);
+      expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: 1, code: 'internal' } });
+      const message = reply.m.t === 'error' ? reply.m.message : '';
+      expect(message).toMatch(/^install:/);
+      expect(message).toMatch(/node/i);
+    },
+    INSTALL_TIMEOUT + 30_000,
+  );
+
+  it(
+    'lets a restart requested during a reinstall share it',
+    async () => {
+      const { remote } = await installedBox();
+      await FakeDaemon.listen(remote.socket, { protocol: 4, version: '0.0.4', instance: 'old_remote' });
+      const a = await host.session();
+      const b = await host.session();
+      await a.waitHost(1, (h) => h.status === 'outdated', { timeout: REMOTE_TIMEOUT });
+      await b.waitHost(1, (h) => h.status === 'outdated', { timeout: REMOTE_TIMEOUT });
+      const fromA = a.mark();
+      const fromB = b.mark();
+      const reinstall = a.hubRequest({ t: 'reinstallDaemon', host: 1 }, INSTALL_TIMEOUT);
+      await sleep(200);
+      const restart = b.hubRequest({ t: 'restartDaemon', host: 1 }, INSTALL_TIMEOUT);
+      const [ra, rb] = await Promise.all([reinstall, restart]);
+      expect(ra.m.t).toBe('done');
+      expect(rb.m.t).toBe('done');
+      const instanceA = await remoteInstance(a, 1, fromA);
+      expect(await remoteInstance(b, 1, fromB)).toBe(instanceA);
+      await waitUntil(() => remote.daemonPids().length === 1, 'one remote daemon');
+      await sleep(500);
+      expect(remote.daemonPids()).toHaveLength(1);
+      expect(remote.releases()).toHaveLength(2);
+    },
+    INSTALL_TIMEOUT + 30_000,
+  );
+
+  it('refuses to reinstall the local host, touching no daemon', async () => {
+    const client = await host.session();
+    const instance = await instanceOf(client);
+    const [pid] = host.daemonPids();
+    const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 0 });
+    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: 0, code: 'internal' } });
+    await sleep(500);
+    expect(host.daemonPids()).toEqual([pid]);
+    expect(client.hosts()[0]).toMatchObject({ status: 'connected', instance });
+  });
+
+  it('answers a reinstall for an unknown host with unknown-host', async () => {
+    const client = await host.session();
+    const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 7 });
+    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, code: 'unknown-host' } });
+  });
+});
+
+describe('repo discovery through the hub', () => {
+  it('discovers repos below the host’s configured roots, at depth 3', async () => {
+    const one = makeRepo(join(host.home, 'src', 'one'));
+    const deep = makeRepo(join(host.home, 'src', 'a', 'b', 'deep'));
+    makeRepo(join(host.home, 'src', 'a', 'b', 'c', 'too-deep'));
+    makeRepo(join(host.home, 'elsewhere', 'outside'));
+    host.writeConfig({ port: host.port, repos: [repo], roots: ['~/src'] });
+    const client = await host.session();
+    await connected(client);
+    const reply = await client.hubRequest({ t: 'discoverRepos', host: 0 });
+    expect(reply).toEqual({ from: 'hub', m: { t: 'reposDiscovered', req: 1, host: 0, repos: [deep, one] } });
+  });
+
+  it('discovers below the home directory by default', async () => {
+    const mine = makeRepo(join(host.home, 'GitHub', 'mine'));
+    const client = await host.session();
+    await connected(client);
+    const reply = await client.hubRequest({ t: 'discoverRepos', host: 0 });
+    expect(reply.m.t === 'reposDiscovered' ? reply.m.repos : []).toContain(mine);
+  });
+
+  it('discovers on a remote host against the remote home', async () => {
+    const remote = nodeRemote('box');
+    await installRemote(host, ssh, 'box');
+    const found = makeRepo(join(remote.home, 'code', 'found'));
+    configure([{ name: 'box', ssh: 'box', roots: ['~/code'] }]);
+    const client = await host.session();
+    await connectedHost(client, 1);
+    const reply = await client.hubRequest({ t: 'discoverRepos', host: 1 });
+    expect(reply).toEqual({ from: 'hub', m: { t: 'reposDiscovered', req: 1, host: 1, repos: [found] } });
+  });
+
+  it('keeps a hub-level request apart from a daemon request with the same id', async () => {
+    const client = await host.session();
+    await connected(client);
+    const from = client.mark();
+    client.sendJson({ t: 'host', host: 0, m: { t: 'watchRepo', req: 7, repo } });
+    client.sendJson({ t: 'discoverRepos', req: 7, host: 0 });
+    await client.waitFor('reposDiscovered', (m) => m.req === 7, { from });
+    await client.waitEvent(0, 'done', (m) => m.req === 7, { from });
+    await sleep(1000);
+    const replies = client.messages.slice(from).filter((m) => {
+      if (m.t === 'host') return 'req' in m.m && m.m.req === 7;
+      return 'req' in m && m.req === 7;
+    });
+    expect(replies.map((m) => (m.t === 'host' ? `host:${m.m.t}` : m.t)).sort()).toEqual(['host:done', 'reposDiscovered']);
+  });
+
+  it('answers discovery for a host that is not connected as routing does', async () => {
+    ssh.failHost('box', 'ssh: Could not resolve hostname box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    await client.waitHost(1, (h) => h.status === 'reconnecting' || h.status === 'down');
+    expect(await client.hubRequest({ t: 'discoverRepos', host: 1 })).toMatchObject({
+      from: 'hub',
+      m: { t: 'error', req: 1, host: 1, code: 'host-unavailable' },
+    });
+    expect(await client.hubRequest({ t: 'discoverRepos', host: 9 })).toMatchObject({
+      from: 'hub',
+      m: { t: 'error', code: 'unknown-host' },
+    });
+  });
+
+  it('answers discovery for an outdated host with version-mismatch', async () => {
+    await FakeDaemon.listen(host.socket, { protocol: 99 });
+    const client = await host.session();
+    await client.waitHost(0, (h) => h.status === 'outdated');
+    expect(await client.hubRequest({ t: 'discoverRepos', host: 0 })).toMatchObject({ m: { t: 'error', code: 'version-mismatch' } });
+  });
+});
+
+describe('adding repos', () => {
+  it('adds a repo to config.json, answers done, then lists it in hosts', async () => {
+    const added = makeRepo(join(host.dir, 'added'));
+    const client = await host.session();
+    await connected(client);
+    const from = client.mark();
+    const reply = await client.hubRequest({ t: 'addRepo', host: 0, repo: added });
+    expect(reply).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+    const listed = await client.waitHost(0, (h) => h.repos.includes(added), { from });
+    expect(listed.repos).toEqual([repo, added]);
+    const doneAt = client.messages.findIndex((m, i) => i >= from && m.t === 'done');
+    const hostsAt = client.messages.findIndex((m, i) => i >= from && m.t === 'hosts' && m.hosts[0]?.repos.includes(added) === true);
+    expect(doneAt).toBeLessThan(hostsAt);
+    expect(configFile()).toEqual({ port: host.port, repos: [repo, added] });
+  });
+
+  it('refuses a directory that is not a repository’s main worktree with not-a-repo, leaving config.json unchanged', async () => {
+    const plain = join(host.dir, 'plain');
+    mkdirSync(plain);
+    const before = readFileSync(host.configPath, 'utf8');
+    const client = await host.session();
+    await connected(client);
+    expect(await client.hubRequest({ t: 'addRepo', host: 0, repo: plain })).toMatchObject({
+      from: 'hub',
+      m: { t: 'error', req: 1, host: 0, code: 'not-a-repo' },
+    });
+    expect(await client.hubRequest({ t: 'addRepo', host: 0, repo: wt })).toMatchObject({ m: { t: 'error', code: 'not-a-repo' } });
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+
+  it('answers done without an edit for a repo already listed, as given or by a ~/ form', async () => {
+    symlinkSync(repo, join(host.home, 'linked'));
+    host.writeConfig({ port: host.port, repos: [repo, '~/linked'] });
+    const before = readFileSync(host.configPath, 'utf8');
+    const client = await host.session();
+    await connected(client);
+    expect((await client.hubRequest({ t: 'addRepo', host: 0, repo })).m).toEqual({ t: 'done', req: 1 });
+    expect((await client.hubRequest({ t: 'addRepo', host: 0, repo: join(host.home, 'linked') })).m).toEqual({ t: 'done', req: 2 });
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+
+  it('lists a repo added to a remote host in every open session', async () => {
+    const { remote, remoteRepo } = await installedBox();
+    const second = makeRepo(join(remote.home, 'src', 'second'));
+    const a = await host.session();
+    const b = await host.session();
+    await connectedHost(a, 1);
+    await connectedHost(b, 1);
+    const fromB = b.mark();
+    expect((await a.hubRequest({ t: 'addRepo', host: 1, repo: second })).m).toEqual({ t: 'done', req: 1 });
+    expect((await a.waitHost(1, (h) => h.repos.includes(second))).repos).toEqual([remoteRepo, second]);
+    expect((await b.waitHost(1, (h) => h.repos.includes(second), { from: fromB })).repos).toEqual([remoteRepo, second]);
+    expect(b.hosts()[0]?.repos).toEqual([repo]);
+    expect(configFile()).toEqual({ port: host.port, repos: [repo], hosts: [{ name: 'box', ssh: 'box', repos: [remoteRepo, second] }] });
+  });
+
+  it('answers adding to a host that is not connected as routing does', async () => {
+    ssh.failHost('box', 'ssh: Could not resolve hostname box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    await client.waitHost(1, (h) => h.status === 'reconnecting' || h.status === 'down');
+    expect(await client.hubRequest({ t: 'addRepo', host: 1, repo: '/srv/x' })).toMatchObject({
+      m: { t: 'error', host: 1, code: 'host-unavailable' },
+    });
+  });
+});
+
+describe('removing repos', () => {
+  it('removes a repo listed by a ~/ form, answers done, then drops it from hosts', async () => {
+    const app = makeRepo(join(host.home, 'app'));
+    host.writeConfig({ port: host.port, repos: [repo, '~/app'] });
+    const client = await host.session();
+    await connected(client);
+    expect(client.hosts()[0]?.repos).toEqual([repo, app]);
+    const from = client.mark();
+    expect((await client.hubRequest({ t: 'removeRepo', host: 0, repo: app })).m).toEqual({ t: 'done', req: 1 });
+    expect((await client.waitHost(0, (h) => !h.repos.includes(app), { from })).repos).toEqual([repo]);
+    expect(configFile()).toEqual({ port: host.port, repos: [repo] });
+  });
+
+  it('refuses a repo with a running terminal with busy, leaving config.json unchanged', async () => {
+    const client = await watching();
+    await client.create(0, wt, { command: 'exec sleep 60' });
+    const before = readFileSync(host.configPath, 'utf8');
+    expect(await client.hubRequest({ t: 'removeRepo', host: 0, repo })).toMatchObject({
+      from: 'hub',
+      m: { t: 'error', req: 3, host: 0, code: 'busy' },
+    });
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+
+  it('refuses a repo with an exited terminal not yet closed, and removes it once closed', async () => {
+    const client = await watching();
+    const term = await client.create(0, repo, { command: 'exit 0' });
+    await client.waitEvent(0, 'termExited', (m) => m.termId === term.termId, { timeout: 10_000 });
+    expect((await client.hubRequest({ t: 'removeRepo', host: 0, repo })).m).toMatchObject({ t: 'error', code: 'busy' });
+    await client.ok(0, { t: 'closeTerm', termId: term.termId });
+    expect((await client.hubRequest({ t: 'removeRepo', host: 0, repo })).m).toMatchObject({ t: 'done' });
+    expect(configFile()).toEqual({ port: host.port, repos: [] });
+  });
+
+  it('removes a listed repo whose directory no longer exists', async () => {
+    const gone = makeRepo(join(host.dir, 'gone'));
+    host.writeRepos([repo, gone]);
+    rmSync(gone, { recursive: true, force: true });
+    const client = await host.session();
+    await connected(client);
+    expect((await client.hubRequest({ t: 'removeRepo', host: 0, repo: gone })).m).toEqual({ t: 'done', req: 1 });
+    expect(configFile()).toEqual({ port: host.port, repos: [repo] });
+  });
+
+  it('answers done without an edit for a repo it does not list', async () => {
+    const before = readFileSync(host.configPath, 'utf8');
+    const client = await host.session();
+    await connected(client);
+    expect((await client.hubRequest({ t: 'removeRepo', host: 0, repo: join(host.dir, 'never') })).m).toEqual({ t: 'done', req: 1 });
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+});
+
+describe('configuration edits', () => {
+  it('refuses to edit an invalid config.json, naming the problem and leaving it unchanged', async () => {
+    const added = makeRepo(join(host.dir, 'added'));
+    const client = await host.session();
+    await connected(client);
+    writeFileSync(host.configPath, JSON.stringify({ port: host.port, theme: 'dark' }));
+    const reply = await client.hubRequest({ t: 'addRepo', host: 0, repo: added });
+    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, code: 'internal' } });
+    expect(reply.m.t === 'error' ? reply.m.message : '').toContain('theme');
+    expect(configFile()).toEqual({ port: host.port, theme: 'dark' });
+  });
+
+  it('refuses to edit a host the file no longer lists, leaving it unchanged', async () => {
+    const { remote } = await installedBox();
+    const other = makeRepo(join(remote.home, 'src', 'other'));
+    const client = await host.session();
+    await connectedHost(client, 1);
+    host.writeConfig({ port: host.port, repos: [repo] });
+    const before = readFileSync(host.configPath, 'utf8');
+    expect((await client.hubRequest({ t: 'addRepo', host: 1, repo: other })).m).toMatchObject({ t: 'error', code: 'internal' });
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+
+  it('creates config.json owner-only to record a repo when there was none', async () => {
+    rmSync(host.configPath);
+    const added = makeRepo(join(host.dir, 'added'));
+    const client = await host.session();
+    await connected(client);
+    expect((await client.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toEqual({ t: 'done', req: 1 });
+    expect(configFile()).toEqual({ repos: [added] });
+  });
+
+  it('changes nothing else in an open session’s snapshot', async () => {
+    const added = makeRepo(join(host.dir, 'added'));
+    const client = await host.session();
+    await connected(client);
+    host.presets = [CLAUDE, SHELL];
+    host.writeRepos([repo]);
+    const from = client.mark();
+    expect((await client.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toEqual({ t: 'done', req: 1 });
+    await client.waitHost(0, (h) => h.repos.includes(added), { from });
+    expect(presetsOf(client)).toEqual([[SHELL]]);
   });
 });

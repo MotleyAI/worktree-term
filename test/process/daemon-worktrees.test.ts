@@ -378,4 +378,11 @@ describe('discoverRepos', () => {
     const reply = await client.request({ t: 'discoverRepos', roots: [root, join(host.dir, 'missing')], depth: 2 });
     expect(reply).toEqual({ t: 'reposDiscovered', req: ANY_REQ, repos: [two, one] });
   });
+
+  it('expands ~ and ~/… roots against the daemon home and reports each repo once', async () => {
+    const app = makeRepo(join(host.home, 'GitHub', 'app'));
+    const client = await host.client();
+    const reply = await client.request({ t: 'discoverRepos', roots: ['~', '~/GitHub'], depth: 3 });
+    expect(reply).toEqual({ t: 'reposDiscovered', req: ANY_REQ, repos: [app] });
+  });
 });

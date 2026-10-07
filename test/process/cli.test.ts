@@ -36,14 +36,23 @@ describe('dist/wtd.mjs', () => {
   });
 
   it('prints its version', () => {
-    expect(wtd('--version')).toEqual({ status: 0, stdout: `wtd ${packageVersion()} (protocol 4)\n`, stderr: '' });
+    expect(wtd('--version')).toEqual({ status: 0, stdout: `wtd ${packageVersion()} (protocol 5)\n`, stderr: '' });
   });
 
   it('prints help listing every command and option', () => {
     const result = wtd('--help');
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-    for (const word of ['ui', 'hub', 'daemon', 'connect', 'install-local', 'install-remote <alias>', '--help', '--version']) {
+    for (const word of [
+      'ui',
+      'hub',
+      'daemon',
+      'connect',
+      'install-local [--systemd]',
+      'install-remote <alias> [--node <path>]',
+      '--help',
+      '--version',
+    ]) {
       expect(result.stdout).toContain(word);
     }
   });
@@ -64,10 +73,19 @@ describe('dist/wtd.mjs', () => {
     expectUsageError(wtd('install-remote'), /alias.*required|required.*alias/i);
   });
 
-  it.each([
-    ['install-local', ['install-local']],
-    ['install-remote', ['install-remote', 'devbox']],
-  ])('%s exits 2 as not implemented', (verb, args) => {
-    expect(wtd(...args)).toEqual({ status: 2, stdout: '', stderr: `wtd ${verb}: not implemented\n` });
+  it('names an option install-remote does not take', () => {
+    expectUsageError(wtd('install-remote', 'box', '--systemd'), /--systemd.*install-remote|install-remote.*--systemd/);
+  });
+
+  it('names an option install-local does not take', () => {
+    expectUsageError(wtd('install-local', '--node', '/usr/bin/node'), /--node.*install-local|install-local.*--node/);
+  });
+
+  it('requires a value for --node', () => {
+    expectUsageError(wtd('install-remote', 'box', '--node'), /--node.*value|value.*--node/i);
+  });
+
+  it.each([['ui'], ['hub'], ['daemon'], ['connect']])('names --systemd as unknown for %s', (verb) => {
+    expectUsageError(wtd(verb, '--systemd'), /--systemd/);
   });
 });

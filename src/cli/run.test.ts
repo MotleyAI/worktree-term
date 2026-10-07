@@ -46,7 +46,7 @@ const expectUsageError = async (result: Result, mentions: RegExp): Promise<void>
 
 describe('wtd --version', () => {
   it('prints the package and protocol versions', async () => {
-    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 4)\n`, stderr: '' });
+    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 5)\n`, stderr: '' });
   });
 });
 
@@ -58,7 +58,8 @@ describe('wtd --help', () => {
     for (const word of [...COMMANDS, '--help', '--version']) {
       expect(stdout).toMatch(new RegExp(`(^|\\s)${word}(\\s|$)`, 'm'));
     }
-    expect(stdout).toContain('install-remote <alias>');
+    expect(stdout).toContain('install-local [--systemd]');
+    expect(stdout).toContain('install-remote <alias> [--node <path>]');
   });
 });
 
@@ -86,13 +87,33 @@ describe('usage errors', () => {
   it('requires an alias for install-remote', async () => {
     await expectUsageError(await wtd('install-remote'), /alias.*required|required.*alias/i);
   });
-});
 
-describe('not-yet-implemented commands', () => {
-  it.each([
-    ['install-local', ['install-local']],
-    ['install-remote', ['install-remote', 'devbox']],
-  ])('%s prints "not implemented" and exits 2', async (verb, argv) => {
-    expect(await wtd(...argv)).toEqual({ code: 2, stdout: '', stderr: `wtd ${verb}: not implemented\n` });
+  it('requires an alias for install-remote even with --node', async () => {
+    await expectUsageError(await wtd('install-remote', '--node', '/usr/bin/node'), /alias.*required|required.*alias/i);
+  });
+
+  it('names --systemd as unknown for install-remote', async () => {
+    await expectUsageError(await wtd('install-remote', 'box', '--systemd'), /--systemd.*install-remote|install-remote.*--systemd/);
+  });
+
+  it('names --node as unknown for install-local', async () => {
+    await expectUsageError(await wtd('install-local', '--node', '/usr/bin/node'), /--node.*install-local|install-local.*--node/);
+  });
+
+  it.each(['ui', 'hub', 'daemon', 'connect'])('names --node and --systemd as unknown for %s', async (verb) => {
+    await expectUsageError(await wtd(verb, '--systemd'), /--systemd/);
+    await expectUsageError(await wtd(verb, '--node', '/n'), /--node/);
+  });
+
+  it('requires a value for --node', async () => {
+    await expectUsageError(await wtd('install-remote', 'box', '--node'), /--node.*value|value.*--node/i);
+  });
+
+  it('refuses --systemd with a value', async () => {
+    await expectUsageError(await wtd('install-local', '--systemd=yes'), /--systemd/);
+  });
+
+  it('refuses a second alias', async () => {
+    await expectUsageError(await wtd('install-remote', 'box', 'other'), /other/);
   });
 });

@@ -1,6 +1,6 @@
 import { batch, computed, effect, signal } from '@preact/signals';
 import type { HostEntry, Layout, Preset, Terminal } from '../../protocol/index.js';
-import { repoKey, type HubClient, type RepoState } from '../client/index.js';
+import { hostKey, repoKey, RequestError, type HubClient, type Recalled, type RepoState } from '../client/index.js';
 import {
   canAddTab,
   canSplit,
@@ -24,6 +24,7 @@ import {
 } from '../layout/index.js';
 import type { Box, TerminalManager } from '../terminals/index.js';
 import { closeTargets, needsConfirm } from './closing.js';
+import { hostAction, Latest, offeredRepos, type HostAction } from './hosts.js';
 import { keymap, type Action } from './keymap.js';
 import { pickerValid, type PickerContext, type PickerOp, type PickerWorld } from './picker.js';
 import { repoTabs, type RepoTab } from './repo-tabs.js';
@@ -69,6 +70,9 @@ const markAfterPaint = (name: string): void => {
 };
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** An error as the add-repo dialog shows it: the code of a refused request, then its message. */
+const describe = (error: unknown): string => (error instanceof RequestError ? `${error.code}: ${error.message}` : message(error));
 
 /** The box of a pane's terminal: the pane below its header. */
 export const terminalBoxOf = (rect: Rect): Box => ({
@@ -135,6 +139,23 @@ interface Picker {
   index: number;
 }
 
+/** What the in-page confirmation asks about. */
+export type Confirmation =
+  | { t: 'host'; host: HostEntry; action: HostAction; recalled: Recalled | null }
+  | { t: 'removeRepo'; host: number; repo: string; label: string };
+
+/** The add-repo dialog. */
+export interface AddRepoDialog {
+  host: number;
+  /** Repos discovered on the host; null until discovery answers. */
+  discovered: readonly string[] | null;
+  /** Whether discovery runs once the host is connected: none has run yet, or the last one failed. */
+  pending: boolean;
+  filter: string;
+  path: string;
+  error: string | null;
+}
+
 /** The page's selection, stored per browser, and what it shows; keeps the terminal manager in step. */
 export class View {
   readonly selectedRepo = signal<string | null>(load(REPO_KEY));
@@ -146,13 +167,30 @@ export class View {
   readonly closing = signal<CloseRequest | null>(null);
   /** A problem of the page itself, such as a failed copy. */
   readonly notice = signal<string | null>(null);
+  readonly confirmation = signal<Confirmation | null>(null);
+  readonly addRepo = signal<AddRepoDialog | null>(null);
   private readonly drag = signal<Drag | null>(null);
   /** The focused pane per tab key, with the tab's panes when it was last resolved; replaced when the user chooses a pane. */
   private readonly focusRecords = signal(new Map<string, { termId: number; root: Pane }>());
   /** Per host and worktree, a terminal its full layout misses that the page shows anyway. */
   private readonly outside = signal(new Map<string, number>());
 
-  readonly tabs = computed<RepoTab[]>(() => repoTabs(this.client.store.hosts.value));
+  readonly tabs = computed<RepoTab[]>(() => {
+    const kept = this.client.store.kept.value;
+    return repoTabs(
+      this.client.store.hosts.value.map((h) => ({
+        ...h,
+        repos: [...h.repos, ...(kept.get(h.idx) ?? []).filter((r) => !h.repos.includes(r))],
+      })),
+    );
+  });
+  /** The repos the add-repo dialog offers. */
+  readonly offered = computed<string[]>(() => {
+    const dialog = this.addRepo.value;
+    if (dialog?.discovered == null) return [];
+    const listed = this.client.store.hosts.value.find((h) => h.idx === dialog.host)?.repos ?? [];
+    return offeredRepos(dialog.discovered, listed, dialog.filter);
+  });
   readonly tab = computed<RepoTab | null>(() => {
     const tabs = this.tabs.value;
     return tabs.find((t) => repoKey(t.host, t.repo) === this.selectedRepo.value) ?? tabs[0] ?? null;
@@ -258,10 +296,16 @@ export class View {
     return this.canCreate.value && focused !== null && canSplit(this.layout.value, focused);
   });
   /** Whether a picker or dialog owns the keys. */
-  readonly modal = computed<boolean>(() => this.picker.value !== null || this.closing.value !== null);
+  readonly modal = computed<boolean>(
+    () => this.picker.value !== null || this.closing.value !== null || this.confirmation.value !== null || this.addRepo.value !== null,
+  );
 
   private shownKey = '';
   private focusKey = '';
+  /** Whether the add-repo dialog discovered since its host last became connected. */
+  private discoveredSinceConnect = false;
+  /** The add-repo discovery whose answer the dialog shows. */
+  private readonly discovery = new Latest();
 
   constructor(
     private readonly client: HubClient,
@@ -278,6 +322,9 @@ export class View {
     });
     effect(() => {
       this.checkDrag();
+    });
+    effect(() => {
+      this.checkAddRepo();
     });
     manager.onFocus((host, termId) => {
       if (host === this.tab.peek()?.host) this.focusPane(termId);
@@ -401,6 +448,112 @@ export class View {
 
   cancelClose(): void {
     this.closing.value = null;
+  }
+
+  /** Asks to confirm the banner action of `host`, naming the terminals last seen on its daemon instance. */
+  requestHostAction(host: HostEntry): void {
+    const action = hostAction(host);
+    if (action === null) return;
+    this.confirmation.value = { t: 'host', host, action, recalled: this.client.memory.recall(hostKey(host), host.instance) };
+  }
+
+  /** Asks to confirm removing the repo of `tab`. */
+  requestRemoveRepo(tab: RepoTab): void {
+    this.confirmation.value = { t: 'removeRepo', host: tab.host, repo: tab.repo, label: tab.label };
+  }
+
+  cancelConfirmation(): void {
+    this.confirmation.value = null;
+  }
+
+  /** Runs the confirmed action, showing its failure on the page. */
+  confirm(): void {
+    const confirmation = this.confirmation.value;
+    this.confirmation.value = null;
+    if (confirmation === null) return;
+    if (confirmation.t === 'removeRepo') {
+      this.client.removeRepo(confirmation.host, confirmation.repo).catch((error: unknown) => {
+        this.notice.value =
+          error instanceof RequestError && error.code === 'busy'
+            ? `${confirmation.label} has terminals: close them first, then remove the repo.`
+            : `Removing ${confirmation.label} failed: ${message(error)}`;
+      });
+      return;
+    }
+    const { host, action } = confirmation;
+    const run = action.kind === 'restart' ? this.client.restartDaemon(host.idx) : this.client.reinstallDaemon(host.idx);
+    run.catch((error: unknown) => {
+      this.notice.value = `${action.label} on ${host.name} failed: ${message(error)}`;
+    });
+  }
+
+  /** Opens the add-repo dialog for the selected tab's host and discovers its repos. */
+  openAddRepo(): void {
+    this.changeAddRepoHost(this.tab.value?.host ?? 0);
+  }
+
+  /** Shows the add-repo dialog for `host`, discovering its repos once it is connected. */
+  changeAddRepoHost(host: number): void {
+    const dialog = this.addRepo.peek();
+    this.discoveredSinceConnect = false;
+    this.discovery.drop();
+    this.addRepo.value = { host, discovered: null, pending: true, filter: dialog?.filter ?? '', path: dialog?.path ?? '', error: null };
+  }
+
+  setAddRepoField(field: 'filter' | 'path', value: string): void {
+    const dialog = this.addRepo.value;
+    if (dialog !== null) this.addRepo.value = { ...dialog, [field]: value };
+  }
+
+  closeAddRepo(): void {
+    this.discovery.drop();
+    this.addRepo.value = null;
+  }
+
+  /** Adds `repo` to the dialog's host; on success closes the dialog and selects the repo's tab once the hub lists it. */
+  chooseRepo(repo: string): void {
+    const dialog = this.addRepo.value;
+    if (dialog === null || repo === '') return;
+    const { host } = dialog;
+    this.updateAddRepo(host, { error: null });
+    this.client
+      .addRepo(host, repo)
+      .then(() => {
+        if (this.addRepo.peek()?.host === host) this.addRepo.value = null;
+        this.selectedRepo.value = repoKey(host, repo);
+        localStorage.setItem(REPO_KEY, repoKey(host, repo));
+      })
+      .catch((error: unknown) => {
+        this.updateAddRepo(host, { error: describe(error) });
+      });
+  }
+
+  /** Runs the dialog's pending discovery once its host is connected; a failed one again only after a reconnect. */
+  private checkAddRepo(): void {
+    const dialog = this.addRepo.value;
+    const hosts = this.client.store.hosts.value;
+    if (dialog === null || !hosts.some((h) => h.idx === dialog.host && h.status === 'connected')) {
+      this.discoveredSinceConnect = false;
+      return;
+    }
+    if (!dialog.pending || this.discoveredSinceConnect) return;
+    this.discoveredSinceConnect = true;
+    const { host } = dialog;
+    const discovery = this.discovery.start();
+    this.addRepo.value = { ...dialog, pending: false };
+    this.client
+      .discoverRepos(host)
+      .then((repos) => {
+        if (this.discovery.isLatest(discovery)) this.updateAddRepo(host, { discovered: repos, error: null });
+      })
+      .catch((error: unknown) => {
+        if (this.discovery.isLatest(discovery)) this.updateAddRepo(host, { discovered: [], pending: true, error: describe(error) });
+      });
+  }
+
+  private updateAddRepo(host: number, change: Partial<AddRepoDialog>): void {
+    const dialog = this.addRepo.peek();
+    if (dialog?.host === host) this.addRepo.value = { ...dialog, ...change };
   }
 
   /** Starts dragging `divider` of the shown tab. */

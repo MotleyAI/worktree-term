@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 4,
+  "protocolVersion": 5,
   "constants": {
     "MAX_FRAME": 16777216,
     "MAX_INPUT": 65536,
@@ -124,7 +124,7 @@
               "items": {
                 "type": "string",
                 "maxLength": 4096,
-                "pattern": "^\\/[^\\u0000]*$"
+                "pattern": "^(?:\\/[^\\u0000]*|~|~\\/[^\\u0000]+)$"
               }
             },
             "depth": {
@@ -1416,7 +1416,7 @@
                       "items": {
                         "type": "string",
                         "maxLength": 4096,
-                        "pattern": "^\\/[^\\u0000]*$"
+                        "pattern": "^(?:\\/[^\\u0000]*|~|~\\/[^\\u0000]+)$"
                       }
                     },
                     "depth": {
@@ -2765,6 +2765,17 @@
                       "outdated"
                     ]
                   },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1024
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "daemonVersion": {
                     "anyOf": [
                       {
@@ -2803,6 +2814,7 @@
                   "name",
                   "remote",
                   "status",
+                  "reason",
                   "daemonVersion",
                   "instance",
                   "repos"
@@ -3059,6 +3071,11 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}",
+      "valid": true
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
       "valid": true
     },
@@ -3220,6 +3237,11 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":3,\"roots\":[\"/home/u/GitHub\",\"/srv\"],\"depth\":3}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}}",
       "valid": false
     },
     {
@@ -3404,7 +3426,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -3645,6 +3667,41 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"setLayout\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"a\",\"root\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":9},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":8},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":7},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":6},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":5},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":4},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":3},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":2},\"b\":{\"term\":1}}}}}}}}}}],\"active\":0}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~user/x\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~/\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -3674,6 +3731,11 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
       "valid": false
     },
@@ -3835,6 +3897,11 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":3,\"roots\":[\"/home/u/GitHub\",\"/srv\"],\"depth\":3}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}}",
       "valid": false
     },
     {
@@ -4019,7 +4086,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4260,6 +4327,41 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"setLayout\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"a\",\"root\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":9},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":8},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":7},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":6},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":5},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":4},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":3},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":2},\"b\":{\"term\":1}}}}}}}}}}],\"active\":0}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~user/x\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~/\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4289,6 +4391,11 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
       "valid": false
     },
@@ -4450,6 +4557,11 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":3,\"roots\":[\"/home/u/GitHub\",\"/srv\"],\"depth\":3}}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}}",
       "valid": true
     },
     {
@@ -4634,7 +4746,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4875,6 +4987,41 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"setLayout\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"a\",\"root\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":9},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":8},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":7},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":6},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":5},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":4},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":3},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":2},\"b\":{\"term\":1}}}}}}}}}}],\"active\":0}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~user/x\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~/\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4904,6 +5051,11 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
       "valid": false
     },
@@ -5065,6 +5217,11 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":3,\"roots\":[\"/home/u/GitHub\",\"/srv\"],\"depth\":3}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"discoverRepos\",\"req\":11,\"roots\":[\"~\",\"~/GitHub\"],\"depth\":3}}",
       "valid": false
     },
     {
@@ -5249,7 +5406,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"daemonVersion\":\"0.0.9\",\"instance\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": true
     },
     {
@@ -5490,6 +5647,41 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"setLayout\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"a\",\"root\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":9},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":8},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":7},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":6},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":5},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":4},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":3},\"b\":{\"split\":\"down\",\"ratio\":0.5,\"a\":{\"term\":2},\"b\":{\"term\":1}}}}}}}}}}],\"active\":0}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"GitHub\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~user/x\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"discoverRepos\",\"req\":1,\"roots\":[\"~/\"],\"depth\":3}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     }
   ]

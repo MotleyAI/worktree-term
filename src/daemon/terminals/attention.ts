@@ -115,14 +115,17 @@ export class Attention<H = unknown> {
   private arm(ms: number): void {
     if (this.timer !== null) return;
     const timer = {
-      handle: this.clock.setTimeout(() => {
-        if (this.timer !== timer || this.ended) return;
-        this.timer = null;
-        if (this.state !== 'working') return;
-        const remaining = this.quietSince + IDLE_AFTER_MS - this.clock.now();
-        if (remaining > 0) this.arm(remaining);
-        else this.set('idle');
-      }, Math.max(0, ms)),
+      handle: this.clock.setTimeout(
+        () => {
+          if (this.timer !== timer || this.ended) return;
+          this.timer = null;
+          if (this.state !== 'working') return;
+          const remaining = this.quietSince + IDLE_AFTER_MS - this.clock.now();
+          if (remaining > 0) this.arm(remaining);
+          else this.set('idle');
+        },
+        Math.max(0, ms),
+      ),
     };
     this.timer = timer;
   }

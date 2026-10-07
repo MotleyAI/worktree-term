@@ -33,6 +33,32 @@ export const alive = (pid: number): boolean => {
   }
 };
 
+/** Live pids whose argv and environment satisfy `matches`. */
+const livePidsWhere = (matches: (cmdline: string[], environ: string[]) => boolean): number[] => {
+  const pids: number[] = [];
+  for (const name of readdirSync('/proc')) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      const cmdline = readFileSync(`/proc/${name}/cmdline`, 'utf8').split('\0');
+      const environ = readFileSync(`/proc/${name}/environ`, 'utf8').split('\0');
+      if (matches(cmdline, environ) && alive(Number(name))) pids.push(Number(name));
+    } catch {
+      // The process exited while we looked, or is another user's.
+    }
+  }
+  return pids;
+};
+
+const killAll = (pids: readonly number[]): void => {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // Already gone.
+    }
+  }
+};
+
 /** Session id of `pid`. */
 export const sessionOf = (pid: number): number => {
   const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8');
@@ -215,33 +241,24 @@ export class DaemonHost {
 
   /** Pids of daemons started for this host, whether by the test or by `wtd connect`. */
   daemonPids(): number[] {
-    const pids: number[] = [];
-    for (const name of readdirSync('/proc')) {
-      if (!/^\d+$/.test(name)) continue;
-      try {
-        const cmdline = readFileSync(`/proc/${name}/cmdline`, 'utf8').split('\0');
-        if (cmdline[1] !== BUNDLE || cmdline[2] !== 'daemon') continue;
-        const environ = readFileSync(`/proc/${name}/environ`, 'utf8').split('\0');
-        if (environ.includes(`XDG_STATE_HOME=${this.stateHome}`) && alive(Number(name))) pids.push(Number(name));
-      } catch {
-        // The process exited while we looked.
-      }
-    }
-    return pids;
+    return livePidsWhere(
+      (cmdline, environ) => cmdline[1] === BUNDLE && cmdline[2] === 'daemon' && environ.includes(`XDG_STATE_HOME=${this.stateHome}`),
+    );
+  }
+
+  /** Pids of every live process with this host's HOME, such as the shells of its terminals. */
+  homePids(): number[] {
+    return livePidsWhere((_cmdline, environ) => environ.includes(`HOME=${this.home}`));
   }
 
   async cleanup(): Promise<void> {
     for (const client of this.clients) client.close();
     for (const process_ of this.processes) process_.kill('SIGKILL');
-    for (const pid of this.daemonPids()) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    }
+    killAll(this.daemonPids());
     await waitUntil(() => this.daemonPids().length === 0, 'daemons to exit').catch(() => undefined);
-    // Shells hung up with the daemon may still be writing their history into HOME.
+    // Shells hung up with the daemon would otherwise go on writing their history into HOME.
+    killAll(this.homePids());
+    await waitUntil(() => this.homePids().length === 0, 'processes using HOME to exit').catch(() => undefined);
     rmSync(this.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 

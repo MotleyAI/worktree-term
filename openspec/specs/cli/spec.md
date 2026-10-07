@@ -10,7 +10,7 @@ The `wtd` command line surface: how a user discovers its commands and version, a
 
 #### Scenario: Version
 - **WHEN** the user runs `wtd --version`
-- **THEN** stdout is `wtd <package version> (protocol 3)` followed by a newline, stderr is empty, and the exit code is 0
+- **THEN** stdout is `wtd <package version> (protocol 4)` followed by a newline, stderr is empty, and the exit code is 0
 
 ### Requirement: Help output
 `wtd --help` SHALL print usage to stdout and exit 0. Usage SHALL list the commands `ui`, `hub`, `daemon`, `connect`, `install-local` and `install-remote <alias>`, and the options `--help` and `--version`.
@@ -54,7 +54,7 @@ Running `wtd` with no arguments, an unknown command, an unknown option, or `inst
 
 #### Scenario: Bridge over a pipe with auto-start
 - **WHEN** no daemon is running and a process runs `wtd connect` with piped stdio
-- **THEN** a daemon is started and the first frame on stdout is the daemon's `hello` with `protocol` 3
+- **THEN** a daemon is started and the first frame on stdout is the daemon's `hello` with `protocol` 4
 
 #### Scenario: Requests relayed
 - **WHEN** the client writes `hello` and a `watchRepo` frame to `wtd connect`'s stdin

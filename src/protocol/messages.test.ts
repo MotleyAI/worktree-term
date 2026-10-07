@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { decodeCodeResponse, decodeMessage, encodeCodeResponse, encodeMessage, ProtocolError, type Direction } from './index.js';
+import {
+  decodeCodeResponse,
+  decodeMessage,
+  encodeCodeResponse,
+  encodeMessage,
+  presetSchema,
+  ProtocolError,
+  type Direction,
+  type Preset,
+} from './index.js';
 import {
   DIRECTIONS,
   featWorktree,
@@ -188,6 +197,51 @@ describe('message catalogues', () => {
   });
 });
 
+describe('attention state', () => {
+  const withoutState = Object.fromEntries(Object.entries(liveTerminal).filter(([key]) => key !== 'state'));
+  const activity = (fields: Record<string, unknown>): unknown => ({ t: 'activity', termId: 1, unseen: false, ...fields });
+  const created = (term: unknown): unknown => ({ t: 'termCreated', req: null, term });
+
+  it('decodes an activity with state input', () => {
+    const message = { t: 'activity', termId: 1, unseen: false, state: 'input' } as const;
+    expect(decodeMessage('daemonToClient', raw(message))).toEqual(message);
+  });
+
+  it.each(['working', 'idle', 'input'])('accepts state %s in an activity and a terminal entry', (state) => {
+    expect(decodes('daemonToClient', activity({ state }))).toBe(true);
+    expect(decodes('daemonToClient', created({ ...withoutState, state }))).toBe(true);
+    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: activity({ state }) })).toBe(true);
+  });
+
+  it('rejects an activity carrying bell instead of state', () => {
+    expectRejected('daemonToClient', raw(activity({ bell: true })));
+    expectRejected('hubToBrowser', raw({ t: 'host', host: 0, m: activity({ bell: false }) }));
+  });
+
+  it('rejects an activity carrying bell besides state', () => {
+    expectRejected('daemonToClient', raw(activity({ state: 'idle', bell: false })));
+  });
+
+  it('rejects a terminal entry carrying bell', () => {
+    expectRejected('daemonToClient', raw(created({ ...withoutState, bell: true })));
+    expectRejected('daemonToClient', raw(created({ ...liveTerminal, bell: false })));
+    expectRejected(
+      'daemonToClient',
+      raw({ t: 'repoState', repo: REPO, worktrees: [], terminals: [{ ...withoutState, bell: false }], checked: [], layouts: [] }),
+    );
+  });
+
+  it('rejects an unknown attention state', () => {
+    expectRejected('daemonToClient', raw(activity({ state: 'busy' })));
+    expectRejected('daemonToClient', raw(created({ ...withoutState, state: 'busy' })));
+  });
+
+  it('requires state', () => {
+    expectRejected('daemonToClient', raw(activity({})));
+    expectRejected('daemonToClient', raw(created(withoutState)));
+  });
+});
+
 describe('request correlation', () => {
   const requests: readonly (readonly [Direction, Record<string, unknown>])[] = [
     ['clientToDaemon', { t: 'watchRepo', req: 1, repo: REPO }],
@@ -295,6 +349,7 @@ describe('value limits', () => {
   const terminals = (n: number): unknown[] => range(n).map((termId) => ({ ...liveTerminal, termId }));
   const hostEntries = (n: number): unknown[] => range(n).map((idx) => ({ ...hosts[0], idx }));
   const presets = (n: number): unknown[] => range(n).map((i) => ({ name: `p${String(i)}`, command: null }));
+  const preset = (name: unknown, command: unknown): unknown => ({ t: 'presets', presets: [{ name, command }] });
   const layouts = (n: number): unknown[] => paths(n).map((worktree) => ({ worktree, layout: { tabs: [], active: 0 } }));
 
   const ERROR_CODES = [
@@ -391,6 +446,17 @@ describe('value limits', () => {
     ['257 repos per host', 'hubToBrowser', { t: 'hosts', hosts: [{ ...hosts[0], repos: paths(257) }] }, false],
     ['64 presets', 'hubToBrowser', { t: 'presets', presets: presets(64) }, true],
     ['65 presets', 'hubToBrowser', { t: 'presets', presets: presets(65) }, false],
+    ['empty name in presets', 'hubToBrowser', preset('', null), false],
+    ['blank name in presets', 'hubToBrowser', preset('   ', null), false],
+    ['whitespace-only name in presets', 'hubToBrowser', preset(' \t\n', null), false],
+    ['name with one non-whitespace character in presets', 'hubToBrowser', preset('  a ', null), true],
+    ['64-char name in presets', 'hubToBrowser', preset('p'.repeat(64), null), true],
+    ['65-char name in presets', 'hubToBrowser', preset('p'.repeat(65), null), false],
+    ['null command in presets', 'hubToBrowser', preset('p', null), true],
+    ['empty command in presets', 'hubToBrowser', preset('p', ''), false],
+    ['1-char command in presets', 'hubToBrowser', preset('p', 'c'), true],
+    ['4096-char command in presets', 'hubToBrowser', preset('p', 'c'.repeat(4096)), true],
+    ['4097-char command in presets', 'hubToBrowser', preset('p', 'c'.repeat(4097)), false],
   ];
 
   it.each(cases)('%s in %s', (_name, dir, value, ok) => {
@@ -417,9 +483,42 @@ describe('value limits', () => {
   it('accepts the host-unavailable error code from the hub', () => {
     expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 0, code: 'host-unavailable', message: 'x' })).toBe(true);
   });
+
+  it('rejects a blank preset name', () => {
+    expectRejected('hubToBrowser', raw({ t: 'presets', presets: [{ name: '   ', command: null }] }));
+  });
+
+  it('rejects an empty preset command', () => {
+    expectRejected('hubToBrowser', raw({ t: 'presets', presets: [{ name: 'p', command: '' }] }));
+  });
 });
 
-describe('hub link version 3', () => {
+describe('exported preset schema', () => {
+  const cases: readonly (readonly [string, unknown, boolean])[] = [
+    ['a plain preset', { name: 'shell', command: null }, true],
+    ['a command preset', { name: 'claude', command: 'claude' }, true],
+    ['a blank name', { name: '   ', command: null }, false],
+    ['an empty name', { name: '', command: null }, false],
+    ['a 65-char name', { name: 'p'.repeat(65), command: null }, false],
+    ['an empty command', { name: 'p', command: '' }, false],
+    ['a 4096-char command', { name: 'p', command: 'c'.repeat(4096) }, true],
+    ['a 4097-char command', { name: 'p', command: 'c'.repeat(4097) }, false],
+    ['a missing command', { name: 'p' }, false],
+    ['an extra field', { name: 'p', command: null, cwd: '/' }, false],
+  ];
+
+  it.each(cases)('agrees with the presets message on %s', (_name, value, ok) => {
+    expect(presetSchema.safeParse(value).success).toBe(ok);
+    expect(decodes('hubToBrowser', { t: 'presets', presets: [value] })).toBe(ok);
+  });
+
+  it('parses to a Preset', () => {
+    const parsed: Preset = presetSchema.parse({ name: 'claude', command: 'claude' });
+    expect(parsed).toEqual({ name: 'claude', command: 'claude' });
+  });
+});
+
+describe('host entries and tokens', () => {
   const entry = hosts[0];
   const withEntry = (fields: Record<string, unknown>): unknown => ({ t: 'hosts', hosts: [{ ...entry, ...fields }] });
 

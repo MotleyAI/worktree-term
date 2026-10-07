@@ -34,20 +34,56 @@ export const TID = {
   worktreeLabel: 'worktree-label',
   /** Checkbox input: checked = show checked worktrees only. */
   filterChecked: 'filter-checked',
-  /** Terminal tab; `data-term` = terminal id, `aria-selected`, text contains "exited" once exited. */
+  /** Terminal tab; `data-term` = its first live terminal's id, `aria-selected`, text contains "exited" once that terminal exited. */
   termTab: 'term-tab',
-  /** Close button inside a terminal tab; sends `closeTerm`. */
+  /** Close button inside a terminal tab; closes every terminal of the tab, confirming first when any is running. */
   termTabClose: 'term-tab-close',
-  /** Creates a terminal in the selected worktree; absent for prunable and gone worktrees. */
-  newTerminal: 'new-terminal',
+  /** Tab-bar button: new tab through the preset picker; `title` names Ctrl+Shift+T; `disabled` when not possible. */
+  newTab: 'new-tab',
+  /** Tab-bar button: split the focused pane right; `title` names Ctrl+Shift+D; `disabled` when not possible. */
+  splitRight: 'split-right',
+  /** Tab-bar button: split the focused pane down; `title` names Ctrl+Shift+E; `disabled` when not possible. */
+  splitDown: 'split-down',
+  /** Pane frame of the shown tab, placed over its terminal; `data-term`, `data-focused="true"` on the focused pane. */
+  pane: 'pane',
+  /** Close button inside a pane; closes its terminal, confirming first when it is running. */
+  paneClose: 'pane-close',
+  /** Divider between the two sides of a split; `data-split` = right|down, `data-path` = path from the tab root, e.g. "", "b", "b.a". */
+  divider: 'divider',
+  /** The preset picker over the terminal area. */
+  presetPicker: 'preset-picker',
+  /** The preset list a worktree without terminals shows in its terminal area. */
+  presetChoices: 'preset-choices',
+  /** One preset in a picker or in the choices, in configured order; text = preset name; `aria-selected="true"` on the highlighted one. */
+  presetOption: 'preset-option',
+  /** Dialog confirming the close of running terminals. */
+  closeDialog: 'close-dialog',
+  /** One running terminal listed in the close dialog; text holds its preset and its id. */
+  closeTarget: 'close-target',
+  /** Confirms the close dialog. */
+  closeConfirm: 'close-confirm',
+  /** Cancels the close dialog. */
+  closeCancel: 'close-cancel',
+  /** Attention mark inside a pane, terminal tab, worktree entry or repo tab, absent without a mark; `data-mark` = input|failed|exited|done|output; `title` gives the number of terminals per mark, one line `<mark>: <count>` per mark present, in rank order. */
+  mark: 'mark',
+  /** Banner for problems reported on the page, such as a failed copy. */
+  notice: 'notice',
   /** Terminal container, `data-host` and `data-term`; holds the `.xterm` element; hidden ones are not visible. */
   terminal: 'terminal',
 } as const;
+
+/** Mark names in rank order, as `data-mark` values. */
+export const MARKS = ['input', 'failed', 'exited', 'done', 'output'] as const;
 
 /** Performance mark at the start of the worktree-switch input handler (design D13). */
 export const SWITCH_START = 'wtd:switch-start';
 /** Performance mark just after the first frame painted with the switch applied (design D13). */
 export const SWITCH_END = 'wtd:switch-end';
+
+/** Performance mark at the start of a divider-drag pointer-move handler. */
+export const DRAG_MOVE = 'wtd:drag-move';
+/** Performance mark just after the first frame painted with that move's pane sizes. */
+export const DRAG_PAINT = 'wtd:drag-paint';
 
 export const byTestId = (id: string): string => `[data-testid="${id}"]`;
 
@@ -56,6 +92,8 @@ export const repoTab = (path: string): string => `${byTestId(TID.repoTab)}[title
 export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[title="${path}"]`;
 
 export const termTab = (termId: number): string => `${byTestId(TID.termTab)}[data-term="${String(termId)}"]`;
+
+export const pane = (termId: number): string => `${byTestId(TID.pane)}[data-term="${String(termId)}"]`;
 
 export const terminalBox = (host: number, termId: number): string =>
   `${byTestId(TID.terminal)}[data-host="${String(host)}"][data-term="${String(termId)}"]`;

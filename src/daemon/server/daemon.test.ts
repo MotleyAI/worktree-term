@@ -79,6 +79,8 @@ beforeEach(async () => {
 afterEach(async () => {
   for (const client of clients) client.close();
   await new Promise((resolve) => server.close(resolve));
+  // A state write still in flight would add a file while the directory is removed.
+  await store.flush();
   rmSync(dir, { recursive: true, force: true });
 });
 

@@ -1,9 +1,20 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeWsData, MAX_FRAME, PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { sleep, type WtdProcess } from '../support/daemon-host.js';
-import { UpgradeRefused, type HubClient } from '../support/hub-client.js';
+import { UpgradeRefused, type HubClient, type HubMessageOf } from '../support/hub-client.js';
 import { HubHost, type RawResponse } from '../support/hub-host.js';
 import { REPO_ROOT } from '../support/exec.js';
 
@@ -42,6 +53,10 @@ const expectOneLine = (stderr: string): void => {
 };
 
 const header = (response: RawResponse, name: string): string[] => response.headers.get(name) ?? [];
+
+/** The preset lists of every `presets` message received so far. */
+const presetsOf = (client: HubClient): HubMessageOf<'presets'>['presets'][] =>
+  client.messages.flatMap((m) => (m.t === 'presets' ? [m.presets] : []));
 
 const expectSecurityHeaders = (response: RawResponse): void => {
   expect(header(response, 'content-security-policy')).toEqual([CSP]);
@@ -577,6 +592,47 @@ describe('session handshake', () => {
     await client.expectNone('hosts', () => true, 300);
     const { hosts } = await client.handshake();
     expect(hosts.hosts.map((h) => h.idx)).toEqual([0]);
+  });
+
+  it('sends presets and then hosts after the browser’s hello', async () => {
+    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    await client.waitFor('hello');
+    await client.expectNone('presets', () => true, 300);
+    const from = client.mark();
+    client.sendHello();
+    await client.waitFor('hosts', () => true, { from });
+    expect(client.messages.slice(from, from + 2).map((m) => m.t)).toEqual(['presets', 'hosts']);
+  });
+
+  it('sends the shell preset alone and no repos without a configuration file', async () => {
+    rmSync(host.configPath);
+    const client = await host.session();
+    expect(presetsOf(client)).toEqual([[{ name: 'shell', command: null }]]);
+    expect(client.hosts()[0]?.repos).toEqual([]);
+    expect(existsSync(host.configPath)).toBe(false);
+  });
+
+  it('sends the shell preset alone when the configuration has no presets', async () => {
+    host.writeConfig({ port: host.port });
+    const client = await host.session();
+    expect(presetsOf(client)).toEqual([[{ name: 'shell', command: null }]]);
+  });
+
+  it('sends exactly the configured presets in their order', async () => {
+    host.writeConfig({
+      port: host.port,
+      presets: [
+        { name: 'claude', command: 'claude' },
+        { name: 'shell', command: null },
+      ],
+    });
+    const client = await host.session();
+    expect(presetsOf(client)).toEqual([
+      [
+        { name: 'claude', command: 'claude' },
+        { name: 'shell', command: null },
+      ],
+    ]);
   });
 
   it('answers a message before hello with bad-message and closes the session', async () => {

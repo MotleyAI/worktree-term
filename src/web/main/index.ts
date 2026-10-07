@@ -10,6 +10,12 @@ const client = new HubClient(__WTD_VERSION__);
 const manager = new TerminalManager(client);
 const view = new View(client, manager);
 
+manager.setKeyFilter((event) => !view.handleKey(event, true));
+document.addEventListener('keydown', (event) => {
+  // Keys in a terminal reach the view through the terminal's key filter.
+  if (!manager.owns(event.target instanceof Node ? event.target : null)) view.handleKey(event, false);
+});
+
 const restorer = new Restorer({
   watch: async (host, repo) => {
     try {
@@ -36,9 +42,14 @@ const restorer = new Restorer({
 });
 
 client.onHostConnected((host, instance, repos) => {
-  restorer.connected(host, instance, repos).catch((error: unknown) => {
-    console.error(`restoring host ${String(host)} failed`, error);
-  });
+  restorer
+    .connected(host, instance, repos)
+    .then(() => {
+      manager.restored(host);
+    })
+    .catch((error: unknown) => {
+      console.error(`restoring host ${String(host)} failed`, error);
+    });
 });
 
 const root = document.getElementById('app');

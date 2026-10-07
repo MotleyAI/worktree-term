@@ -233,9 +233,12 @@ export class HubHost extends DaemonHost {
     writeFileSync(this.configPath, JSON.stringify(config));
   }
 
-  /** Writes `config.json` with this host's port and `repos`. */
+  /** Presets `writeRepos` puts into `config.json`; null leaves the key out. */
+  presets: readonly { name: string; command: string | null }[] | null = null;
+
+  /** Writes `config.json` with this host's port, `repos` and `presets`. */
   writeRepos(repos: readonly string[]): void {
-    this.writeConfig({ port: this.port, repos });
+    this.writeConfig(this.presets === null ? { port: this.port, repos } : { port: this.port, repos, presets: this.presets });
   }
 
   /** Starts `wtd hub` in the foreground and waits until it serves. */

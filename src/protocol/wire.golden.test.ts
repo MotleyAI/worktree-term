@@ -18,7 +18,7 @@ import {
   type Direction,
   type Frame,
 } from './index.js';
-import { DIRECTIONS, featWorktree, hello, layout, raw, REPO, samples, WT } from './test-samples.js';
+import { DIRECTIONS, featWorktree, hello, layout, liveTerminal, raw, REPO, samples, WT } from './test-samples.js';
 
 const directionSchema = z.enum(['clientToDaemon', 'daemonToClient', 'browserToHub', 'hubToBrowser']);
 
@@ -65,6 +65,14 @@ const decodes = (dir: Direction, json: string): boolean => {
     return false;
   }
 };
+
+const termWithBell = { ...Object.fromEntries(Object.entries(liveTerminal).filter(([field]) => field !== 'state')), bell: false };
+
+/** A chain of 9 terminal panes in one tab. */
+const ninePanes = Array.from({ length: 8 }, (_, i) => i + 2).reduce<unknown>(
+  (pane, term) => ({ split: 'down', ratio: 0.5, a: { term }, b: pane }),
+  { term: 1 },
+);
 
 const EDGE_CASES: readonly unknown[] = [
   { t: 'attach', req: 1, termId: 1, x: 1 },
@@ -113,6 +121,12 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'token', token: 'a'.repeat(63) },
   { t: 'token', token: 'A'.repeat(64) },
   { t: 'hosts', hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', repos: [] }] },
+  { t: 'activity', termId: 1, unseen: false, bell: true },
+  { t: 'activity', termId: 1, unseen: false, state: 'busy' },
+  { t: 'termCreated', req: null, term: termWithBell },
+  { t: 'presets', presets: [{ name: '   ', command: null }] },
+  { t: 'presets', presets: [{ name: 'p', command: '' }] },
+  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', root: ninePanes }], active: 0 } },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -184,8 +198,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for protocol version 3', () => {
-    expect(previousSchema.parse(wireJson).protocolVersion).toBe(3);
+  it('is blessed for protocol version 4', () => {
+    expect(previousSchema.parse(wireJson).protocolVersion).toBe(4);
   });
 
   it('records every sample as valid in its own direction', () => {

@@ -2,7 +2,7 @@ import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FLOW_HIGH, MAX_FRAME, type Layout, type Terminal } from '../../src/protocol/index.js';
-import { replay, type DaemonClient, type Event, type RequestBody } from '../support/daemon-client.js';
+import { replay, type DaemonClient, type Event, type EventOf, type RequestBody } from '../support/daemon-client.js';
 import { addWorktree, alive, DaemonHost, git, makeRepo, sleep, waitUntil, type WtdProcess } from '../support/daemon-host.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
@@ -118,7 +118,7 @@ describe('terminal creation', () => {
     const outsider = await host.client();
     const from = b.mark();
     const reply = await a.request({ t: 'createTerm', worktree: wt, preset: 'my-preset', command: 'exec sleep 60', cols: 100, rows: 30 });
-    const term = { termId: 1, worktree: wt, preset: 'my-preset', cols: 100, rows: 30, exit: null, unseen: false, bell: false };
+    const term = { termId: 1, worktree: wt, preset: 'my-preset', cols: 100, rows: 30, exit: null, unseen: false, state: 'idle' };
     expect(reply).toEqual({ t: 'termCreated', req: ANY_REQ, term });
     expect(await b.waitFor('termCreated', () => true, { from })).toEqual({ t: 'termCreated', req: null, term });
     await outsider.expectNone('termCreated', () => true, 300);
@@ -487,39 +487,217 @@ describe('resize', () => {
 });
 
 describe('activity', () => {
-  it('flags output while hidden as unseen to every watcher', async () => {
+  /** Activity messages about `termId` that `client` received from index `from`. */
+  const activityOf = (client: DaemonClient, termId: number, from: number): EventOf<'activity'>[] =>
+    client.messages.slice(from).filter((m): m is EventOf<'activity'> => m.t === 'activity' && m.termId === termId);
+
+  const isInput =
+    (termId: number): ((m: EventOf<'activity'>) => boolean) =>
+    (m) =>
+      m.termId === termId && m.state === 'input';
+
+  /** The terminal entry a fresh watcher of the repo receives. */
+  const entryOf = async (termId: number): Promise<Terminal | undefined> =>
+    (await (await host.client()).watch(repo)).terminals.find((t) => t.termId === termId);
+
+  it('flags output while hidden as unseen and working to every watcher', async () => {
     const term = await a.create(wt, { command: 'sleep 0.3; echo out; exec sleep 60' });
     for (const client of [a, b]) {
-      expect(await client.waitFor('activity', (m) => m.termId === term.termId)).toEqual({
+      expect(await client.waitFor('activity', (m) => m.termId === term.termId && m.unseen && m.state === 'working')).toEqual({
         t: 'activity',
         termId: term.termId,
         unseen: true,
-        bell: false,
+        state: 'working',
       });
     }
   });
 
-  it('flags a bell while hidden', async () => {
-    const term = await a.create(wt, { command: "sleep 0.3; printf '\\a'; exec sleep 60" });
-    expect(await a.waitFor('activity', (m) => m.termId === term.termId && m.bell)).toMatchObject({ bell: true });
+  it('keeps unseen false while one of two clients shows the terminal', async () => {
+    const term = await a.create(wt, { command: 'read -r _; echo shown-output; exec sleep 60' });
+    a.send({ t: 'setVisible', termIds: [term.termId] });
+    await a.attach(term.termId);
+    const from = b.mark();
+    a.sendInput(term.termId, '\r');
+    await a.waitOutput(term.termId, 'shown-output');
+    await sleep(300);
+    expect(activityOf(b, term.termId, from).filter((m) => m.unseen)).toEqual([]);
+    expect(await entryOf(term.termId)).toMatchObject({ unseen: false, state: 'working' });
   });
 
-  it('clears both flags when shown and sends only changes', async () => {
+  it('clears unseen when shown, keeps the state, and sends only changes', async () => {
     const term = await started(a, null);
-    a.sendInput(term.termId, "printf '\\a'\r");
-    await b.waitFor('activity', (m) => m.unseen && m.bell);
+    a.sendInput(term.termId, "sleep 1.2; printf '\\a'\r");
+    await b.waitFor('activity', (m) => isInput(term.termId)(m) && m.unseen, { timeout: 10_000 });
     let from = b.mark();
     a.send({ t: 'setVisible', termIds: [term.termId] });
-    expect(await b.waitFor('activity', () => true, { from })).toEqual({ t: 'activity', termId: term.termId, unseen: false, bell: false });
+    expect(await b.waitFor('activity', () => true, { from })).toEqual({
+      t: 'activity',
+      termId: term.termId,
+      unseen: false,
+      state: 'input',
+    });
+    from = b.mark();
     a.sendInput(term.termId, 'echo while-visible\r');
     await a.waitOutput(term.termId, 'while-visible\r\n');
-    await b.expectNone('activity', () => true, 400);
+    await sleep(400);
+    expect(activityOf(b, term.termId, from)).toEqual([{ t: 'activity', termId: term.termId, unseen: false, state: 'working' }]);
     a.send({ t: 'setVisible', termIds: [] });
     from = b.mark();
     a.sendInput(term.termId, 'echo hidden-again\r');
-    await b.waitFor('activity', (m) => m.unseen, { from });
+    expect(await b.waitFor('activity', (m) => m.unseen, { from })).toEqual({
+      t: 'activity',
+      termId: term.termId,
+      unseen: true,
+      state: 'working',
+    });
     a.sendInput(term.termId, 'echo more\r');
     await b.expectNone('activity', () => true, 400);
+  });
+
+  it('flags an exit while hidden as unseen', async () => {
+    const term = await a.create(wt, { command: 'read -r _; exec sleep 1' });
+    a.send({ t: 'setVisible', termIds: [term.termId] });
+    await a.attach(term.termId);
+    a.sendInput(term.termId, '\r');
+    await sleep(400);
+    a.send({ t: 'setVisible', termIds: [] });
+    const from = b.mark();
+    const position = a.view(term.termId).position;
+    await b.waitFor('termExited', (m) => m.termId === term.termId, { from });
+    expect(await b.waitFor('activity', (m) => m.termId === term.termId && m.unseen, { from })).toEqual({
+      t: 'activity',
+      termId: term.termId,
+      unseen: true,
+      state: 'working',
+    });
+    expect(a.view(term.termId).position).toBe(position);
+  });
+
+  it('reports working, then idle 3 s after the last output', async () => {
+    const from = b.mark();
+    const term = await started(a, 'echo quiet-line; exec sleep 60');
+    await a.waitOutput(term.termId, 'quiet-line');
+    const outputAt = Date.now();
+    await b.waitFor('activity', (m) => m.termId === term.termId && m.state === 'idle', { from, timeout: 8000 });
+    const idleAt = Date.now();
+    expect(idleAt - outputAt).toBeGreaterThanOrEqual(2800);
+    expect(idleAt - outputAt).toBeLessThanOrEqual(4500);
+    const states = activityOf(b, term.termId, from)
+      .map((m) => m.state)
+      .filter((state, i, all) => i === 0 || state !== all[i - 1]);
+    expect(states.slice(-2)).toEqual(['working', 'idle']);
+  });
+
+  it('sets input on a bell, also in the terminal entry', async () => {
+    const term = await a.create(wt, { command: String.raw`sleep 0.3; printf '\a'; exec sleep 60` });
+    expect(await a.waitFor('activity', isInput(term.termId))).toEqual({ t: 'activity', termId: term.termId, unseen: true, state: 'input' });
+    expect(await entryOf(term.termId)).toMatchObject({ unseen: true, state: 'input' });
+  });
+
+  it.each([
+    ['OSC 9', String.raw`printf '\033]9;done\a'`],
+    ['OSC 777', String.raw`printf '\033]777;notify;t;b\a'`],
+    ['OSC 99', String.raw`printf '\033]99;;hi\033\\'`],
+  ])('sets input on an %s notification', async (_name, print) => {
+    const term = await a.create(wt, { command: `sleep 0.3; ${print}; exec sleep 60` });
+    expect(await b.waitFor('activity', isInput(term.termId))).toMatchObject({ state: 'input' });
+  });
+
+  it('does not set input on a ConEmu progress report', async () => {
+    const from = b.mark();
+    const term = await started(a, String.raw`printf '\033]9;4;1;50\a'; sleep 0.3; printf progress-done; exec sleep 60`);
+    await a.waitOutput(term.termId, 'progress-done');
+    await sleep(700);
+    expect(activityOf(b, term.termId, from).filter((m) => m.state === 'input')).toEqual([]);
+  });
+
+  it('sets input once for an OSC 777 notification split across output chunks', async () => {
+    const from = b.mark();
+    const term = await started(
+      a,
+      String.raw`printf '\033]777;noti'; sleep 0.3; printf 'fy;t;b\a'; sleep 0.3; printf split-done; exec sleep 60`,
+    );
+    await a.waitOutput(term.termId, 'split-done');
+    await sleep(500);
+    expect(a.view(term.termId).chunks.some((c) => Buffer.from(c).toString().endsWith('\x1b]777;noti'))).toBe(true);
+    expect(activityOf(b, term.termId, from).filter((m) => m.state === 'input')).toHaveLength(1);
+  });
+
+  it('ignores a bell answering a tab within 1 s and honours one after', async () => {
+    const from = b.mark();
+    const term = await started(
+      a,
+      String.raw`printf 'ready\n'; IFS= read -r -n1 _; printf '\a'; printf rang; sleep 1.5; printf '\a'; exec sleep 60`,
+    );
+    await a.waitOutput(term.termId, 'ready');
+    await sleep(1200);
+    a.sendInput(term.termId, '\t');
+    await a.waitOutput(term.termId, 'rang');
+    await sleep(500);
+    expect(activityOf(b, term.termId, from).filter((m) => m.state === 'input')).toEqual([]);
+    await b.waitFor('activity', isInput(term.termId), { from });
+  });
+
+  it('clears input when a key is typed', async () => {
+    const term = await a.create(wt, { command: String.raw`stty -echo; sleep 0.3; printf '\a'; exec sleep 60` });
+    await b.waitFor('activity', isInput(term.termId));
+    const from = b.mark();
+    a.sendInput(term.termId, 'y');
+    expect(await b.waitFor('activity', (m) => m.termId === term.termId, { from })).toEqual({
+      t: 'activity',
+      termId: term.termId,
+      unseen: true,
+      state: 'working',
+    });
+  });
+
+  it('keeps input on focus reports and passes them to the program', async () => {
+    const term = await a.create(wt, { command: String.raw`stty -echo -icanon; sleep 0.3; printf '\a'; exec cat -v` });
+    await a.attach(term.termId);
+    await b.waitFor('activity', isInput(term.termId));
+    const from = b.mark();
+    a.sendInput(term.termId, '\x1b[O\x1b[I');
+    await a.waitOutput(term.termId, '^[[O^[[I');
+    await sleep(500);
+    expect(activityOf(b, term.termId, from)).toEqual([]);
+    expect(await entryOf(term.termId)).toMatchObject({ state: 'input' });
+  });
+
+  it('keeps input when the program answers a focus report 5 s after the signal at once', async () => {
+    const term = await a.create(wt, {
+      command: String.raw`stty -echo -icanon; sleep 0.3; printf '\a'; head -c 3 >/dev/null; printf '\033(B\017'; exec sleep 60`,
+    });
+    await a.attach(term.termId);
+    await b.waitFor('activity', isInput(term.termId));
+    await sleep(5000);
+    const from = b.mark();
+    a.sendInput(term.termId, '\x1b[I');
+    await waitUntil(() => a.view(term.termId).bytes().includes('\x1b(B\x0f'), 'the reply to the focus report');
+    await sleep(500);
+    expect(activityOf(b, term.termId, from)).toEqual([]);
+    expect(await entryOf(term.termId)).toMatchObject({ state: 'input' });
+  });
+
+  it('clears input on output 1.5 s after the signal', async () => {
+    const term = await a.create(wt, { command: String.raw`sleep 0.3; printf '\a'; sleep 1.5; printf later; exec sleep 60` });
+    await b.waitFor('activity', isInput(term.termId));
+    const from = b.mark();
+    expect(await b.waitFor('activity', (m) => m.termId === term.termId, { from })).toEqual({
+      t: 'activity',
+      termId: term.termId,
+      unseen: true,
+      state: 'working',
+    });
+  });
+
+  it('keeps input on output 0.5 s after the signal', async () => {
+    const term = await started(a, String.raw`sleep 1.3; printf '\a'; sleep 0.5; printf soon; exec sleep 60`);
+    await b.waitFor('activity', isInput(term.termId));
+    const from = b.mark();
+    await a.waitOutput(term.termId, 'soon');
+    await sleep(1000);
+    expect(activityOf(b, term.termId, from)).toEqual([]);
+    expect(await entryOf(term.termId)).toMatchObject({ state: 'input' });
   });
 
   it('withdraws visibility when the showing client disconnects', async () => {

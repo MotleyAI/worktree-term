@@ -3,6 +3,7 @@ import { name, termId } from './values.js';
 
 const MAX_TABS = 64;
 const MAX_DEPTH = 16;
+const MAX_PANES = 8;
 
 const termPane = z.strictObject({ term: termId });
 
@@ -38,6 +39,7 @@ export const layout = z
   .refine((l) => l.active < Math.max(l.tabs.length, 1), 'active must index a tab, or be 0 without tabs')
   .refine((l) => distinct(l.tabs.map((t) => t.id)), 'tab ids must be unique')
   .refine((l) => l.tabs.every((t) => depthOf(t.root) <= MAX_DEPTH), `panes nest at most ${String(MAX_DEPTH)} levels deep`)
+  .refine((l) => l.tabs.every((t) => termsOf(t.root).length <= MAX_PANES), `a tab holds at most ${String(MAX_PANES)} panes`)
   .refine((l) => distinct(l.tabs.flatMap((t) => termsOf(t.root))), 'a terminal appears at most once');
 
 export type Layout = z.infer<typeof layout>;

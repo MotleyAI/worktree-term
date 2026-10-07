@@ -1,10 +1,13 @@
 import type { JSX } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
-import type { HostEntry } from '../../protocol/index.js';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import type { HostEntry, Preset, Terminal } from '../../protocol/index.js';
 import { repoKey, type HubClient } from '../client/index.js';
+import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
+import { aggregate, markTitle, type Aggregate } from './marks.js';
+import { pickerKey } from './picker.js';
 import type { SidebarEntry } from './sidebar.js';
-import type { ShownTab, View } from './view.js';
+import { PANE_HEADER, type CloseRequest, type ShownPane, type ShownTab, type View } from './view.js';
 
 export interface AppProps {
   client: HubClient;
@@ -17,6 +20,8 @@ const report =
   (error: unknown): void => {
     console.warn(`${what} failed`, error);
   };
+
+const px = (n: number): string => `${String(n)}px`;
 
 const AuthMessage = () => (
   <div class="message" data-testid="auth-message">
@@ -45,7 +50,21 @@ const OutdatedHost = ({ host, client }: { host: HostEntry; client: HubClient }) 
   );
 };
 
-const WorktreeEntry = ({ entry, selected, view }: { entry: SidebarEntry; selected: boolean; view: View }) => (
+/** An attention mark, absent without one; its title gives the number of terminals per mark. */
+const Mark = ({ of }: { of: Aggregate }) =>
+  of.mark === null ? null : <span class={`mark mark-${of.mark}`} data-testid="mark" data-mark={of.mark} title={markTitle(of.counts)} />;
+
+const WorktreeEntry = ({
+  entry,
+  selected,
+  terminals,
+  view,
+}: {
+  entry: SidebarEntry;
+  selected: boolean;
+  terminals: Terminal[];
+  view: View;
+}) => (
   <div
     class={`worktree${entry.prunable ? ' prunable' : ''}${entry.gone ? ' gone' : ''}`}
     data-testid="worktree"
@@ -74,6 +93,7 @@ const WorktreeEntry = ({ entry, selected, view }: { entry: SidebarEntry; selecte
       {entry.label}
       {entry.gone ? ' (gone)' : ''}
     </button>
+    <Mark of={aggregate(terminals, 'group')} />
   </div>
 );
 
@@ -96,6 +116,7 @@ const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: 
   >
     {tab.terminal?.preset ?? 'terminal'} {tab.termId}
     {tab.terminal?.exit != null ? ' (exited)' : ''}
+    <Mark of={aggregate(tab.terminals, 'tab')} />
     <button
       type="button"
       class="close"
@@ -103,7 +124,7 @@ const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: 
       title="Close"
       onClick={(event) => {
         event.stopPropagation();
-        view.closeTerminal(tab.termId).catch(report('closing a terminal'));
+        view.requestClose(termsOf(tab.root));
       }}
     >
       ×
@@ -111,29 +132,323 @@ const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: 
   </div>
 );
 
-/** The area the terminal manager's layer covers. */
-const TerminalArea = ({ manager }: { manager: TerminalManager }) => {
+const TabControls = ({ view }: { view: View }) => (
+  <span class="tab-controls">
+    <button
+      type="button"
+      data-testid="new-tab"
+      title="New tab (Ctrl+Shift+T)"
+      disabled={!view.canNewTab.value}
+      onClick={() => {
+        view.startCreate({ t: 'newTab' });
+      }}
+    >
+      +
+    </button>
+    {(['right', 'down'] as const).map((dir) => (
+      <button
+        type="button"
+        key={dir}
+        data-testid={dir === 'right' ? 'split-right' : 'split-down'}
+        title={dir === 'right' ? 'Split right (Ctrl+Shift+D)' : 'Split down (Ctrl+Shift+E)'}
+        disabled={!view.canSplit.value}
+        onClick={() => {
+          const target = view.focused.value;
+          if (target !== null) view.startCreate({ t: 'split', dir, target });
+        }}
+      >
+        {dir === 'right' ? '◫' : '⬓'}
+      </button>
+    ))}
+  </span>
+);
+
+const PaneFrame = ({ pane, focused, view }: { pane: ShownPane; focused: boolean; view: View }) => (
+  <div
+    class={`pane${focused ? ' focused' : ''}`}
+    data-testid="pane"
+    data-term={String(pane.termId)}
+    data-focused={focused ? 'true' : undefined}
+    style={{ left: px(pane.rect.left), top: px(pane.rect.top), width: px(pane.rect.width), height: px(pane.rect.height) }}
+  >
+    <div // NOSONAR(S6848) — a pointer shortcut; the keyboard moves between panes with Alt+arrows
+      class="pane-header"
+      style={{ height: px(PANE_HEADER) }}
+      onMouseDown={() => {
+        view.focusPane(pane.termId);
+      }}
+    >
+      <span class="pane-label">
+        {pane.terminal?.preset ?? 'terminal'} {pane.termId}
+        {pane.terminal?.exit != null ? ' (exited)' : ''}
+      </span>
+      <Mark of={aggregate(pane.terminal === null ? [] : [pane.terminal], 'tab')} />
+      <button
+        type="button"
+        class="close"
+        data-testid="pane-close"
+        title="Close (Ctrl+Shift+W)"
+        onClick={() => {
+          view.requestClose([pane.termId]);
+        }}
+      >
+        ×
+      </button>
+    </div>
+  </div>
+);
+
+const DividerHandle = ({ divider, view }: { divider: Divider; view: View }) => (
+  <div
+    class={`divider divider-${divider.split}`}
+    data-testid="divider"
+    data-split={divider.split}
+    data-path={divider.path.join('.')}
+    style={{ left: px(divider.rect.left), top: px(divider.rect.top), width: px(divider.rect.width), height: px(divider.rect.height) }}
+    onPointerDown={(event) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      view.startDrag(divider);
+    }}
+    onPointerMove={(event) => {
+      view.moveDrag(event.clientX, event.clientY);
+    }}
+    onPointerUp={() => {
+      view.endDrag();
+    }}
+    onPointerCancel={() => {
+      view.endDrag();
+    }}
+    onLostPointerCapture={() => {
+      view.endDrag();
+    }}
+  />
+);
+
+/** Preset options in a list; keys move, choose and cancel as `pickerKey` says. */
+const PresetList = ({
+  presets,
+  index,
+  move,
+  choose,
+  cancel,
+  focusFirst,
+}: {
+  presets: readonly Preset[];
+  index: number;
+  move: (index: number) => void;
+  choose: (index: number) => void;
+  cancel: () => void;
+  /** Whether the list takes the keyboard focus when shown; it follows the highlighted option once it has it. */
+  focusFirst: boolean;
+}) => {
+  const list = useRef<HTMLDivElement>(null);
+  const shown = useRef(false);
+  // Before the browser handles the next key, so no key meant for the list reaches a terminal.
+  useLayoutEffect(() => {
+    const options = list.current?.querySelectorAll<HTMLElement>('[data-testid="preset-option"]');
+    if (focusFirst || shown.current) options?.[index]?.focus();
+    shown.current = true;
+  }, [index, focusFirst]);
+  return (
+    <div
+      class="preset-list"
+      role="listbox"
+      tabIndex={-1}
+      ref={list}
+      onKeyDown={(event) => {
+        const key = pickerKey(event.key, index, presets.length);
+        if (key === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (key.t === 'choose') choose(key.index);
+        else if (key.t === 'move') move(key.index);
+        else cancel();
+      }}
+    >
+      {presets.map((preset, i) => (
+        <button
+          type="button"
+          key={preset.name}
+          role="option"
+          class="preset-option"
+          data-testid="preset-option"
+          aria-selected={i === index ? 'true' : 'false'}
+          data-digit={i < 9 ? String(i + 1) : undefined}
+          title={preset.command ?? 'shell'}
+          onFocus={() => {
+            if (i !== index) move(i);
+          }}
+          onClick={() => {
+            choose(i);
+          }}
+        >
+          {preset.name}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+/** The picker for a new terminal; any pointer press outside it cancels it. */
+const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
+  const box = useRef<HTMLDialogElement>(null);
+  const picker = view.picker.value;
+  const open = picker !== null;
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const outside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && box.current?.contains(event.target) !== true) view.cancelPicker();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+    };
+  }, [view, open]);
+  if (picker === null) return null;
+  return (
+    <dialog open class="preset-picker" data-testid="preset-picker" aria-label="New terminal" ref={box}>
+      <div class="title">{picker.context.op.t === 'newTab' ? 'New tab' : `Split ${picker.context.op.dir}`}</div>
+      <PresetList
+        presets={presets}
+        index={picker.index}
+        focusFirst
+        move={(i) => {
+          view.movePicker(i);
+        }}
+        choose={(i) => {
+          view.choosePreset(i);
+        }}
+        cancel={() => {
+          view.cancelPicker();
+        }}
+      />
+    </dialog>
+  );
+};
+
+/** The presets a worktree without terminals offers. */
+const PresetChoices = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
+  const [index, setIndex] = useState(0);
+  return (
+    <div class="preset-choices" data-testid="preset-choices">
+      <div class="title">Start a terminal</div>
+      <PresetList
+        presets={presets}
+        index={Math.min(index, presets.length - 1)}
+        focusFirst={false}
+        move={setIndex}
+        choose={(i) => {
+          const preset = presets[i];
+          if (preset !== undefined) view.choose(preset);
+        }}
+        cancel={() => undefined}
+      />
+    </div>
+  );
+};
+
+const CloseDialog = ({ view, request }: { view: View; request: CloseRequest }) => {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    dialog.current?.focus();
+  }, []);
+  return (
+    <dialog
+      open
+      class="close-dialog"
+      data-testid="close-dialog"
+      aria-label="Close terminals"
+      tabIndex={-1}
+      ref={dialog}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== 'Escape') return;
+        // A focused button acts on its own click.
+        if (event.key === 'Enter' && event.target !== event.currentTarget) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === 'Enter') view.confirmClose();
+        else view.cancelClose();
+      }}
+    >
+      <div class="title">Close running terminals?</div>
+      <ul>
+        {view.closingTargets(request).map((t) => (
+          <li key={t.termId} data-testid="close-target">
+            {t.preset} {t.termId}
+          </li>
+        ))}
+      </ul>
+      <div class="buttons">
+        <button
+          type="button"
+          data-testid="close-confirm"
+          onClick={() => {
+            view.confirmClose();
+          }}
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          data-testid="close-cancel"
+          onClick={() => {
+            view.cancelClose();
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </dialog>
+  );
+};
+
+/** The area the terminal manager's layer covers, with pane frames, dividers and the preset picker over it. */
+const TerminalArea = ({ client, manager, view }: AppProps) => {
   const area = useRef<HTMLDivElement>(null);
-  useEffect(() => (area.current === null ? undefined : followArea(manager, area.current)), [manager]);
-  return <div class="terminal-area" ref={area} />;
+  useEffect(
+    () =>
+      area.current === null
+        ? undefined
+        : followArea(manager, area.current, (rect) => {
+            view.area.value = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+          }),
+    [manager, view],
+  );
+  const presets = client.store.presets.value;
+  const focused = view.focused.value;
+  const empty = view.termTabs.value.tabs.length === 0;
+  return (
+    <div class="terminal-area" ref={area}>
+      {view.panes.value.map((pane) => (
+        <PaneFrame key={pane.termId} pane={pane} focused={pane.termId === focused} view={view} />
+      ))}
+      {view.dividers.value.map((divider) => (
+        <DividerHandle key={divider.path.join('.')} divider={divider} view={view} />
+      ))}
+      {empty && view.canCreate.value && presets !== null && <PresetChoices view={view} presets={presets} />}
+      {presets !== null && <PresetPicker view={view} presets={presets} />}
+    </div>
+  );
 };
 
 const Workspace = ({ client, manager, view }: AppProps) => {
   const tab = view.tab.value;
   const repo = view.repo.value;
   const worktree = view.worktree.value;
-  const entry = view.entries.value.find((e) => e.path === worktree);
   const { tabs, active } = view.termTabs.value;
-  const canCreate =
-    entry !== undefined &&
-    !entry.prunable &&
-    !entry.gone &&
-    client.store.hosts.value.some((h) => h.idx === tab?.host && h.status === 'connected');
+  const closing = view.closing.value;
   return (
     <div class="workspace">
       <nav class="sidebar">
         {view.listed.value.map((e) => (
-          <WorktreeEntry key={e.path} entry={e} selected={e.path === worktree} view={view} />
+          <WorktreeEntry
+            key={e.path}
+            entry={e}
+            selected={e.path === worktree}
+            terminals={(repo?.terminals ?? []).filter((t) => t.worktree === e.path)}
+            view={view}
+          />
         ))}
       </nav>
       <main class="terminal-pane">
@@ -144,23 +459,14 @@ const Workspace = ({ client, manager, view }: AppProps) => {
         )}
         <div class="term-tabs" role="tablist">
           {tabs.map((t) => (
-            <TermTab key={t.termId} tab={t} active={t.termId === active} view={view} />
+            <TermTab key={t.key} tab={t} active={t.termId === active} view={view} />
           ))}
-          {canCreate && (
-            <button
-              type="button"
-              class="new-terminal"
-              data-testid="new-terminal"
-              onClick={() => {
-                view.newTerminal().catch(report('creating a terminal'));
-              }}
-            >
-              + New terminal
-            </button>
-          )}
+          <span class="spacer" />
+          <TabControls view={view} />
         </div>
-        <TerminalArea manager={manager} />
+        <TerminalArea client={client} manager={manager} view={view} />
       </main>
+      {closing !== null && <CloseDialog view={view} request={closing} />}
     </div>
   );
 };
@@ -171,6 +477,7 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
   if (status === 'auth') return <AuthMessage />;
   if (status === 'outdated') return <OutdatedUi />;
   const selected = view.tab.value;
+  const notice = view.notice.value ?? client.store.notice.value;
   return (
     <div class="app">
       <div class="repo-tabs" role="tablist">
@@ -191,6 +498,7 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
               }}
             >
               {t.label}
+              <Mark of={aggregate(client.store.repos.value.get(key)?.terminals ?? [], 'group')} />
             </button>
           );
         })}
@@ -217,7 +525,21 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
         .map((h) => (
           <OutdatedHost key={h.idx} host={h} client={client} />
         ))}
-      {client.store.notice.value !== null && <div class="banner notice">{client.store.notice.value}</div>}
+      {notice !== null && (
+        <div class="banner notice" data-testid="notice">
+          {notice}
+          <button
+            type="button"
+            title="Dismiss"
+            onClick={() => {
+              view.notice.value = null;
+              client.store.notice.value = null;
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
       <Workspace client={client} manager={manager} view={view} />
     </div>
   );

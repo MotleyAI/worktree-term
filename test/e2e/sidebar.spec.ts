@@ -1,6 +1,7 @@
 import { fakeWorktrees, git } from '../support/daemon-host.js';
 import { byTestId, termTab, TID, worktreeEntry } from './contract.js';
 import {
+  confirmClose,
   detachedWorktree,
   expect,
   listedWorktrees,
@@ -41,7 +42,8 @@ test.describe('worktree sidebar', () => {
     await expect(page.locator(worktreeEntry(prunable))).toHaveAttribute('data-prunable', 'true');
     await expect(page.locator(worktreeEntry(repo))).not.toHaveAttribute('data-prunable', 'true');
     await selectWorktree(page, prunable);
-    await expect(page.locator(byTestId(TID.newTerminal))).toHaveCount(0);
+    for (const control of [TID.newTab, TID.splitRight, TID.splitDown]) await expect(page.locator(byTestId(control))).toBeDisabled();
+    await expect(page.locator(byTestId(TID.presetChoices))).toHaveCount(0);
   });
 
   test('a removed worktree with a running terminal stays listed as gone until the terminal closes', async ({ hub, page }) => {
@@ -63,6 +65,7 @@ test.describe('worktree sidebar', () => {
     await waitScreen(page, term, 'STILL-USABLE');
 
     await page.locator(termTab(term)).locator(byTestId(TID.termTabClose)).click();
+    await confirmClose(page);
     await expect(entry).toHaveCount(0);
   });
 

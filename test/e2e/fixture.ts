@@ -13,6 +13,12 @@ export { expect };
 /** The local host's index. */
 export const LOCAL = 0;
 
+/** Presets every e2e hub is configured with: a plain shell and a command preset. */
+export const PRESETS = [
+  { name: 'shell', command: null },
+  { name: 'cat', command: 'echo PRESET-CAT; exec cat -v' },
+] as const;
+
 export interface Fixtures {
   /** An isolated hub host on a free port; nothing started yet. */
   hub: HubHost;
@@ -28,6 +34,7 @@ export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern -- Playwright fixtures must destructure their dependencies
   hub: async ({}, use) => {
     const hub = await HubHost.createHub();
+    hub.presets = PRESETS;
     await use(hub);
     await hub.cleanup();
   },
@@ -123,18 +130,80 @@ export const activeTerm = async (page: Page): Promise<number> => {
   return Number(await tab.getAttribute('data-term'));
 };
 
-/** Clicks new-terminal and resolves with the new active terminal's id once its container is visible. */
-export const newTerminal = async (page: Page): Promise<number> => {
+export type PresetName = (typeof PRESETS)[number]['name'];
+
+/** Chooses `preset` in the open preset picker by clicking it. */
+export const pickPreset = async (page: Page, preset: PresetName): Promise<void> => {
+  const picker = page.locator(byTestId(TID.presetPicker));
+  await expect(picker).toBeVisible();
+  await picker.locator(byTestId(TID.presetOption), { hasText: preset }).click();
+  await expect(picker).toHaveCount(0);
+};
+
+/** Terminal ids of the panes of the shown tab. */
+export const paneIds = async (page: Page): Promise<number[]> =>
+  (
+    await page
+      .locator(byTestId(TID.pane))
+      .evaluateAll((panes) => panes.map((p) => (p instanceof HTMLElement ? (p.dataset['term'] ?? '') : '')))
+  ).map(Number);
+
+/** The terminal id of the focused pane. */
+export const focusedPane = async (page: Page): Promise<number> => {
+  const focused = page.locator(`${byTestId(TID.pane)}[data-focused="true"]`);
+  await expect(focused).toHaveCount(1);
+  return Number(await focused.getAttribute('data-term'));
+};
+
+/** Waits for a pane holding a terminal not in `before` and returns its id once its container is visible. */
+const newPane = async (page: Page, before: readonly number[]): Promise<number> => {
+  let termId = 0;
+  await expect
+    .poll(async () => {
+      termId = (await paneIds(page)).find((id) => !before.includes(id)) ?? 0;
+      return termId;
+    })
+    .toBeGreaterThan(0);
+  await expect(page.locator(terminalBox(LOCAL, termId))).toBeVisible();
+  return termId;
+};
+
+/** Clicks new-tab, picks `preset`, and resolves with the new active terminal's id once its container is visible. */
+export const newTerminal = async (page: Page, preset: PresetName = 'shell'): Promise<number> => {
   const before = await page
     .locator(byTestId(TID.termTab))
     .evaluateAll((tabs) => tabs.map((t) => (t instanceof HTMLElement ? (t.dataset['term'] ?? null) : null)));
-  await page.locator(byTestId(TID.newTerminal)).click();
+  await page.locator(byTestId(TID.newTab)).click();
+  await pickPreset(page, preset);
   const tab = page.locator(`${byTestId(TID.termTab)}[aria-selected="true"]`);
   await expect.poll(async () => (await tab.count()) === 1 && !before.includes(await tab.getAttribute('data-term'))).toBe(true);
   const termId = Number(await tab.getAttribute('data-term'));
   await expect(page.locator(terminalBox(LOCAL, termId))).toBeVisible();
   return termId;
 };
+
+/** Clicks a split button, picks `preset`, and resolves with the new pane's terminal id once its container is visible. */
+export const splitPane = async (page: Page, dir: 'right' | 'down', preset: PresetName = 'shell'): Promise<number> => {
+  const before = await paneIds(page);
+  await page.locator(byTestId(dir === 'right' ? TID.splitRight : TID.splitDown)).click();
+  await pickPreset(page, preset);
+  return newPane(page, before);
+};
+
+/** Confirms the open close dialog. */
+export const confirmClose = async (page: Page): Promise<void> => {
+  const dialog = page.locator(byTestId(TID.closeDialog));
+  await expect(dialog).toBeVisible();
+  await dialog.locator(byTestId(TID.closeConfirm)).click();
+  await expect(dialog).toHaveCount(0);
+};
+
+/** The mark shown inside the element `selector` finds; null without one. Reads in one step, so a mark vanishing meanwhile cannot stall it. */
+export const markOf = (page: Page, selector: string): Promise<string | null> =>
+  page
+    .locator(selector)
+    .locator(byTestId(TID.mark))
+    .evaluateAll((marks) => (marks[0] instanceof HTMLElement ? (marks[0].dataset['mark'] ?? null) : null));
 
 /** Types `line` and Enter into the terminal. */
 export const typeLine = async (page: Page, termId: number, line: string): Promise<void> => {

@@ -5,6 +5,7 @@ import { access, constants as fsConstants, stat } from 'node:fs/promises';
 import { constants } from 'node:os';
 import { isAbsolute } from 'node:path';
 import { MAX_FRAME } from '../../protocol/index.js';
+import { Attention, isNotification, type AttentionClock, type AttentionState } from './attention.js';
 import { FlowControl, type AckResult } from './flow.js';
 import { InputWriter } from './input.js';
 import { drainFd, guardStream, type StreamGuard } from './stream.js';
@@ -29,8 +30,8 @@ export interface TerminalSpec {
 }
 
 export interface TerminalEvents {
-  /** `unseen` or `bell` changed. */
-  activity: (unseen: boolean, bell: boolean) => void;
+  /** `unseen` or the attention state changed. */
+  activity: (unseen: boolean, state: AttentionState) => void;
   /** The process exited and every output byte has been offered. */
   exited: (code: number, signal: string | null) => void;
 }
@@ -60,6 +61,16 @@ export interface ExitStatus {
 const signalName = (signal: number | undefined): string | null => {
   if (signal === undefined || signal === 0) return null;
   return Object.entries(constants.signals).find(([, n]) => n === signal)?.[0] ?? `SIG${String(signal)}`;
+};
+
+const NOTIFICATION_OSCS = [9, 777, 99] as const;
+
+const systemClock: AttentionClock<NodeJS.Timeout> = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => {
+    clearTimeout(handle);
+  },
 };
 
 const hasCode = (error: unknown, code: string): boolean => error instanceof Error && 'code' in error && error.code === code;
@@ -108,10 +119,14 @@ export class TerminalProcess {
   private reaped = false;
   private closing = false;
   private onReaped: (() => void) | null = null;
+  private readonly attention: Attention<NodeJS.Timeout>;
+  /** Receipt time of each output chunk the mirror has not parsed yet, oldest first. */
+  private readonly unparsed: number[] = [];
+  /** Counts activity reports, so one change reports once. */
+  private reports = 0;
   cols: number;
   rows: number;
   unseen = false;
-  bell = false;
 
   private constructor(
     private readonly pty: IPty,
@@ -123,9 +138,18 @@ export class TerminalProcess {
     this.rows = spec.rows;
     this.mirror = new xterm.Terminal({ cols: spec.cols, rows: spec.rows, scrollback: SCROLLBACK, allowProposedApi: true });
     this.mirror.loadAddon(this.serializer);
-    this.mirror.onBell(() => {
-      this.onBell();
+    this.attention = new Attention(systemClock, () => {
+      this.report();
     });
+    this.mirror.onBell(() => {
+      this.attention.bell(this.parsingSince());
+    });
+    for (const osc of NOTIFICATION_OSCS) {
+      this.mirror.parser.registerOscHandler(osc, (payload) => {
+        if (isNotification(osc, payload)) this.attention.notify(this.parsingSince());
+        return false;
+      });
+    }
     this.input = new InputWriter(fd);
     // Destroying closes the fd: first read the output still in it, and let a write in flight
     // finish, as it could land on a reused fd.
@@ -180,6 +204,10 @@ export class TerminalProcess {
     return this.exitStatus;
   }
 
+  get state(): AttentionState {
+    return this.attention.state;
+  }
+
   /** Attaches `id` (again): its sink gets a snapshot at the current position, then output from there. */
   attach(id: number, sink: OutputSink): void {
     this.supersede(id);
@@ -211,7 +239,9 @@ export class TerminalProcess {
 
   /** Queues input; false when too much input is waiting and `data` was discarded. */
   write(data: Uint8Array): boolean {
-    return this.input.push(data);
+    if (!this.input.push(data)) return false;
+    this.attention.input(Date.now(), data);
+    return true;
   }
 
   resize(cols: number, rows: number): void {
@@ -225,10 +255,9 @@ export class TerminalProcess {
 
   setVisible(visible: boolean): void {
     this.visible = visible;
-    if (visible && (this.unseen || this.bell)) {
+    if (visible && this.unseen) {
       this.unseen = false;
-      this.bell = false;
-      this.events.activity(false, false);
+      this.report();
     }
   }
 
@@ -238,6 +267,7 @@ export class TerminalProcess {
    */
   close(): Promise<void> {
     this.closing = true;
+    this.attention.dispose();
     for (const id of this.consumers.keys()) this.supersede(id);
     this.input.stop();
     if (this.evictTimer !== null) clearTimeout(this.evictTimer);
@@ -276,8 +306,11 @@ export class TerminalProcess {
     if (this.closing) return;
     const bytes = data instanceof Uint8Array ? data : Buffer.from(data);
     const offset = this.flow.produced;
+    const at = Date.now();
     this.flow.output(bytes.length);
+    this.unparsed.push(at);
     this.mirror.write(bytes, () => {
+      this.unparsed.shift();
       this.flow.parsed(bytes.length);
       this.applyFlow();
     });
@@ -285,17 +318,22 @@ export class TerminalProcess {
       if (consumer.ready) this.deliver(id, consumer, offset, bytes);
       else consumer.pending.push({ offset, data: bytes });
     }
-    if (!this.visible && !this.unseen) {
-      this.unseen = true;
-      this.events.activity(true, this.bell);
-    }
+    const reports = this.reports;
+    const unseen = !this.visible && !this.unseen;
+    if (unseen) this.unseen = true;
+    this.attention.output(at);
+    if (unseen && this.reports === reports) this.report();
     this.applyFlow();
   }
 
-  private onBell(): void {
-    if (this.visible || this.bell || this.closing) return;
-    this.bell = true;
-    this.events.activity(this.unseen, true);
+  /** Receipt time of the output chunk the mirror is parsing. */
+  private parsingSince(): number {
+    return this.unparsed[0] ?? Date.now();
+  }
+
+  private report(): void {
+    this.reports++;
+    this.events.activity(this.unseen, this.attention.state);
   }
 
   private onExit(status: ExitStatus): void {
@@ -309,7 +347,13 @@ export class TerminalProcess {
     }
     this.exitStatus = status;
     this.mirror.write('', () => {
-      if (!this.closing) this.events.exited(status.code, status.signal);
+      if (this.closing) return;
+      this.attention.exit();
+      if (!this.visible && !this.unseen) {
+        this.unseen = true;
+        this.report();
+      }
+      this.events.exited(status.code, status.signal);
     });
   }
 

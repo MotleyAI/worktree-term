@@ -42,7 +42,8 @@ body {
   padding: 0 4px;
 }
 
-.repo-tabs .spacer {
+.repo-tabs .spacer,
+.term-tabs .spacer {
   flex: 1;
 }
 
@@ -149,18 +150,175 @@ button {
 .terminal-area {
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 
 .wtd-terminals {
   position: fixed;
+  z-index: 1;
   pointer-events: none;
 }
 
 .wtd-terminal {
   position: absolute;
-  inset: 0;
   padding: 2px 4px;
   pointer-events: auto;
+}
+
+.tab-controls button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.pane {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 0 0 0 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.pane.focused .pane-header {
+  background: var(--accent);
+  color: var(--text);
+}
+
+.pane-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pane-header .close {
+  padding: 0 6px;
+}
+
+.divider {
+  position: absolute;
+  z-index: 2;
+  background: var(--border);
+  touch-action: none;
+}
+
+.divider-right {
+  cursor: col-resize;
+}
+
+.divider-down {
+  cursor: row-resize;
+}
+
+.preset-picker,
+.preset-choices,
+.close-dialog {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 8px;
+  min-width: 260px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 50%);
+}
+
+/* Undo the user agent's centring and colours of an open dialog. */
+dialog.preset-picker,
+dialog.close-dialog {
+  right: auto;
+  margin: 0;
+  color: inherit;
+}
+
+.preset-picker,
+.preset-choices {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.close-dialog {
+  position: fixed;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+
+.preset-picker .title,
+.preset-choices .title,
+.close-dialog .title {
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+
+.preset-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.preset-option {
+  display: flex;
+  gap: 8px;
+  text-align: left;
+}
+
+.preset-option[aria-selected='true'] {
+  background: var(--accent);
+}
+
+.preset-option[data-digit]::before {
+  content: attr(data-digit);
+  color: var(--muted);
+}
+
+.close-dialog .buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.close-dialog .buttons button {
+  border-color: var(--border);
+}
+
+.mark {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 4px;
+  border-radius: 50%;
+}
+
+.mark-input {
+  background: #e5c07b;
+}
+
+.mark-failed {
+  background: #f14c4c;
+}
+
+.mark-exited {
+  background: var(--muted);
+}
+
+.mark-done {
+  background: #23d18b;
+}
+
+.mark-output {
+  background: #3b8eea;
 }
 
 .wtd-probe {

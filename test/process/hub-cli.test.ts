@@ -125,13 +125,39 @@ describe('wtd hub', () => {
     expect(host.record()).toBeNull();
   });
 
-  it('reports an invalid configuration in one line naming the file and the problem', async () => {
-    host.writeConfig({ port: host.port, presets: [] });
+  it.each([
+    ['an unknown key', { theme: 'dark' }, 'theme'],
+    ['an empty presets list', { presets: [] }, 'presets'],
+    [
+      'two presets named a',
+      {
+        presets: [
+          { name: 'a', command: null },
+          { name: 'a', command: 'x' },
+        ],
+      },
+      'presets',
+    ],
+    ['a preset whose command is empty', { presets: [{ name: 'a', command: '' }] }, 'presets'],
+  ])('reports a configuration with %s in one line naming the file and the key', async (_name, config, key) => {
+    host.writeConfig({ port: host.port, ...config });
     const hub = host.wtd(['hub']);
     expect(await waitExit(hub)).toEqual({ code: 1, signal: null });
     expectOneLine(hub.stderr);
     expect(hub.stderr).toContain(host.configPath);
-    expect(hub.stderr).toContain('presets');
+    expect(hub.stderr).toContain(key);
+  });
+
+  it('starts with valid presets', async () => {
+    host.writeConfig({
+      port: host.port,
+      presets: [
+        { name: 'claude', command: 'claude' },
+        { name: 'shell', command: null },
+      ],
+    });
+    const hub = await host.startHub();
+    expect(host.record()?.pid).toBe(hub.pid);
   });
 
   it('reports a configuration that is not JSON', async () => {

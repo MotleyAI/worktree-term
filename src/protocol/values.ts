@@ -18,6 +18,8 @@ export const head = z
   .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
   .nullable();
 export const name = z.string().min(1).max(64);
+export const presetName = name.regex(/\S/, 'must contain a non-whitespace character');
+export const presetCommand = z.string().min(1).max(4096).nullable();
 export const longText = z.string().max(4096).nullable();
 export const signal = z.string().max(32).nullable();
 export const version = z.string().min(1).max(64);

@@ -22,23 +22,37 @@ Commands:
   hub                     Run the hub in the foreground
   daemon                  Run this host's daemon in the foreground
   connect                 Bridge stdio to this host's daemon, starting it if needed
-  install-local           Install wtd for the current user
-  install-remote <alias>  Install wtd on an SSH host
+  install-local [--systemd]
+                          Install wtd for the current user, with a desktop launcher;
+                          --systemd also installs and starts a systemd user unit for the daemon
+  install-remote <alias> [--node <path>]
+                          Install wtd on an SSH host; --node names the remote Node to use
 
 Options:
   --help     Show this help
   --version  Show the version
 `;
 
-const OPTIONS = { help: { type: 'boolean' }, version: { type: 'boolean' } } as const;
+const OPTIONS = {
+  help: { type: 'boolean' },
+  version: { type: 'boolean' },
+  systemd: { type: 'boolean' },
+  node: { type: 'string' },
+} as const;
 
-const NOT_IMPLEMENTED = 'not implemented';
+/** Options a command was given. */
+interface CommandOptions {
+  systemd: boolean;
+  node: string | null;
+}
 
 interface Command {
   /** Positional arguments after the verb. */
   args: readonly string[];
+  /** Options the command takes besides `--help` and `--version`. */
+  options: readonly (keyof CommandOptions)[];
   /** Runs the command and resolves with its exit code. */
-  run: (io: CliIo) => Promise<number>;
+  run: (io: CliIo, args: readonly string[], options: CommandOptions) => Promise<number>;
 }
 
 const message = (error: unknown): string =>
@@ -116,14 +130,48 @@ const connect = async (io: CliIo): Promise<number> => {
   return 1;
 };
 
-// The installers are implemented by DEV-2054.
-const COMMANDS: ReadonlyMap<string, Command> = new Map([
-  ['ui', { args: [], run: ui }],
-  ['hub', { args: [], run: hub }],
-  ['daemon', { args: [], run: daemon }],
-  ['connect', { args: [], run: connect }],
-  ['install-local', { args: [], run: installLocal }],
-  ['install-remote', { args: ['alias'], run: installRemote }],
+const installLocalCommand = async (io: CliIo, _args: readonly string[], { systemd }: CommandOptions): Promise<number> => {
+  try {
+    const bundle = wtdCommand()[1] ?? '';
+    const installed = await installLocal({
+      home: homedir(),
+      paths: currentHostPaths(),
+      bundle,
+      version: pkg.version,
+      node: process.execPath,
+      systemd,
+    });
+    io.stdout(`installed wtd ${installed.version} in ${installed.dataDir} (release ${installed.release})\n`);
+    return 0;
+  } catch (error) {
+    io.stderr(`wtd install-local: ${message(error)}\n`);
+    return 1;
+  }
+};
+
+/** How long `wtd install-remote` waits for the remote installer. */
+const REMOTE_INSTALL_MS = 10 * 60 * 1000;
+
+const installRemoteCommand = async (io: CliIo, [alias = '']: readonly string[], { node }: CommandOptions): Promise<number> => {
+  try {
+    const bundle = wtdCommand()[1] ?? '';
+    const paths = currentHostPaths();
+    const installed = await installRemote({ paths, alias, bundle, version: pkg.version, node, timeoutMs: REMOTE_INSTALL_MS });
+    io.stdout(`installed wtd ${installed.version} on ${alias} (release ${installed.release}, Node ${installed.node})\n`);
+    return 0;
+  } catch (error) {
+    io.stderr(`wtd install-remote: ${message(error)}\n`);
+    return 1;
+  }
+};
+
+const COMMANDS: ReadonlyMap<string, Command> = new Map<string, Command>([
+  ['ui', { args: [], options: [], run: ui }],
+  ['hub', { args: [], options: [], run: hub }],
+  ['daemon', { args: [], options: [], run: daemon }],
+  ['connect', { args: [], options: [], run: connect }],
+  ['install-local', { args: [], options: ['systemd'], run: installLocalCommand }],
+  ['install-remote', { args: ['alias'], options: ['node'], run: installRemoteCommand }],
 ]);
 
 class UsageError extends Error {
@@ -134,24 +182,33 @@ interface Invocation {
   help: boolean;
   version: boolean;
   positionals: string[];
+  options: CommandOptions;
+  /** Command options given, by their written name, to check against the command. */
+  given: { name: keyof CommandOptions; rawName: string }[];
 }
+
+const isCommandOption = (name: string): name is keyof CommandOptions => name === 'systemd' || name === 'node';
 
 const parse = (argv: readonly string[]): Invocation => {
   const { tokens, positionals } = parseArgs({ args: [...argv], options: OPTIONS, allowPositionals: true, strict: false, tokens: true });
-  let help = false;
-  let version = false;
+  const invocation: Invocation = { help: false, version: false, positionals, options: { systemd: false, node: null }, given: [] };
   for (const token of tokens) {
     if (token.kind !== 'option') continue;
-    if (token.name !== 'help' && token.name !== 'version') throw new UsageError(`unknown option ${token.rawName}`);
-    if (token.value !== undefined) throw new UsageError(`option ${token.rawName} takes no value`);
-    if (token.name === 'help') help = true;
-    else version = true;
+    if (token.name === 'node') {
+      if (token.value === undefined) throw new UsageError(`option ${token.rawName} needs a value`);
+      invocation.options.node = token.value;
+    } else if (token.value !== undefined) throw new UsageError(`option ${token.rawName} takes no value`);
+    if (token.name === 'help') invocation.help = true;
+    else if (token.name === 'version') invocation.version = true;
+    else if (token.name === 'systemd') invocation.options.systemd = true;
+    else if (!isCommandOption(token.name)) throw new UsageError(`unknown option ${token.rawName}`);
+    if (isCommandOption(token.name)) invocation.given.push({ name: token.name, rawName: token.rawName });
   }
-  return { help, version, positionals };
+  return invocation;
 };
 
 const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => {
-  const { help, version, positionals } = parse(argv);
+  const { help, version, positionals, options, given } = parse(argv);
   if (help) {
     io.stdout(USAGE);
     return 0;
@@ -164,19 +221,13 @@ const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => 
   if (verb === undefined) throw new UsageError('missing command');
   const command = COMMANDS.get(verb);
   if (command === undefined) throw new UsageError(`unknown command '${verb}'`);
+  const foreign = given.find((option) => !command.options.includes(option.name));
+  if (foreign !== undefined) throw new UsageError(`${verb} takes no option ${foreign.rawName}`);
   const missing = command.args[args.length];
   if (missing !== undefined) throw new UsageError(`${verb}: ${missing} is required`);
   const extra = args[command.args.length];
   if (extra !== undefined) throw new UsageError(`${verb}: unexpected argument '${extra}'`);
-  try {
-    return await command.run(io);
-  } catch (error) {
-    if (error instanceof Error && error.message === NOT_IMPLEMENTED) {
-      io.stderr(`wtd ${verb}: ${NOT_IMPLEMENTED}\n`);
-      return 2;
-    }
-    throw error;
-  }
+  return command.run(io, args, options);
 };
 
 /** Runs `wtd` with `argv` (without node and script) and returns the exit code. */

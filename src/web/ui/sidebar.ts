@@ -1,4 +1,7 @@
 import type { Terminal, Worktree } from '../../protocol/index.js';
+import { worktreeLabel } from '../client/index.js';
+
+export { worktreeLabel };
 
 /** One sidebar entry. */
 export interface SidebarEntry {
@@ -12,16 +15,7 @@ export interface SidebarEntry {
 
 export type WorktreeFilter = 'all' | 'checked';
 
-const SHORT_HEAD = 7;
-
 const directoryName = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-
-/** The branch, or `<directory> @ <short head>` when detached, or the directory name. */
-export const worktreeLabel = (worktree: Worktree): string => {
-  if (worktree.branch !== null) return worktree.branch;
-  const dir = directoryName(worktree.path);
-  return worktree.detached && worktree.head !== null ? `${dir} @ ${worktree.head.slice(0, SHORT_HEAD)}` : dir;
-};
 
 /** Listed worktrees in the daemon's order without bare ones, then vanished worktrees that still have terminals. */
 export const sidebarEntries = (state: {

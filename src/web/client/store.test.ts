@@ -220,4 +220,49 @@ describe('HubStore', () => {
     expect(store.repo(0, REPO)).toBeNull();
     expect(store.repo(1, REPO)).not.toBeNull();
   });
+
+  it('tells whether a repo has a terminal whose process runs', () => {
+    const store = watched();
+    expect(store.hasRunning(0, REPO)).toBe(true);
+    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null });
+    expect(store.hasRunning(0, REPO)).toBe(false);
+    expect(store.hasRunning(0, '/r/other')).toBe(false);
+  });
+
+  it('lists the running terminals of a host with their worktree labels', () => {
+    const store = new HubStore();
+    const gone = '/r/app.worktrees/gone';
+    const terminals = [terminal(1), { ...terminal(2, REPO), preset: 'claude' }, terminal(3, gone)];
+    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [worktree(REPO), worktree(WT)], terminals, checked: [], layouts: [] });
+    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null });
+    expect(store.running(0)).toEqual([
+      { worktree: 'b', preset: 'claude' },
+      { worktree: 'gone', preset: 'shell' },
+    ]);
+    expect(store.running(1)).toEqual([]);
+  });
+
+  it('keeps repos per host until told otherwise, and forgets them with the host', () => {
+    const store = watched();
+    store.keep(0, REPO, true);
+    store.keep(0, REPO, true);
+    store.keep(1, '/x', true);
+    expect(store.kept.value.get(0)).toEqual([REPO]);
+    store.keep(0, REPO, false);
+    expect(store.kept.value.get(0)).toEqual([]);
+    store.keep(0, REPO, true);
+    store.clearHost(0);
+    expect(store.kept.value.has(0)).toBe(false);
+    expect(store.kept.value.get(1)).toEqual(['/x']);
+  });
+
+  it('drops one repo’s state and stops keeping it', () => {
+    const store = watched();
+    store.apply(0, { t: 'repoState', repo: '/r/b', worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.keep(0, REPO, true);
+    store.dropRepo(0, REPO);
+    expect(store.repo(0, REPO)).toBeNull();
+    expect(store.repo(0, '/r/b')).not.toBeNull();
+    expect(store.kept.value.get(0)).toEqual([]);
+  });
 });

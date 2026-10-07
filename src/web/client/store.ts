@@ -16,6 +16,17 @@ export interface RepoState {
   error: { code: string; message: string } | null;
 }
 
+const SHORT_HEAD = 7;
+
+const directoryName = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
+
+/** The branch, or `<directory> @ <short head>` when detached, or the directory name. */
+export const worktreeLabel = (worktree: Worktree): string => {
+  if (worktree.branch !== null) return worktree.branch;
+  const dir = directoryName(worktree.path);
+  return worktree.detached && worktree.head !== null ? `${dir} @ ${worktree.head.slice(0, SHORT_HEAD)}` : dir;
+};
+
 const EMPTY: RepoState = { worktrees: [], terminals: [], checked: [], layouts: new Map(), error: null };
 
 export const repoKey = (host: number, repo: string): string => `${String(host)}:${repo}`;
@@ -32,6 +43,8 @@ export class HubStore {
   readonly notice = signal<string | null>(null);
   /** The presets of the current session; null until the hub sends them. */
   readonly presets = signal<readonly Preset[] | null>(null);
+  /** Per host, repos the hub no longer lists that the page keeps while they have running terminals. */
+  readonly kept = signal<ReadonlyMap<number, readonly string[]>>(new Map());
   /** The layouts each repo's daemon last reported, by `repoKey` and worktree. */
   private readonly reported = new Map<string, Map<string, Layout>>();
   /** Our `setLayout` requests not yet answered, by host and worktree. */
@@ -59,10 +72,52 @@ export class HubStore {
     this.update(host, repo, (state) => ({ ...state, error }));
   }
 
+  /** Whether the page holds a terminal of `repo` whose process runs. */
+  hasRunning(host: number, repo: string): boolean {
+    return (this.repo(host, repo)?.terminals ?? []).some((t) => t.exit === null);
+  }
+
+  /** Keeps `repo` of `host` shown although the hub no longer lists it, or stops keeping it. */
+  keep(host: number, repo: string, kept: boolean): void {
+    const current = this.kept.value.get(host) ?? [];
+    if (current.includes(repo) === kept) return;
+    const next = new Map(this.kept.value);
+    next.set(host, kept ? [...current, repo] : current.filter((r) => r !== repo));
+    this.kept.value = next;
+  }
+
+  /** Forgets the state of one repo. */
+  dropRepo(host: number, repo: string): void {
+    const key = repoKey(host, repo);
+    this.reported.delete(key);
+    this.repos.value = new Map([...this.repos.value].filter(([k]) => k !== key));
+    this.keep(host, repo, false);
+  }
+
+  /** The running terminals of `host` with their worktree labels. */
+  running(host: number): { worktree: string; preset: string }[] {
+    const prefix = `${String(host)}:`;
+    const found: { worktree: string; preset: string }[] = [];
+    for (const [key, state] of this.repos.value) {
+      if (!key.startsWith(prefix)) continue;
+      for (const t of state.terminals) {
+        if (t.exit !== null) continue;
+        const worktree = state.worktrees.find((w) => w.path === t.worktree);
+        found.push({ worktree: worktree === undefined ? directoryName(t.worktree) : worktreeLabel(worktree), preset: t.preset });
+      }
+    }
+    return found;
+  }
+
   /** Forgets every repo state of `host`. */
   clearHost(host: number): void {
     const prefix = `${String(host)}:`;
     this.repos.value = new Map([...this.repos.value].filter(([key]) => !key.startsWith(prefix)));
+    if (this.kept.value.has(host)) {
+      const kept = new Map(this.kept.value);
+      kept.delete(host);
+      this.kept.value = kept;
+    }
     for (const key of this.reported.keys()) if (key.startsWith(prefix)) this.reported.delete(key);
     for (const key of this.writes.keys()) if (key.startsWith(prefix)) this.writes.delete(key);
   }

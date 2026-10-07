@@ -12,6 +12,7 @@ import {
   type MessageOf,
 } from '../../protocol/index.js';
 import { reconnectDelay } from './backoff.js';
+import { hostKey, TerminalMemory, type TerminalStorage } from './memory.js';
 import { PendingRequests } from './requests.js';
 import { checkBundle } from './stale.js';
 import { HubStore } from './store.js';
@@ -61,6 +62,16 @@ const randomInstance = (): string => {
     .replaceAll('/', '_');
 };
 
+/** The page's `localStorage`, or null when the browser refuses it. */
+const localStorageOrNull = (): TerminalStorage | null => {
+  try {
+    return localStorage;
+  } catch (error) {
+    console.warn('local storage is unavailable', error);
+    return null;
+  }
+};
+
 /** Whether the hub answers HTTP at all, as opposed to being down or starting. */
 const hubAnswers = async (): Promise<boolean> => {
   try {
@@ -74,6 +85,8 @@ const hubAnswers = async (): Promise<boolean> => {
 /** The page's one WebSocket session with the hub: authentication, reconnects, requests and dispatch. */
 export class HubClient {
   readonly store = new HubStore();
+  /** The running terminals last seen per host and daemon instance, for confirmations. */
+  readonly memory = new TerminalMemory(localStorageOrNull());
   private readonly pending = new PendingRequests<Reply>();
   private readonly dataListeners = new Set<(host: number, frame: DataFrame) => void>();
   private readonly eventListeners = new Set<(host: number, m: DaemonEvent) => void>();
@@ -82,8 +95,8 @@ export class HubClient {
   private readonly encoder = new TextEncoder();
   private credential: Credential | null = null;
   private ws: WebSocket | null = null;
-  /** Each host's status and instance in the current session. */
-  private hostStates = new Map<number, { status: HostEntry['status']; instance: string | null }>();
+  /** Each host's status, instance and repos in the current session. */
+  private hostStates = new Map<number, { status: HostEntry['status']; instance: string | null; repos: readonly string[] }>();
   private attempts = 0;
   /** A failed upgrade while the hub answered HTTP; a second one means our credential is refused. */
   private refusedOnce = false;
@@ -130,6 +143,28 @@ export class HubClient {
   /** Asks the hub to restart the daemon of `host`. */
   async restartDaemon(host: number): Promise<void> {
     await this.exchange(null, (req) => ({ t: 'restartDaemon', req, host }));
+  }
+
+  /** Asks the hub to install its bundle on remote `host` and restart its daemon. */
+  async reinstallDaemon(host: number): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'reinstallDaemon', req, host }));
+  }
+
+  /** The repos the hub discovers on `host` below its configured roots. */
+  async discoverRepos(host: number): Promise<readonly string[]> {
+    const m = await this.exchange(null, (req) => ({ t: 'discoverRepos', req, host }));
+    if (m.t !== 'reposDiscovered') throw new Error(`unexpected hub reply ${m.t}`);
+    return m.repos;
+  }
+
+  /** Asks the hub to add `repo` to `host`'s configured repos. */
+  async addRepo(host: number, repo: string): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'addRepo', req, host, repo }));
+  }
+
+  /** Asks the hub to remove `repo` from `host`'s configured repos. */
+  async removeRepo(host: number, repo: string): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'removeRepo', req, host, repo }));
   }
 
   private async exchange(host: number | null, message: (req: number) => BrowserMessage): Promise<Extract<Reply, { ok: true }>['m']> {
@@ -292,8 +327,9 @@ export class HubClient {
   private hosts(hosts: readonly HostEntry[]): void {
     this.attempts = 0;
     const previous = this.hostStates;
-    this.hostStates = new Map(hosts.map((h) => [h.idx, { status: h.status, instance: h.instance }]));
+    this.hostStates = new Map(hosts.map((h) => [h.idx, { status: h.status, instance: h.instance, repos: h.repos }]));
     const connected: HostEntry[] = [];
+    const following: [HostEntry, readonly string[]][] = [];
     batch(() => {
       this.store.hosts.value = hosts;
       for (const host of hosts) {
@@ -301,12 +337,56 @@ export class HubClient {
         const same = before?.status === 'connected' && host.status === 'connected' && before.instance === host.instance;
         if (before?.status === 'connected' && !same) this.pending.failHost(host.idx, `host ${String(host.idx)} is ${host.status}`);
         if (host.status === 'connected' && !same) connected.push(host);
+        if (same) following.push([host, before.repos]);
       }
     });
+    for (const [host, before] of following) this.followRepos(host.idx, before, host.repos);
     for (const host of connected) {
       if (host.instance === null) continue;
-      for (const listener of this.connectedListeners) listener(host.idx, host.instance, host.repos);
+      const repos = [...host.repos, ...(this.store.kept.value.get(host.idx) ?? []).filter((r) => !host.repos.includes(r))];
+      for (const listener of this.connectedListeners) listener(host.idx, host.instance, repos);
     }
+  }
+
+  /** The hub's repos of a connected host changed: watches added repos and lets go of removed ones. */
+  private followRepos(host: number, before: readonly string[], after: readonly string[]): void {
+    for (const repo of after) {
+      if (before.includes(repo)) continue;
+      this.store.keep(host, repo, false);
+      void this.watch(host, repo);
+    }
+    for (const repo of before) {
+      if (after.includes(repo)) continue;
+      if (this.store.hasRunning(host, repo)) this.store.keep(host, repo, true);
+      else this.letGo(host, repo);
+    }
+  }
+
+  private async watch(host: number, repo: string): Promise<void> {
+    try {
+      await this.request(host, { t: 'watchRepo', repo });
+    } catch (error) {
+      if (error instanceof RequestError) this.store.repoError(host, repo, { code: error.code, message: error.message });
+      else console.warn(`watching ${repo} failed`, error);
+    }
+  }
+
+  /** Stops watching `repo` and forgets its state. */
+  private letGo(host: number, repo: string): void {
+    this.store.dropRepo(host, repo);
+    this.request(host, { t: 'unwatchRepo', repo }).catch((error: unknown) => {
+      console.warn(`unwatching ${repo} failed`, error);
+    });
+  }
+
+  /** Lets go of kept repos of `host` without running terminals, and remembers its running terminals. */
+  private terminalsChanged(host: number): void {
+    for (const repo of this.store.kept.value.get(host) ?? []) {
+      if (!this.store.hasRunning(host, repo)) this.letGo(host, repo);
+    }
+    const entry = this.store.hosts.value.find((h) => h.idx === host);
+    if (entry?.status !== 'connected' || entry.instance === null) return;
+    this.memory.remember(hostKey(entry), entry.instance, this.store.running(host), Date.now());
   }
 
   private daemonEvent(host: number, m: DaemonEvent): void {
@@ -317,6 +397,7 @@ export class HubClient {
         break;
       case 'termCreated':
         this.store.apply(host, m);
+        this.terminalsChanged(host);
         if (m.req !== null) this.pending.resolve(m.req, { ok: true, m });
         break;
       case 'error':
@@ -325,9 +406,12 @@ export class HubClient {
         }
         break;
       case 'repoState':
-      case 'worktreesChanged':
       case 'termExited':
       case 'termClosed':
+        this.store.apply(host, m);
+        this.terminalsChanged(host);
+        break;
+      case 'worktreesChanged':
       case 'detached':
       case 'activity':
       case 'checkedChanged':

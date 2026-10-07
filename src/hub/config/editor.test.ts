@@ -50,10 +50,11 @@ describe('ConfigEditor adding repos', () => {
   });
 
   it('keeps every other value as written, ~/ forms unexpanded, and indents by 2 spaces', async () => {
-    write({ port: 9000, repos: ['~/a'], ...OTHERS });
+    const { port, ...others } = OTHERS;
+    write({ port, repos: ['~/a'], ...others });
     const result = await editor().addRepo(null, '/r/b');
     expect(result).toEqual({ changed: true, repos: ['/home/u/a', '/r/b'] });
-    const expected = { port: 9000, repos: ['~/a', '/r/b'], ...OTHERS };
+    const expected = { port, repos: ['~/a', '/r/b'], ...others };
     expect(read()).toEqual(expected);
     expect(keysOf(read())).toEqual(Object.keys(expected));
     expect(text().trimEnd()).toBe(JSON.stringify(expected, null, 2));
@@ -86,8 +87,9 @@ describe('ConfigEditor adding repos', () => {
   it('refuses a 257th repo for a host, leaving the file unchanged', async () => {
     write({ repos: paths(256) });
     const before = text();
-    await expect(editor().addRepo(null, '/r/new')).rejects.toBeInstanceOf(ConfigError);
-    await expect(editor().addRepo(null, '/r/new')).rejects.toThrow(/256/);
+    const edits = editor();
+    await expect(edits.addRepo(null, '/r/new')).rejects.toBeInstanceOf(ConfigError);
+    await expect(edits.addRepo(null, '/r/new')).rejects.toThrow(/256/);
     expect(text()).toBe(before);
   });
 
@@ -96,14 +98,16 @@ describe('ConfigEditor adding repos', () => {
     ['invalid JSON', '{"repos":', 'JSON'],
   ])('refuses to edit a file with %s, naming the problem and leaving it unchanged', async (_name, content, problem) => {
     write(content);
-    await expect(editor().addRepo(null, '/r/a')).rejects.toThrow(problem);
+    const edits = editor();
+    await expect(edits.addRepo(null, '/r/a')).rejects.toThrow(problem);
     expect(text()).toBe(content);
   });
 
   it('refuses to edit a host the file no longer lists, naming it', async () => {
     write({ hosts: [{ name: 'gpu', ssh: 'gpu' }] });
     const before = text();
-    await expect(editor().addRepo('box', '/srv/a')).rejects.toThrow('box');
+    const edits = editor();
+    await expect(edits.addRepo('box', '/srv/a')).rejects.toThrow('box');
     expect(text()).toBe(before);
   });
 
@@ -176,5 +180,28 @@ describe('ConfigEditor with other writers', () => {
     const shared = editor();
     await Promise.all([shared.addRepo(null, '/r/1'), shared.addRepo(null, '/r/2'), shared.addRepo('box', '/s/1').catch(() => undefined)]);
     expect(reposOf(read()).sort()).toEqual(['/r/1', '/r/2']);
+  });
+});
+
+describe('ConfigEditor lists', () => {
+  it('tells whether a host lists a repo, as given or by a ~/ form for the local host', async () => {
+    write({ repos: ['~/a', '/r/b'], hosts: [{ name: 'box', ssh: 'box', repos: ['/srv/a'] }] });
+    expect(await editor().lists(null, '/home/u/a')).toBe(true);
+    expect(await editor().lists(null, '/r/b')).toBe(true);
+    expect(await editor().lists(null, '/srv/a')).toBe(false);
+    expect(await editor().lists('box', '/srv/a')).toBe(true);
+    expect(await editor().lists('box', '/r/b')).toBe(false);
+  });
+
+  it('lists nothing for an absent file', async () => {
+    expect(await editor().lists(null, '/r/a')).toBe(false);
+  });
+
+  it('refuses an invalid file or a host it no longer lists', async () => {
+    const edits = editor();
+    write({ theme: 'dark' });
+    await expect(edits.lists(null, '/r/a')).rejects.toThrow('theme');
+    write({ hosts: [] });
+    await expect(edits.lists('box', '/r/a')).rejects.toThrow('box');
   });
 });

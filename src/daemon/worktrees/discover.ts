@@ -1,4 +1,5 @@
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /** Most repositories one discovery reports. */
@@ -52,6 +53,12 @@ const realDirectory = async (path: string): Promise<string | null> => {
   }
 };
 
+/** `root` with a leading `~` expanded against the home directory. */
+const expandHome = (root: string): string => {
+  if (root === '~') return homedir();
+  return root.startsWith('~/') ? join(homedir(), root.slice(2)) : root;
+};
+
 /**
  * Repositories at most `depth` levels below each root (the root being level 0), sorted, at most
  * the first 4096 in visiting order.
@@ -68,7 +75,7 @@ export const discoverRepos = async (roots: readonly string[], depth: number): Pr
     for (const name of await children(dir)) await visit(join(dir, name), level + 1); // NOSONAR(S9382) — ordered walk keeps the cap deterministic
   };
   for (const root of roots) {
-    const real = await realDirectory(root); // NOSONAR(S9382) — ordered walk
+    const real = await realDirectory(expandHome(root)); // NOSONAR(S9382) — ordered walk
     if (real !== null) await visit(real, 0); // NOSONAR(S9382) — ordered walk
   }
   return [...found].sort(byCodeUnits);

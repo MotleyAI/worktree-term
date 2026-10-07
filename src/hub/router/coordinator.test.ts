@@ -163,4 +163,21 @@ describe('HostCoordinator', () => {
     settle('restart');
     await expect(second).resolves.toBeUndefined();
   });
+
+  it('gives the running or queued reinstall to share, and none otherwise', async () => {
+    const { coordinator, settle } = setup();
+    expect(coordinator.reinstalling()).toBeNull();
+    const restart = coordinator.restart();
+    await tick();
+    expect(coordinator.reinstalling()).toBeNull();
+    const queued = coordinator.reinstall();
+    expect(coordinator.reinstalling()).toBe(queued);
+    settle('restart');
+    await restart;
+    await tick();
+    expect(coordinator.reinstalling()).not.toBeNull();
+    settle('reinstall');
+    await queued;
+    expect(coordinator.reinstalling()).toBeNull();
+  });
 });

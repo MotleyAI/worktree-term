@@ -13,6 +13,10 @@ export const depth = z.int().min(1).max(6);
 const ABSOLUTE_WITHOUT_NUL = /^\/[^\u0000]*$/;
 
 export const path = z.string().max(4096).regex(ABSOLUTE_WITHOUT_NUL);
+// eslint-disable-next-line no-control-regex -- NUL is the character roots must not contain
+const ROOT = /^(?:\/[^\u0000]*|~|~\/[^\u0000]+)$/;
+/** A discovery root: an absolute path, `~`, or `~/` and a rest, expanded by the daemon. */
+export const root = z.string().max(4096).regex(ROOT);
 export const head = z
   .string()
   .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
@@ -27,6 +31,7 @@ export const instance = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 /** A hub token or one-time code. */
 export const secret = z.string().regex(/^[0-9a-f]{64}$/);
 export const errorMessage = z.string().max(1024);
+export const reason = errorMessage.nullable();
 export const errorCode = z.enum([
   'bad-message',
   'unknown-host',

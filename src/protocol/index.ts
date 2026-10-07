@@ -12,6 +12,7 @@ export {
   type Frame,
 } from './frames.js';
 export { layout as layoutSchema, type Layout } from './layout.js';
+export { root as discoveryRootSchema } from './values.js';
 export {
   decodeCodeResponse,
   decodeMessage,

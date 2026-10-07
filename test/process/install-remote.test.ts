@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROTOCOL_VERSION } from '../../src/protocol/index.js';
@@ -235,10 +235,28 @@ describe('wtd install-remote', () => {
 
   it('keeps the previous installation when the new one fails for want of Node', async () => {
     const remote = ssh.addHost('box');
-    expect((await runInstallRemote(host, ssh, 'box', ['--node', process.execPath])).exit.code).toBe(0);
+    const nodeDir = join(host.dir, 'gone-node');
+    mkdirSync(nodeDir);
+    symlinkSync(process.execPath, join(nodeDir, 'node'));
+    expect((await runInstallRemote(host, ssh, 'box', ['--node', join(nodeDir, 'node')])).exit.code).toBe(0);
+    rmSync(nodeDir, { recursive: true });
     const before = treeSnapshot(join(remote.home, '.local'));
     expect((await runInstallRemote(host, ssh, 'box', [])).exit.code).toBe(1);
     expect(treeSnapshot(join(remote.home, '.local'))).toEqual(before);
+  });
+
+  it('reinstalls without --node with the Node the installed shim runs', async () => {
+    const nodeDir = join(host.dir, `given n'o$de`);
+    mkdirSync(nodeDir);
+    symlinkSync(process.execPath, join(nodeDir, 'node'));
+    const remote = ssh.addHost('box');
+    expect((await runInstallRemote(host, ssh, 'box', ['--node', join(nodeDir, 'node')])).exit.code).toBe(0);
+    const first = remote.current();
+    const run = await runInstallRemote(host, ssh, 'box', []);
+    expect(run.exit, run.stderr).toEqual({ code: 0, signal: null });
+    expect(remote.current()).not.toBe(first);
+    expect(remote.releases()).toHaveLength(2);
+    await expectBridged('box', remote, join(nodeDir, 'node'));
   });
 
   it('fails with SSH’s last error line when the host cannot be reached', async () => {

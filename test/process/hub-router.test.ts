@@ -941,7 +941,7 @@ describe('removing repos', () => {
     const before = readFileSync(host.configPath, 'utf8');
     expect(await client.hubRequest({ t: 'removeRepo', host: 0, repo })).toMatchObject({
       from: 'hub',
-      m: { t: 'error', req: 2, host: 0, code: 'busy' },
+      m: { t: 'error', req: 3, host: 0, code: 'busy' },
     });
     expect(readFileSync(host.configPath, 'utf8')).toBe(before);
   });

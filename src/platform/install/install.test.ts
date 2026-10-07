@@ -116,11 +116,13 @@ describe('tarArchive', () => {
     ['a name over 255 bytes', `${'d'.repeat(150)}/${'e'.repeat(110)}`],
     ['a prefix over 155 bytes', `${'d'.repeat(160)}/f`],
   ])('refuses %s, naming it', (_name, path) => {
-    expect(() => tarArchive([{ path, mode: 0o644, data: bytes('') }])).toThrow(path);
+    const entries = [{ path, mode: 0o644, data: bytes('') }];
+    expect(() => tarArchive(entries)).toThrow(path);
   });
 
   it.each([['/abs'], ['../up'], ['a/../b'], ['']])('refuses the unsafe path %j', (path) => {
-    expect(() => tarArchive([{ path, mode: 0o644, data: bytes('') }])).toThrow();
+    const entries = [{ path, mode: 0o644, data: bytes('') }];
+    expect(() => tarArchive(entries)).toThrow();
   });
 });
 

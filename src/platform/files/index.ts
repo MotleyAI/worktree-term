@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, type Stats } from 'node:fs';
 import { link, lstat, mkdir, open, readdir, readFile, rename, stat, unlink, chmod, type FileHandle } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -18,6 +18,7 @@ export interface HostPaths {
   hubLog: string;
   hubLock: string;
   hubRecord: string;
+  unitFile: string;
 }
 
 export interface HostIdentity {
@@ -25,6 +26,9 @@ export interface HostIdentity {
   home: string;
   host: string;
 }
+
+/** The daemon's systemd user unit. */
+export const UNIT_NAME = 'worktree-term-daemon.service';
 
 /** Longest unix socket path, in bytes, that fits `sockaddr_un`. */
 const MAX_SOCKET_PATH = 107;
@@ -39,7 +43,8 @@ const xdgBase = (value: string | undefined, fallback: string): string => (value 
 /** Paths for `identity`; throws if the socket path does not fit a unix socket address. */
 export const hostPaths = ({ env, home, host }: HostIdentity): HostPaths => {
   const stateDir = join(xdgBase(env['XDG_STATE_HOME'], join(home, '.local', 'state')), 'worktree-term');
-  const configDir = join(xdgBase(env['XDG_CONFIG_HOME'], join(home, '.config')), 'worktree-term');
+  const configHome = xdgBase(env['XDG_CONFIG_HOME'], join(home, '.config'));
+  const configDir = join(configHome, 'worktree-term');
   const runDir = join(stateDir, 'run');
   const name = host.replace(/[^A-Za-z0-9._-]/g, '_');
   const socket = join(runDir, `${name}.sock`);
@@ -59,7 +64,17 @@ export const hostPaths = ({ env, home, host }: HostIdentity): HostPaths => {
     hubLog: join(stateDir, 'hub.log'),
     hubLock: join(runDir, 'hub.lock'),
     hubRecord: join(runDir, 'hub.json'),
+    unitFile: join(configHome, 'systemd', 'user', UNIT_NAME),
   };
+};
+
+/** The SSH control path in `run/`; throws naming it if, with `%C` substituted, it does not fit a unix socket address. */
+export const sshControlPath = (paths: Pick<HostPaths, 'runDir'>): string => {
+  const path = join(paths.runDir, 'ssh-%C');
+  if (Buffer.byteLength(path.replace('%C', '0'.repeat(40))) > MAX_SOCKET_PATH) {
+    throw new Error(`SSH control path ${path} exceeds ${String(MAX_SOCKET_PATH)} bytes`);
+  }
+  return path;
 };
 
 /** Paths of the current process's user and host. */
@@ -75,6 +90,46 @@ const privateDir = async (path: string): Promise<void> => {
   if (!stats.isDirectory()) throw new Error(`${path} is not a directory`);
   if (stats.uid !== process.getuid?.()) throw new Error(`${path} is owned by another user`);
   if ((stats.mode & 0o777) !== 0o700) await chmod(path, 0o700);
+};
+
+export type EntryKind = 'directory' | 'file' | 'symlink';
+
+const isKind = (stats: Stats, kind: EntryKind): boolean => {
+  if (kind === 'directory') return stats.isDirectory();
+  return kind === 'file' ? stats.isFile() : stats.isSymbolicLink();
+};
+
+/**
+ * Whether `path` exists, without following a final symbolic link; throws naming it when it is not
+ * of `kind` or is owned by another user.
+ */
+export const ownedEntry = async (path: string, kind: EntryKind): Promise<boolean> => {
+  let stats: Stats;
+  try {
+    stats = await lstat(path);
+  } catch (error) {
+    if (hasCode(error, 'ENOENT')) return false;
+    throw error;
+  }
+  if (!isKind(stats, kind)) throw new Error(`${path} is not a ${kind === 'symlink' ? 'symbolic link' : kind}`);
+  if (stats.uid !== process.getuid?.()) throw new Error(`${path} is owned by another user`);
+  return true;
+};
+
+/** Whether anything exists at `path`, following symbolic links. */
+export const pathExists = async (path: string): Promise<boolean> => {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if (hasCode(error, 'ENOENT') || hasCode(error, 'ENOTDIR')) return false;
+    throw error;
+  }
+};
+
+/** Creates `path` and any missing parents owner-only, leaving existing directories as they are. */
+export const makePrivateDirs = async (path: string): Promise<void> => {
+  await mkdir(path, { recursive: true, mode: 0o700 });
 };
 
 /** Creates the state directory and `run/` owner-only, tightening looser modes. */
@@ -97,10 +152,10 @@ const syncDir = async (dir: string): Promise<void> => {
   }
 };
 
-/** Writes a new owner-only file at `path`, complete and synced; returns its path. */
-const writeTemporary = async (path: string, data: string): Promise<string> => {
+/** Writes a new file at `path` with `mode`, complete and synced; returns its path. */
+const writeTemporary = async (path: string, data: string, mode = 0o600): Promise<string> => {
   const temporary = temporaryOf(path);
-  const handle = await open(temporary, 'wx', 0o600);
+  const handle = await open(temporary, 'wx', mode);
   try {
     await handle.writeFile(data);
     await handle.sync();
@@ -115,11 +170,11 @@ const writeTemporary = async (path: string, data: string): Promise<string> => {
 };
 
 /**
- * Replaces `path` with `data` entirely or not at all, durably, as an owner-only file. Once the file
- * is replaced the write has happened, so a failure to sync the directory does not fail it.
+ * Replaces `path` with `data` entirely or not at all, durably, as an owner-only file (0600, or `mode`).
+ * Once the file is replaced the write has happened, so a failure to sync the directory does not fail it.
  */
-export const writeFileAtomic = async (path: string, data: string): Promise<void> => {
-  const temporary = await writeTemporary(path, data);
+export const writeFileAtomic = async (path: string, data: string, mode = 0o600): Promise<void> => {
+  const temporary = await writeTemporary(path, data, mode & 0o700);
   try {
     await rename(temporary, path);
   } catch (error) {

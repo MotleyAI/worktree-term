@@ -22,36 +22,36 @@
 
 ## 4. Protocol v5
 
-- [ ] 4.1 `PROTOCOL_VERSION` 5, host entry `reason` and `instance` for `outdated`, discovery-root schema; re-bless `wire.golden.json` (`frozen.golden.json` unchanged); verify 3.1 and the existing protocol tests pass
+- [x] 4.1 `PROTOCOL_VERSION` 5, host entry `reason` and `instance` for `outdated`, discovery-root schema; re-bless `wire.golden.json` (`frozen.golden.json` unchanged); verify 3.1 and the existing protocol tests pass
 
 ## 5. Daemon
 
-- [ ] 5.1 `daemon.worktrees` discovery expands `~` roots against the daemon's home before resolving real paths (design D2); verify 3.2 passes
+- [x] 5.1 `daemon.worktrees` discovery expands `~` roots against the daemon's home before resolving real paths (design D2); verify 3.2 passes
 
 ## 6. Platform
 
-- [ ] 6.1 `platform.files`: control path and unit file paths, `lstat`-based ownership/type checks (design D7); `platform.dialer`: SSH command builder and systemd auto-start with fallback (design D4, D8); verify 3.3 passes
-- [ ] 6.2 `platform.install`: bundle source resolution, ustar writer, release assembly and atomic `current` swap with pruning, shim/launcher/unit writers with per-format escaping, local and remote installation with the fixed bootstrap and in-archive script (design D3, D7, D8); verify 3.4 and 3.6 pass
+- [x] 6.1 `platform.files`: control path and unit file paths, `lstat`-based ownership/type checks (design D7); `platform.dialer`: SSH command builder and systemd auto-start with fallback (design D4, D8); verify 3.3 passes
+- [x] 6.2 `platform.install`: bundle source resolution, ustar writer, release assembly and atomic `current` swap with pruning, shim/launcher/unit writers with per-format escaping, local and remote installation with the fixed bootstrap and in-archive script (design D3, D7, D8); verify 3.4 and 3.6 pass
 
 ## 7. Hub
 
-- [ ] 7.1 `hub.config`: `roots`, `hosts`, remote repo rules; raw-file editor with identity/content check and retries (design D2, D9); verify the config parts of 3.5 pass
-- [ ] 7.2 `hub.links`: `RemoteDaemon` over the SSH command with the D5 lifecycle and stderr tail; one-shot links; `installRemote` delegating to `platform.install`; verify the link parts of 3.5 and 3.7 pass
-- [ ] 7.3 `hub.router`: per-session remote hosts, `reason`, outdated `instance`; endpoint-generic restarter; host coordinator; `reinstallDaemon`; hub-level `discoverRepos`, `addRepo`, `removeRepo`; edits pushed to every session (design D6, D9); verify 3.5 and 3.7 pass
+- [x] 7.1 `hub.config`: `roots`, `hosts`, remote repo rules; raw-file editor with identity/content check and retries (design D2, D9); verify the config parts of 3.5 pass
+- [x] 7.2 `hub.links`: `RemoteDaemon` over the SSH command with the D5 lifecycle and stderr tail; one-shot links; `installRemote` delegating to `platform.install`; verify the link parts of 3.5 and 3.7 pass
+- [x] 7.3 `hub.router`: per-session remote hosts, `reason`, outdated `instance`; endpoint-generic restarter; host coordinator; `reinstallDaemon`; hub-level `discoverRepos`, `addRepo`, `removeRepo`; edits pushed to every session (design D6, D9); verify 3.5 and 3.7 pass
 
 ## 8. CLI
 
-- [ ] 8.1 Per-command option parsing, `install-local [--systemd]`, `install-remote <alias> [--node <path>]` delegating to `platform.install`, help text; remove the installer forward pointers; verify the CLI unit tests and 3.6 pass
+- [x] 8.1 Per-command option parsing, `install-local [--systemd]`, `install-remote <alias> [--node <path>]` delegating to `platform.install`, help text; remove the installer forward pointers; verify the CLI unit tests and 3.6 pass
 
 ## 9. Web
 
-- [ ] 9.1 `web.client`: terminal memory per host key and instance (design D10); hub-level discover/add/remove/reinstall requests; watches follow `hosts` while connected, keeping repos with live terminals; verify their unit tests pass
-- [ ] 9.2 `web.ui`: host status on repo tabs, down/outdated banners with actions, in-page restart/reinstall/install dialog naming terminals, Add repo dialog, Remove repo action; `icon.svg` in the web bundle as favicon; verify 3.8 passes
+- [x] 9.1 `web.client`: terminal memory per host key and instance (design D10); hub-level discover/add/remove/reinstall requests; watches follow `hosts` while connected, keeping repos with live terminals; verify their unit tests pass
+- [x] 9.2 `web.ui`: host status on repo tabs, down/outdated banners with actions, in-page restart/reinstall/install dialog naming terminals, Add repo dialog, Remove repo action; `icon.svg` in the web bundle as favicon; verify 3.8 passes
 
 ## 10. Documentation
 
-- [ ] 10.1 README: remote hosts (config `hosts`, `roots`, absolute remote repos, `install-remote`, `--node`, sshd `MaxSessions`), `install-local`, the launcher, `--systemd` with `loginctl enable-linger`, `WTD_SSH`; verify the README's configuration examples parse in a unit test
+- [x] 10.1 README: remote hosts (config `hosts`, `roots`, absolute remote repos, `install-remote`, `--node`, sshd `MaxSessions`), `install-local`, the launcher, `--systemd` with `loginctl enable-linger`, `WTD_SSH`; verify the README's configuration examples parse in a unit test
 
 ## 11. Final gates
 
-- [ ] 11.1 `pnpm test` green (incl. Playwright); `pnpm test:integration` green with sshd on localhost; `la-typecheck`, `la-arch-check`, `likec4 validate architecture` exit 0; `pnpm build` succeeds; `openspec validate dev-2054-worktree-term-pr5-remote-hosts-over-ssh-install --strict` passes
+- [x] 11.1 `pnpm test` green (incl. Playwright); `pnpm test:integration` green with sshd on localhost; `la-typecheck`, `la-arch-check`, `likec4 validate architecture` exit 0; `pnpm build` succeeds; `openspec validate dev-2054-worktree-term-pr5-remote-hosts-over-ssh-install --strict` passes

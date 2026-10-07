@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -24,8 +25,10 @@ import {
   fileIdentity,
   hostPaths,
   makeOwnerOnly,
+  makePrivateDirs,
   openLog,
   ownedEntry,
+  pathExists,
   preparePrivateDirs,
   readFileIfExists,
   readPrivateFile,
@@ -255,7 +258,8 @@ describe('SSH control path', () => {
   ])('refuses an %s control path of 108 bytes once %C is substituted, naming it', (_name, stateHome) => {
     const path = `${stateHome}/worktree-term/run/ssh-%C`;
     expect(Buffer.byteLength(path.replace('%C', '0'.repeat(40)))).toBe(108);
-    expect(() => sshControlPath(pathsUnder(stateHome))).toThrow(path);
+    const paths = pathsUnder(stateHome);
+    expect(() => sshControlPath(paths)).toThrow(path);
   });
 });
 
@@ -409,6 +413,35 @@ describe('file helpers', () => {
     expect(await fileIdentity(file)).not.toBe(first);
     rmSync(file);
     expect(await fileIdentity(file)).toBeNull();
+  });
+});
+
+describe('private directories and existence', () => {
+  it('creates missing directories owner-only, leaving an existing parent as it is', async () => {
+    mkdirSync(join(dir, 'open'), { mode: 0o755 });
+    chmodSync(join(dir, 'open'), 0o755);
+    await makePrivateDirs(join(dir, 'open', 'a', 'b'));
+    expect(statSync(join(dir, 'open')).mode & 0o777).toBe(0o755);
+    expect(statSync(join(dir, 'open', 'a')).mode & 0o777).toBe(0o700);
+    expect(statSync(join(dir, 'open', 'a', 'b')).mode & 0o777).toBe(0o700);
+    await makePrivateDirs(join(dir, 'open', 'a', 'b'));
+  });
+
+  it('tells whether a path exists, following symbolic links', async () => {
+    writeFileSync(join(dir, 'f'), '');
+    symlinkSync(join(dir, 'f'), join(dir, 'link'));
+    symlinkSync(join(dir, 'missing'), join(dir, 'dangling'));
+    expect(await pathExists(join(dir, 'f'))).toBe(true);
+    expect(await pathExists(join(dir, 'link'))).toBe(true);
+    expect(await pathExists(join(dir, 'dangling'))).toBe(false);
+    expect(await pathExists(join(dir, 'f', 'below'))).toBe(false);
+  });
+});
+
+describe('atomic writes with a mode', () => {
+  it('writes an owner-only file with the given owner bits', async () => {
+    await writeFileAtomic(join(dir, 'run'), '#!/bin/sh\n', 0o755);
+    expect(statSync(join(dir, 'run')).mode & 0o777).toBe(0o700);
   });
 });
 

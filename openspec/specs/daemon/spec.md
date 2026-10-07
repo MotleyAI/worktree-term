@@ -25,7 +25,7 @@ On every new connection the daemon SHALL send `hello` with `protocol` equal to `
 
 #### Scenario: Daemon hello
 - **WHEN** a client connects
-- **THEN** the first frame it receives is the daemon's `hello` with `protocol` 4
+- **THEN** the first frame it receives is the daemon's `hello` with `protocol` 5
 
 #### Scenario: Message before hello
 - **WHEN** a client's first message is a `watchRepo`
@@ -115,11 +115,15 @@ While a repo is watched, the daemon SHALL send every watcher `worktreesChanged` 
 - **THEN** no `worktreesChanged` is sent
 
 ### Requirement: Repo discovery
-`discoverRepos{roots, depth}` SHALL return, sorted and without duplicates, the repositories found at most `depth` directory levels below each root, the root itself counting as level 0. A repository SHALL be a directory containing a `.git` directory, or a bare repository. Directories containing a `.git` file SHALL NOT be reported. The search SHALL NOT descend into a found repository, a symbolic link, a hidden directory or `node_modules`, and SHALL skip missing roots and unreadable directories. Directories SHALL be visited in sorted order and the result SHALL hold at most the first 4096 repositories in that order. Each root SHALL be resolved to its real path before the search, so every reported repository is a real path.
+`discoverRepos{roots, depth}` SHALL return, sorted and without duplicates, the repositories found at most `depth` directory levels below each root, the root itself counting as level 0. A root `~` SHALL mean the daemon's home directory and a root `~/<rest>` the path `<rest>` below it. A repository SHALL be a directory containing a `.git` directory, or a bare repository. Directories containing a `.git` file SHALL NOT be reported. The search SHALL NOT descend into a found repository, a symbolic link, a hidden directory or `node_modules`, and SHALL skip missing roots and unreadable directories. Directories SHALL be visited in sorted order and the result SHALL hold at most the first 4096 repositories in that order. Each root SHALL be resolved to its real path before the search, so every reported repository is a real path.
 
 #### Scenario: Depth respected
 - **WHEN** repos exist at levels 1 and 3 below a root and `depth` is 2
 - **THEN** only the level-1 repo is reported
+
+#### Scenario: Home-relative roots expanded by the daemon
+- **WHEN** the daemon's home holds `GitHub/app` as a repo and a client discovers with roots `~` and `~/GitHub` and `depth` 3
+- **THEN** the daemon reports the repo once, by its real path below the daemon's home
 
 #### Scenario: Linked worktrees and submodules excluded
 - **WHEN** a directory below a root contains a `.git` file

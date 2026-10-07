@@ -1,4 +1,5 @@
 import { chmodSync } from 'node:fs';
+import type { DaemonClient } from '../support/daemon-client.js';
 import { byTestId, pane, terminalBox, termTab, TID } from './contract.js';
 import {
   confirmClose,
@@ -39,8 +40,21 @@ import {
   startDrag,
   storeTabs,
 } from './panes.js';
+import type { WireRecorder } from './wire.js';
 
 const [, CAT] = PRESETS;
+const MAX_TABS = 64;
+
+/** Creates `count` silent terminals in `worktree` through `client`; returns their ids in order. */
+const quietTerms = async (client: DaemonClient, worktree: string, count: number): Promise<number[]> => {
+  const ids: number[] = [];
+  for (let i = 0; i < count; i++) ids.push((await client.create(worktree, { command: 'exec sleep 600' })).termId); // NOSONAR(S9382) — sequential setup
+  return ids;
+};
+
+/** Ids of the terminals created in reply to this page's own `createTerm` since `from`. */
+const createdTerms = (wire: WireRecorder, from: number): number[] =>
+  wire.receivedFromHost(LOCAL, from).flatMap((m) => (m.t === 'termCreated' && m.req !== null ? [m.term.termId] : []));
 
 test.describe('split panes', () => {
   test('splitting right shows the old terminal left and the new one right, focused, on every page', async ({
@@ -255,6 +269,77 @@ test.describe('dragging dividers', () => {
     }
   });
 
+  for (const end of ['pointercancel', 'lostpointercapture']) {
+    test(`a drag ended by ${end} stores its layout and ends`, async ({ hub, page, wire }) => {
+      const { repo } = makeRepoWith(hub, 'app', []);
+      hub.writeRepos([repo]);
+      await openUi(hub, page);
+      const left = await newTerminal(page);
+      const right = await splitPane(page, 'right');
+      const mark = wire.markSent();
+      await startDrag(page, '', 'right', await pointFor(page, left, right, 'right', 0.3));
+      await expect.poll(() => shareOf(page, left, right, 'right')).toBeCloseTo(0.3, 1);
+
+      await divider(page, '').dispatchEvent(end);
+      await expect.poll(() => layoutsSent(wire, mark).length).toBe(1);
+      await page.mouse.move(await pointFor(page, left, right, 'right', 0.7), 300, { steps: 5 });
+      await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+      expect(await shareOf(page, left, right, 'right')).toBeCloseTo(0.3, 1);
+      await page.mouse.up();
+      expect(layoutsSent(wire, mark)).toHaveLength(1);
+    });
+  }
+
+  test('echoes of earlier writes of the page arriving during a drag neither end it nor move the shown tab', async ({ hub, page }) => {
+    // Holds every hub message while `holding`, then delivers them in order, as a slow link would.
+    let holding = false;
+    const held: string[] = [];
+    let deliver: (m: string) => void = () => undefined;
+    await page.routeWebSocket(/./, (ws) => {
+      const server = ws.connectToServer();
+      deliver = (m) => {
+        ws.send(m);
+      };
+      ws.onMessage((m) => {
+        server.send(m);
+      });
+      server.onMessage((m) => {
+        if (typeof m !== 'string') ws.send(m);
+        else if (holding) held.push(m);
+        else ws.send(m);
+      });
+    });
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const [left = 0, right = 0, other = 0] = await createTerms(client, repo, 3);
+    await storeTabs(client, repo, [split('right', leaf(left), leaf(right)), leaf(other)]);
+    await expect.poll(() => paneIds(page)).toEqual([left, right]);
+    await page.locator(terminalBox(LOCAL, left)).click();
+
+    holding = true;
+    await page.keyboard.press('Alt+ArrowRight');
+    await expect.poll(() => paneIds(page)).toEqual([other]);
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect.poll(() => paneIds(page)).toEqual([left, right]);
+    await startDrag(page, '', 'right', await pointFor(page, left, right, 'right', 0.3));
+    await expect.poll(() => shareOf(page, left, right, 'right')).toBeCloseTo(0.3, 1);
+    holding = false;
+    for (const m of held.splice(0)) deliver(m);
+
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(await paneIds(page)).toEqual([left, right]);
+    await page.mouse.move(await pointFor(page, left, right, 'right', 0.7), 300, { steps: 5 });
+    await expect.poll(() => shareOf(page, left, right, 'right')).toBeCloseTo(0.7, 1);
+    await page.mouse.up();
+    const stored = await client.waitFor('layoutChanged', (m) => {
+      const root = activeRoot(m.layout);
+      return root !== undefined && 'split' in root && Math.abs(root.ratio - 0.7) < 0.05;
+    });
+    expect(stored.layout.active).toBe(0);
+  });
+
   test('a pane closed elsewhere during a drag ends the drag and shows the layout without it', async ({ hub, page, wire }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
@@ -283,7 +368,7 @@ test.describe('dragging dividers', () => {
   });
 
   test('a layout the daemon rejects is replaced by the last layout it reported', async ({ hub, page, wire }) => {
-    test.skip(process.getuid?.() === 0, 'root writes into a read-only directory');
+    test.skip(process.getuid?.() === 0, 'root writes into a read-only directory'); // NOSONAR(S1607) — runs everywhere but as root, where the rejection cannot be provoked
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
@@ -330,6 +415,56 @@ test.describe('pane limit and concurrent splits', () => {
     await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(page.locator(byTestId(TID.presetPicker))).toHaveCount(0);
     expect(createsSent(wire, mark)).toEqual([]);
+  });
+
+  test('a terminal a full layout misses is shown when chosen, and no layout is stored for it', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const terms = await quietTerms(client, repo, MAX_TABS + 1);
+    const outside = terms.at(-1) ?? 0;
+    await storeTabs(client, repo, terms.slice(0, MAX_TABS).map(leaf));
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(MAX_TABS + 1);
+    await expect(page.locator(byTestId(TID.newTab))).toBeDisabled();
+    const mark = wire.markSent();
+
+    await page.locator(termTab(outside)).click();
+    await expect.poll(() => paneIds(page)).toEqual([outside]);
+    await expect(page.locator(termTab(outside))).toHaveAttribute('aria-selected', 'true');
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(layoutsSent(wire, mark)).toEqual([]);
+
+    const [, second = 0] = terms;
+    await page.locator(termTab(second)).click();
+    await expect.poll(() => paneIds(page)).toEqual([second]);
+    await expect.poll(() => layoutsSent(wire, mark).map((l) => l.active)).toEqual([1]);
+  });
+
+  test('a terminal created as the layout fills up is shown although the layout cannot take it', async ({ hub, page, wire }) => {
+    hub.presets = PRESETS.slice(0, 1);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const terms = await quietTerms(client, repo, MAX_TABS - 1);
+    await storeTabs(client, repo, terms.map(leaf));
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(MAX_TABS - 1);
+    const mark = wire.markSent();
+
+    // Both requests leave before either terminal is created.
+    await page.evaluate(() => {
+      for (let i = 0; i < 2; i++) {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true, bubbles: true }));
+      }
+    });
+    await expect.poll(() => createdTerms(wire, mark).length).toBe(2);
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(MAX_TABS + 1);
+    await expect.poll(() => layoutsSent(wire, mark).at(-1)?.tabs.length).toBe(MAX_TABS);
+    const stored = layoutsSent(wire, mark).at(-1);
+    const outside = createdTerms(wire, mark).filter((id) => !stored?.tabs.some((t) => 'term' in t.root && t.root.term === id));
+    expect(outside).toHaveLength(1);
+    await expect.poll(() => paneIds(page)).toEqual(outside);
   });
 
   test('two pages splitting the same tab at once both keep their new terminal visible', async ({ hub, page, wire, context }) => {

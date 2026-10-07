@@ -20,6 +20,8 @@ const EMPTY: RepoState = { worktrees: [], terminals: [], checked: [], layouts: n
 
 export const repoKey = (host: number, repo: string): string => `${String(host)}:${repo}`;
 
+const writeKey = (host: number, worktree: string): string => `${String(host)}:${worktree}`;
+
 /** The page's view of the hub and its daemons, as signals. */
 export class HubStore {
   readonly status = signal<ConnectionStatus>('connecting');
@@ -32,6 +34,8 @@ export class HubStore {
   readonly presets = signal<readonly Preset[] | null>(null);
   /** The layouts each repo's daemon last reported, by `repoKey` and worktree. */
   private readonly reported = new Map<string, Map<string, Layout>>();
+  /** Our `setLayout` requests not yet answered, by host and worktree. */
+  private readonly writes = new Map<string, number>();
 
   setPresets(presets: readonly Preset[]): void {
     this.presets.value = presets;
@@ -59,7 +63,8 @@ export class HubStore {
   clearHost(host: number): void {
     const prefix = `${String(host)}:`;
     this.repos.value = new Map([...this.repos.value].filter(([key]) => !key.startsWith(prefix)));
-    for (const key of [...this.reported.keys()]) if (key.startsWith(prefix)) this.reported.delete(key);
+    for (const key of this.reported.keys()) if (key.startsWith(prefix)) this.reported.delete(key);
+    for (const key of this.writes.keys()) if (key.startsWith(prefix)) this.writes.delete(key);
   }
 
   /** Applies a daemon event of `host` to the repo states. */
@@ -105,7 +110,8 @@ export class HubStore {
       case 'layoutChanged': {
         const repo = this.repoOf(host, m.worktree);
         if (repo !== null) this.reported.get(repoKey(host, repo))?.set(m.worktree, m.layout);
-        this.setLayout(host, m.worktree, m.layout);
+        // An echo of an earlier write of ours must not replace a newer layout we show.
+        if (!this.writes.has(writeKey(host, m.worktree))) this.setLayout(host, m.worktree, m.layout);
         return;
       }
       case 'done':
@@ -116,13 +122,30 @@ export class HubStore {
     }
   }
 
-  /** Sets the layout of `worktree`, as the daemon will once it applies our `setLayout`. */
-  setLayout(host: number, worktree: string, layout: Layout): void {
+  /** Shows `layout` for `worktree` at once, as the daemon will once our `setLayout` of it lands; `layoutWritten` follows its answer. */
+  writeLayout(host: number, worktree: string, layout: Layout): void {
+    const key = writeKey(host, worktree);
+    this.writes.set(key, (this.writes.get(key) ?? 0) + 1);
+    this.setLayout(host, worktree, layout);
+  }
+
+  /** One of our `setLayout` requests for `worktree` was answered; once none is left, shows the layout the daemon last reported. */
+  layoutWritten(host: number, worktree: string): void {
+    const key = writeKey(host, worktree);
+    const left = (this.writes.get(key) ?? 0) - 1;
+    if (left > 0) {
+      this.writes.set(key, left);
+      return;
+    }
+    this.writes.delete(key);
+    this.showReported(host, worktree);
+  }
+
+  private setLayout(host: number, worktree: string, layout: Layout): void {
     this.inRepoOf(host, worktree, (state) => ({ ...state, layouts: new Map([...state.layouts, [worktree, layout]]) }));
   }
 
-  /** Shows the layout of `worktree` the daemon last reported again, after our `setLayout` failed. */
-  revertLayout(host: number, worktree: string): void {
+  private showReported(host: number, worktree: string): void {
     const repo = this.repoOf(host, worktree);
     if (repo === null) return;
     const reported = this.reported.get(repoKey(host, repo))?.get(worktree);

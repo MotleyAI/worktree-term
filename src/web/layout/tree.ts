@@ -34,8 +34,15 @@ export const clampRatio = (ratio: number): number => Math.min(MAX_RATIO, Math.ma
 /** Index of the tab holding `termId`, or -1. */
 export const tabOf = (layout: Layout | null, termId: number): number => (layout?.tabs ?? []).findIndex((tab) => holds(tab.root, termId));
 
-/** The tabs of a worktree: each layout tab by its first live terminal, then live terminals the layout misses. */
-export const terminalTabs = (layout: Layout | null, live: readonly number[]): { tabs: TerminalTab[]; active: number | null } => {
+/**
+ * The tabs of a worktree: each layout tab by its first live terminal, then live terminals the layout misses.
+ * `shown`, a live terminal the layout misses, is active in place of the layout's active tab.
+ */
+export const terminalTabs = (
+  layout: Layout | null,
+  live: readonly number[],
+  shown: number | null = null,
+): { tabs: TerminalTab[]; active: number | null } => {
   const alive = new Set(live);
   const tabs: TerminalTab[] = [];
   let active: number | null = null;
@@ -48,6 +55,7 @@ export const terminalTabs = (layout: Layout | null, live: readonly number[]): { 
   for (const termId of live) {
     if (tabOf(layout, termId) < 0) tabs.push({ termId, inLayout: false });
   }
+  if (tabs.some((t) => t.termId === shown && !t.inLayout)) active = shown;
   return { tabs, active: active ?? tabs[0]?.termId ?? null };
 };
 

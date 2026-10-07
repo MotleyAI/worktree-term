@@ -63,8 +63,9 @@ describe('wtd connect', () => {
     const state = await client.watch(repo);
     expect(state.worktrees.map((w) => w.path)).toEqual([repo]);
     const term = await client.create(repo, { command: 'echo through-the-bridge; exec sleep 60' });
-    await client.attach(term.termId);
-    await client.waitOutput(term.termId, 'through-the-bridge');
+    const view = await client.attach(term.termId);
+    // The line may precede the attach, so it is looked for in the snapshot and the output alike.
+    await waitUntil(async () => (await view.screen.text()).includes('through-the-bridge'), 'the echoed line on the screen');
     expect(client.decodeError).toBeNull();
   });
 

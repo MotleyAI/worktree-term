@@ -99,6 +99,16 @@ describe('terminalTabs', () => {
     });
   });
 
+  it('makes a shown terminal the layout misses the active tab', () => {
+    expect(terminalTabs(twoTabs, [5, 1, 2, 7], 7).active).toBe(7);
+    expect(terminalTabs(null, [4, 9], 9).active).toBe(9);
+  });
+
+  it('ignores a shown terminal that the layout holds or that is gone', () => {
+    expect(terminalTabs(twoTabs, [5, 1, 2], 1).active).toBe(2);
+    expect(terminalTabs(twoTabs, [5, 1, 2], 7).active).toBe(2);
+  });
+
   it('shows the first tab of terminals without a layout', () => {
     expect(terminalTabs(null, [4, 9])).toEqual({
       tabs: [

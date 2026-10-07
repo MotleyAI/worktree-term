@@ -274,11 +274,12 @@ export const confirmClose = async (page: Page): Promise<void> => {
   await expect(dialog).toHaveCount(0);
 };
 
-/** The mark shown inside the element `selector` finds; null without one. */
-export const markOf = async (page: Page, selector: string): Promise<string | null> => {
-  const mark = page.locator(selector).locator(byTestId(TID.mark));
-  return (await mark.count()) === 0 ? null : mark.getAttribute('data-mark');
-};
+/** The mark shown inside the element `selector` finds; null without one. Reads in one step, so a mark vanishing meanwhile cannot stall it. */
+export const markOf = (page: Page, selector: string): Promise<string | null> =>
+  page
+    .locator(selector)
+    .locator(byTestId(TID.mark))
+    .evaluateAll((marks) => (marks[0] instanceof HTMLElement ? (marks[0].dataset['mark'] ?? null) : null));
 
 /** Types `line` and Enter into the terminal. */
 export const typeLine = async (page: Page, termId: number, line: string, host = LOCAL): Promise<void> => {

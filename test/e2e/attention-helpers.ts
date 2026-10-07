@@ -11,7 +11,7 @@ export const COMMANDS = {
   /** Prints a line every 0.3 s, so it never becomes idle. */
   ticker: 'while :; do echo TICK; sleep 0.3; done',
   /** Rings the bell once, well after start, then stays silent. */
-  ring: "sleep 1.5; printf '\\a'; exec sleep 600",
+  ring: String.raw`sleep 1.5; printf '\a'; exec sleep 600`,
   /** Prints one line, then stays silent. */
   oneLine: "echo ONE''-LINE; exec sleep 600",
   /** Prints nothing. */
@@ -32,10 +32,11 @@ export const expectMark = async (page: Page, selector: string, mark: Mark | null
 };
 
 /** The `title` of the mark inside the element `selector` finds; '' without one. */
-export const markTitle = async (page: Page, selector: string): Promise<string> => {
-  const mark = page.locator(selector).locator(byTestId(TID.mark));
-  return (await mark.count()) === 0 ? '' : ((await mark.getAttribute('title')) ?? '');
-};
+export const markTitle = (page: Page, selector: string): Promise<string> =>
+  page
+    .locator(selector)
+    .locator(byTestId(TID.mark))
+    .evaluateAll((marks) => marks[0]?.getAttribute('title') ?? '');
 
 /** Whether `title` names each mark of `counts` with its number, one mark per comma-, semicolon- or line-separated part. */
 export const titleGives = (title: string, counts: Partial<Record<Mark, number>>): boolean => {

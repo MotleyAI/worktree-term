@@ -171,7 +171,7 @@ const PaneFrame = ({ pane, focused, view }: { pane: ShownPane; focused: boolean;
     data-focused={focused ? 'true' : undefined}
     style={{ left: px(pane.rect.left), top: px(pane.rect.top), width: px(pane.rect.width), height: px(pane.rect.height) }}
   >
-    <div
+    <div // NOSONAR(S6848) — a pointer shortcut; the keyboard moves between panes with Alt+arrows
       class="pane-header"
       style={{ height: px(PANE_HEADER) }}
       onMouseDown={() => {
@@ -216,6 +216,12 @@ const DividerHandle = ({ divider, view }: { divider: Divider; view: View }) => (
     onPointerUp={() => {
       view.endDrag();
     }}
+    onPointerCancel={() => {
+      view.endDrag();
+    }}
+    onLostPointerCapture={() => {
+      view.endDrag();
+    }}
   />
 );
 
@@ -248,6 +254,7 @@ const PresetList = ({
     <div
       class="preset-list"
       role="listbox"
+      tabIndex={-1}
       ref={list}
       onKeyDown={(event) => {
         const key = pickerKey(event.key, index, presets.length);
@@ -285,7 +292,7 @@ const PresetList = ({
 
 /** The picker for a new terminal; any pointer press outside it cancels it. */
 const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDialogElement>(null);
   const picker = view.picker.value;
   const open = picker !== null;
   useLayoutEffect(() => {
@@ -300,7 +307,7 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
   }, [view, open]);
   if (picker === null) return null;
   return (
-    <div class="preset-picker" data-testid="preset-picker" role="dialog" aria-label="New terminal" ref={box}>
+    <dialog open class="preset-picker" data-testid="preset-picker" aria-label="New terminal" ref={box}>
       <div class="title">{picker.context.op.t === 'newTab' ? 'New tab' : `Split ${picker.context.op.dir}`}</div>
       <PresetList
         presets={presets}
@@ -316,7 +323,7 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
           view.cancelPicker();
         }}
       />
-    </div>
+    </dialog>
   );
 };
 
@@ -342,20 +349,22 @@ const PresetChoices = ({ view, presets }: { view: View; presets: readonly Preset
 };
 
 const CloseDialog = ({ view, request }: { view: View; request: CloseRequest }) => {
-  const dialog = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
     dialog.current?.focus();
   }, []);
   return (
-    <div
+    <dialog
+      open
       class="close-dialog"
       data-testid="close-dialog"
-      role="dialog"
       aria-label="Close terminals"
       tabIndex={-1}
       ref={dialog}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== 'Escape') return;
+        // A focused button acts on its own click.
+        if (event.key === 'Enter' && event.target !== event.currentTarget) return;
         event.preventDefault();
         event.stopPropagation();
         if (event.key === 'Enter') view.confirmClose();
@@ -390,7 +399,7 @@ const CloseDialog = ({ view, request }: { view: View; request: CloseRequest }) =
           Cancel
         </button>
       </div>
-    </div>
+    </dialog>
   );
 };
 

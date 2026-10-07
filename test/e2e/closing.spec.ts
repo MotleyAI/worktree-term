@@ -74,6 +74,22 @@ test.describe('closing terminals', () => {
     await expect.poll(() => paneIds(page)).toEqual([left]);
   });
 
+  test('Enter on the focused Cancel button closes nothing', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const { left, right } = await twoPanes(page);
+    const mark = wire.markSent();
+
+    await page.keyboard.press('Control+Shift+KeyW');
+    await dialogOf(page).locator(byTestId(TID.closeCancel)).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialogOf(page)).toHaveCount(0);
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(closesSent(wire, mark)).toEqual([]);
+    expect(await paneIds(page)).toEqual([left, right]);
+  });
+
   test('closing a tab of two running panes and confirming closes both, and the tab leaves every page', async ({
     hub,
     page,

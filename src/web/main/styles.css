@@ -230,6 +230,14 @@ button {
   box-shadow: 0 4px 16px rgb(0 0 0 / 50%);
 }
 
+/* Undo the user agent's centring and colours of an open dialog. */
+dialog.preset-picker,
+dialog.close-dialog {
+  right: auto;
+  margin: 0;
+  color: inherit;
+}
+
 .preset-picker,
 .preset-choices {
   position: absolute;

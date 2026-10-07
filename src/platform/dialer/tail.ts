@@ -2,7 +2,7 @@ import type { Readable } from 'node:stream';
 
 const MAX_TAIL = 4096;
 const MAX_REASON = 1024;
-/** Most standard error read from one process; the rest is left unread, so a flood cannot grow memory. */
+/** Most standard error read from one process, so a flood cannot grow memory. */
 const MAX_READ = 1024 * 1024;
 
 // eslint-disable-next-line no-control-regex -- control characters are what a reason must not contain
@@ -16,13 +16,19 @@ export class StderrTail {
     return this.bytes.length;
   }
 
-  /** Feeds the tail from `stream`, closing it once 1 MiB has been read. */
-  follow(stream: Readable): void {
+  /**
+   * Feeds the tail from `stream`. Once 1 MiB has been read it closes the stream and calls `full`:
+   * a writer left without a reader blocks, so the caller should end it.
+   */
+  follow(stream: Readable, full?: () => void): void {
     let read = 0;
     stream.on('data', (chunk: Buffer) => {
+      if (stream.destroyed) return;
       read += chunk.length;
       this.push(chunk);
-      if (read >= MAX_READ) stream.destroy();
+      if (read < MAX_READ) return;
+      stream.destroy();
+      full?.();
     });
   }
 

@@ -51,7 +51,7 @@ const absolutePath = z.string().max(MAX_PATH).regex(NO_NUL, 'must not contain NU
 const roots = z.array(discoveryRootSchema).min(1).max(MAX_ROOTS);
 
 // eslint-disable-next-line no-control-regex -- control characters are what aliases must not contain
-const SSH_ALIAS = /^[^-\s\u0000-\u001f\u007f][^\s\u0000-\u001f\u007f]*$/;
+const SSH_ALIAS = /^[^-\s\u0000-\u0008\u000e-\u001f\u007f][^\s\u0000-\u0008\u000e-\u001f\u007f]*$/;
 
 const remoteHost = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, 'must be 1–64 characters from A–Z, a–z, 0–9, ., _ and -'),

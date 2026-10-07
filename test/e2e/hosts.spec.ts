@@ -104,7 +104,7 @@ test.describe('host actions', () => {
       await openHostAction(page, LOCAL, 'Restart daemon');
       await page.locator(byTestId(TID.confirmDialog)).locator(byTestId(TID.confirmCancel)).click();
       await expect(page.locator(byTestId(TID.confirmDialog))).toHaveCount(0);
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
       expect(hubRequests(wire, mark)).toEqual([]);
       expect(fake.shutdowns).toBe(0);
       await expect(page.locator(hostBanner(LOCAL))).toContainText('outdated');

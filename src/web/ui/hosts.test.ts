@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasBanner, hostAction, offeredRepos } from './hosts.js';
+import { hasBanner, hostAction, Latest, offeredRepos } from './hosts.js';
 
 describe('hostAction', () => {
   it.each([
@@ -38,5 +38,23 @@ describe('offeredRepos', () => {
     expect(offeredRepos(discovered, [], 'beta')).toEqual(['/r/beta', '/r/betamax']);
     expect(offeredRepos(discovered, [], 'max')).toEqual(['/r/betamax']);
     expect(offeredRepos(discovered, [], 'zzz')).toEqual([]);
+  });
+});
+
+describe('Latest', () => {
+  it('counts only the latest request', () => {
+    const latest = new Latest();
+    const first = latest.start();
+    const second = latest.start();
+    expect(latest.isLatest(first)).toBe(false);
+    expect(latest.isLatest(second)).toBe(true);
+  });
+
+  it('makes every started request stale on drop', () => {
+    const latest = new Latest();
+    const request = latest.start();
+    latest.drop();
+    expect(latest.isLatest(request)).toBe(false);
+    expect(latest.isLatest(latest.start())).toBe(true);
   });
 });

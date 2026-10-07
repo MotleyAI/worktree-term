@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
@@ -14,8 +15,10 @@ import { delimiter, join } from 'node:path';
 import { DaemonClient, type EventOf } from './daemon-client.js';
 import { alive, hostFileName, waitUntil, type DaemonHost, type Exit } from './daemon-host.js';
 
+const QUOTED_QUOTE = String.raw`'\''`;
+
 /** POSIX single-quoted form of `value`. */
-export const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+export const shellQuote = (value: string): string => `'${value.replaceAll("'", QUOTED_QUOTE)}'`;
 
 const NODE_NAMES = new Set(['node', 'nodejs', 'npm', 'npx', 'corepack', 'pnpm', 'yarn']);
 
@@ -69,10 +72,10 @@ esac
   return dir;
 };
 
-const SSH_SCRIPT = (dir: string): string => `#!/bin/sh
+const SSH_SCRIPT = (dir: string): string => String.raw`#!/bin/sh
 d=${shellQuote(dir)}
 f="$d/calls/$$"
-for a in "$@"; do printf '%s\\0' "$a"; done > "$f.tmp" && mv "$f.tmp" "$f"
+for a in "$@"; do printf '%s\0' "$a"; done > "$f.tmp" && mv "$f.tmp" "$f"
 while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
 if [ "$#" -ne 3 ]; then echo "fake ssh: expected -- <alias> <command>" >&2; exit 255; fi
 alias=$2
@@ -80,8 +83,11 @@ cmd=$3
 h="$d/hosts/$alias"
 if [ ! -f "$h" ]; then echo "ssh: Could not resolve hostname $alias: Name or service not known" >&2; exit 255; fi
 . "$h"
-if [ -n "$R_FAIL_LINE" ]; then printf '%s\\n' "$R_FAIL_LINE" >&2; exit 255; fi
-if [ -n "$R_FAIL_BYTES" ]; then head -c "$R_FAIL_BYTES" /dev/zero | tr '\\000' x >&2; exit 255; fi
+if [ -n "$R_HANG" ]; then trap '' TERM; exec sleep 600; fi
+if [ -n "$R_GATE" ]; then while [ ! -e "$R_GATE" ]; do sleep 0.05; done; fi
+if [ -n "$R_FAIL_LINE" ]; then printf '%s\n' "$R_FAIL_LINE" >&2; exit 255; fi
+if [ -n "$R_FAIL_BYTES" ]; then head -c "$R_FAIL_BYTES" /dev/zero | tr '\000' x >&2; exit 255; fi
+if [ -n "$R_NOISE_BYTES" ]; then head -c "$R_NOISE_BYTES" /dev/zero | tr '\000' x >&2; fi
 cd "$R_HOME" || exit 255
 exec env -i HOME="$R_HOME" PATH="$R_PATH" SHELL="$R_SHELL" LANG=C.UTF-8 USER="$USER" /bin/sh -c "$cmd"
 `;
@@ -234,6 +240,25 @@ export class FakeSsh {
   /** Makes every SSH run for `alias` write `bytes` bytes without a newline to standard error and exit 255. */
   spewHost(alias: string, bytes: number): void {
     this.writeHost(alias, { R_FAIL_BYTES: String(bytes) });
+  }
+
+  /** Makes every later SSH run for `alias` hang, ignoring SIGTERM and its standard input. */
+  hangHost(alias: string): void {
+    appendFileSync(join(this.hostsDir, alias), 'R_HANG=1\n');
+  }
+
+  /** Makes every later SSH run for `alias` write `bytes` bytes to standard error before running its command. */
+  noisyHost(alias: string, bytes: number): void {
+    appendFileSync(join(this.hostsDir, alias), `R_NOISE_BYTES=${String(bytes)}\n`);
+  }
+
+  /** Holds every later SSH run for `alias` until the returned function is called. */
+  holdHost(alias: string): () => void {
+    const gate = join(this.dir, `gate-${alias}`);
+    appendFileSync(join(this.hostsDir, alias), `R_GATE=${shellQuote(gate)}\n`);
+    return () => {
+      writeFileSync(gate, '');
+    };
   }
 
   /** Every run so far, in no particular order. */

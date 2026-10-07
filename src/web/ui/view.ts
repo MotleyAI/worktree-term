@@ -24,7 +24,7 @@ import {
 } from '../layout/index.js';
 import type { Box, TerminalManager } from '../terminals/index.js';
 import { closeTargets, needsConfirm } from './closing.js';
-import { hostAction, offeredRepos, type HostAction } from './hosts.js';
+import { hostAction, Latest, offeredRepos, type HostAction } from './hosts.js';
 import { keymap, type Action } from './keymap.js';
 import { pickerValid, type PickerContext, type PickerOp, type PickerWorld } from './picker.js';
 import { repoTabs, type RepoTab } from './repo-tabs.js';
@@ -147,8 +147,10 @@ export type Confirmation =
 /** The add-repo dialog. */
 export interface AddRepoDialog {
   host: number;
-  /** Repos discovered on the host; null while discovery runs. */
+  /** Repos discovered on the host; null until discovery answers. */
   discovered: readonly string[] | null;
+  /** Whether discovery runs once the host is connected: none has run yet, or the last one failed. */
+  pending: boolean;
   filter: string;
   path: string;
   error: string | null;
@@ -300,6 +302,10 @@ export class View {
 
   private shownKey = '';
   private focusKey = '';
+  /** Whether the add-repo dialog discovered since its host last became connected. */
+  private discoveredSinceConnect = false;
+  /** The add-repo discovery whose answer the dialog shows. */
+  private readonly discovery = new Latest();
 
   constructor(
     private readonly client: HubClient,
@@ -316,6 +322,9 @@ export class View {
     });
     effect(() => {
       this.checkDrag();
+    });
+    effect(() => {
+      this.checkAddRepo();
     });
     manager.onFocus((host, termId) => {
       if (host === this.tab.peek()?.host) this.focusPane(termId);
@@ -483,18 +492,12 @@ export class View {
     this.changeAddRepoHost(this.tab.value?.host ?? 0);
   }
 
-  /** Shows the add-repo dialog for `host`, discovering its repos. */
+  /** Shows the add-repo dialog for `host`, discovering its repos once it is connected. */
   changeAddRepoHost(host: number): void {
-    const dialog = this.addRepo.value;
-    this.addRepo.value = { host, discovered: null, filter: dialog?.filter ?? '', path: dialog?.path ?? '', error: null };
-    this.client
-      .discoverRepos(host)
-      .then((repos) => {
-        this.updateAddRepo(host, { discovered: repos });
-      })
-      .catch((error: unknown) => {
-        this.updateAddRepo(host, { discovered: [], error: describe(error) });
-      });
+    const dialog = this.addRepo.peek();
+    this.discoveredSinceConnect = false;
+    this.discovery.drop();
+    this.addRepo.value = { host, discovered: null, pending: true, filter: dialog?.filter ?? '', path: dialog?.path ?? '', error: null };
   }
 
   setAddRepoField(field: 'filter' | 'path', value: string): void {
@@ -503,6 +506,7 @@ export class View {
   }
 
   closeAddRepo(): void {
+    this.discovery.drop();
     this.addRepo.value = null;
   }
 
@@ -521,6 +525,29 @@ export class View {
       })
       .catch((error: unknown) => {
         this.updateAddRepo(host, { error: describe(error) });
+      });
+  }
+
+  /** Runs the dialog's pending discovery once its host is connected; a failed one again only after a reconnect. */
+  private checkAddRepo(): void {
+    const dialog = this.addRepo.value;
+    const hosts = this.client.store.hosts.value;
+    if (dialog === null || !hosts.some((h) => h.idx === dialog.host && h.status === 'connected')) {
+      this.discoveredSinceConnect = false;
+      return;
+    }
+    if (!dialog.pending || this.discoveredSinceConnect) return;
+    this.discoveredSinceConnect = true;
+    const { host } = dialog;
+    const discovery = this.discovery.start();
+    this.addRepo.value = { ...dialog, pending: false };
+    this.client
+      .discoverRepos(host)
+      .then((repos) => {
+        if (this.discovery.isLatest(discovery)) this.updateAddRepo(host, { discovered: repos, error: null });
+      })
+      .catch((error: unknown) => {
+        if (this.discovery.isLatest(discovery)) this.updateAddRepo(host, { discovered: [], pending: true, error: describe(error) });
       });
   }
 

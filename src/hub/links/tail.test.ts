@@ -1,3 +1,5 @@
+import { once } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { StderrTail } from './tail.js';
 
@@ -60,5 +62,20 @@ describe('StderrTail', () => {
 
   it('gives the latest line after a long burst', () => {
     expect(tailOf('z'.repeat(100_000), '\nssh: Connection timed out\n').reason()).toBe('ssh: Connection timed out');
+  });
+
+  it('closes a stream after 1 MiB and reports it full once', async () => {
+    const tail = new StderrTail();
+    const stream = new PassThrough();
+    stream.on('error', () => undefined);
+    let full = 0;
+    tail.follow(stream, () => {
+      full++;
+    });
+    const chunk = bytes('w'.repeat(64 * 1024));
+    for (let i = 0; i < 32 && !stream.destroyed; i++) stream.write(chunk);
+    await once(stream, 'close');
+    expect(full).toBe(1);
+    expect(tail.size).toBeLessThanOrEqual(4096);
   });
 });

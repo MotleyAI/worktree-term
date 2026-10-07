@@ -20,7 +20,7 @@ export const packageVersion = (): string => {
 export const expectOneLine = (text: string): void => {
   expect(text.trimEnd()).not.toBe('');
   expect(text.trimEnd()).not.toContain('\n');
-  expect(text).not.toMatch(/\n\s+at /);
+  expect(text).not.toMatch(/\n[ \t]+at /);
 };
 
 /** Where an installation in `home` puts its files. */
@@ -119,8 +119,8 @@ export const fakeSystemctl = (dir: string, log: string, failOn: string | null = 
     failOn === null ? '' : `for a in "$@"; do [ "$a" = ${shellQuote(failOn)} ] && { echo "Failed to ${failOn}" >&2; exit 1; }; done\n`;
   writeFileSync(
     path,
-    `#!/bin/sh
-${shellQuote(process.execPath)} -e 'require("node:fs").appendFileSync(process.argv[1], JSON.stringify(process.argv.slice(2)) + "\\n")' ${shellQuote(log)} "$@"
+    String.raw`#!/bin/sh
+${shellQuote(process.execPath)} -e 'require("node:fs").appendFileSync(process.argv[1], JSON.stringify(process.argv.slice(2)) + "\n")' ${shellQuote(log)} "$@"
 ${fail}for a in "$@"; do
   if [ "$a" = start ]; then setsid "$HOME/.local/bin/wtd" daemon </dev/null >/dev/null 2>&1 & exit 0; fi
 done
@@ -177,27 +177,69 @@ export const iniGroup = (text: string, group: string): Map<string, string> => {
 export const desktopString = (raw: string): string =>
   raw.replace(/\\(.)/g, (_match, c: string) => ({ s: ' ', n: '\n', t: '\t', r: '\r', '\\': '\\' })[c] ?? `\\${c}`);
 
-/** The argv of a desktop entry `Exec` value, per the Desktop Entry specification. */
-export const desktopExec = (raw: string): string[] => {
-  const value = desktopString(raw);
+/** A read position in a text. */
+class Scanner {
+  pos = 0;
+
+  constructor(readonly text: string) {}
+
+  get done(): boolean {
+    return this.pos >= this.text.length;
+  }
+
+  peek(): string {
+    return this.text[this.pos] ?? '';
+  }
+
+  next(): string {
+    const c = this.peek();
+    this.pos++;
+    return c;
+  }
+
+  take(count: number): string {
+    const taken = this.text.slice(this.pos, this.pos + count);
+    this.pos += count;
+    return taken;
+  }
+}
+
+/** Words split on unquoted `separators`; `word` reads on from the scanner, given the word so far. */
+const splitWords = (text: string, separators: string, word: (s: Scanner, arg: string | null) => string): string[] => {
+  const s = new Scanner(text);
   const args: string[] = [];
   let arg: string | null = null;
-  for (let i = 0; i < value.length; i++) {
-    const c = value[i] ?? '';
-    if (c === ' ') {
+  while (!s.done) {
+    if (separators.includes(s.peek())) {
+      s.next();
       if (arg !== null) args.push(arg);
       arg = null;
-    } else if (c === '"') {
-      arg ??= '';
-      for (i++; i < value.length && value[i] !== '"'; i++) {
-        const q = value[i] ?? '';
-        if (q === '\\' && '"`$\\'.includes(value[i + 1] ?? '')) arg += value[++i] ?? '';
-        else arg += q;
-      }
-      if (i >= value.length) throw new Error(`unterminated quote in Exec ${raw}`);
-    } else arg = (arg ?? '') + c;
+    } else arg = word(s, arg);
   }
   if (arg !== null) args.push(arg);
+  return args;
+};
+
+/** The rest of a quoted part up to `quote`, which is consumed; `escaped` reads after a backslash. */
+const quoted = (s: Scanner, quote: string, escaped: (s: Scanner) => string, what: string): string => {
+  let arg = '';
+  while (!s.done && s.peek() !== quote) {
+    const c = s.next();
+    arg += c === '\\' ? escaped(s) : c;
+  }
+  if (s.done) throw new Error(`unterminated quote in ${what}`);
+  s.next();
+  return arg;
+};
+
+/** The argv of a desktop entry `Exec` value, per the Desktop Entry specification. */
+export const desktopExec = (raw: string): string[] => {
+  const what = `Exec ${raw}`;
+  const escaped = (s: Scanner): string => ('"`$\\'.includes(s.peek()) ? s.next() : '\\');
+  const args = splitWords(desktopString(raw), ' ', (s, arg) => {
+    const c = s.next();
+    return (arg ?? '') + (c === '"' ? quoted(s, '"', escaped, what) : c);
+  });
   return args.map((a) => {
     if (/%[^%]/.test(a.replaceAll('%%', ''))) throw new Error(`field code in Exec argument ${a}`);
     return a.replaceAll('%%', '%');
@@ -220,37 +262,19 @@ const C_ESCAPES: Record<string, string> = {
 
 /** The argv of a systemd `ExecStart` value: quoting, C escapes, `%%` and `$$`. */
 export const systemdExec = (raw: string): string[] => {
-  const args: string[] = [];
-  let arg: string | null = null;
-  const escape = (i: number): [string, number] => {
-    const c = raw[i + 1] ?? '';
-    if (c === 'x') return [String.fromCharCode(parseInt(raw.slice(i + 2, i + 4), 16)), i + 3];
+  const what = `ExecStart ${raw}`;
+  const escaped = (s: Scanner): string => {
+    const c = s.next();
+    if (c === 'x') return String.fromCodePoint(Number.parseInt(s.take(2), 16));
     const mapped = C_ESCAPES[c];
-    if (mapped === undefined) throw new Error(`unknown escape \\${c} in ExecStart ${raw}`);
-    return [mapped, i + 1];
+    if (mapped === undefined) throw new Error(`unknown escape \\${c} in ${what}`);
+    return mapped;
   };
-  for (let i = 0; i < raw.length; i++) {
-    const c = raw[i] ?? '';
-    if (c === ' ' || c === '\t') {
-      if (arg !== null) args.push(arg);
-      arg = null;
-    } else if ((c === '"' || c === "'") && arg === null) {
-      arg = '';
-      for (i++; i < raw.length && raw[i] !== c; i++) {
-        if (raw[i] === '\\') {
-          const [text, at] = escape(i);
-          arg += text;
-          i = at;
-        } else arg += raw[i] ?? '';
-      }
-      if (i >= raw.length) throw new Error(`unterminated quote in ExecStart ${raw}`);
-    } else if (c === '\\') {
-      const [text, at] = escape(i);
-      arg = (arg ?? '') + text;
-      i = at;
-    } else arg = (arg ?? '') + c;
-  }
-  if (arg !== null) args.push(arg);
+  const args = splitWords(raw, ' \t', (s, arg) => {
+    const c = s.next();
+    if ((c === '"' || c === "'") && arg === null) return quoted(s, c, escaped, what);
+    return (arg ?? '') + (c === '\\' ? escaped(s) : c);
+  });
   return args.map((a) => {
     if (/%[^%]/.test(a.replaceAll('%%', ''))) throw new Error(`specifier in ExecStart argument ${a}`);
     if (/\$[^$]/.test(a.replaceAll('$$', ''))) throw new Error(`variable in ExecStart argument ${a}`);

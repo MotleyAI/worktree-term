@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { sshCommand, StderrTail } from '../dialer/index.js';
+import { sshCommand, StderrTail, stopProcess } from '../dialer/index.js';
 import { preparePrivateDirs, type HostPaths } from '../files/index.js';
 import { checkNodePath } from './formats.js';
 import { releaseEntries } from './release.js';
@@ -149,9 +149,9 @@ const archiveOf = async ({ bundle, version, node }: RemoteInstallation): Promise
   return tarArchive(entries);
 };
 
-/** The result line the remote installer printed, without its marker, or null. */
+/** The last result line the remote installer printed, without its marker, or null. */
 const resultOf = (stdout: string): string | null => {
-  const line = stdout.split('\n').find((l) => l.startsWith(`${RESULT} `));
+  const line = stdout.split('\n').findLast((l) => l.startsWith(`${RESULT} `));
   return line === undefined ? null : line.slice(RESULT.length + 1);
 };
 
@@ -167,14 +167,17 @@ export const installRemote = async (installation: RemoteInstallation): Promise<I
     const tail = new StderrTail();
     let out = '';
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
+      stopProcess(child, EXIT_GRACE_MS);
       reject(new Error(`${alias}: the installation did not finish within ${String(timeoutMs / 1000)} s`));
     }, timeoutMs);
     child.stdout.setEncoding('utf8');
+    // The result line comes last, so only the end of the output is kept.
     child.stdout.on('data', (chunk: string) => {
-      if (out.length < MAX_STDOUT) out += chunk;
+      out = (out + chunk).slice(-MAX_STDOUT);
     });
-    tail.follow(child.stderr);
+    tail.follow(child.stderr, () => {
+      stopProcess(child, EXIT_GRACE_MS);
+    });
     child.stdin.on('error', () => undefined);
     child.once('error', (error) => {
       clearTimeout(timer);

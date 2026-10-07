@@ -648,6 +648,14 @@ describe('remote hosts', () => {
     expect(residentBytes(hub.pid) - before).toBeLessThan(16 * MiB);
   });
 
+  it('ends an SSH process that writes over 1 MiB to standard error instead of leaving its link stalled', async () => {
+    await installedBox();
+    ssh.noisyHost('box', 2 * MiB);
+    const client = await host.session();
+    const entry = await client.waitHost(1, (h) => h.status === 'reconnecting' || h.status === 'down', { timeout: REMOTE_TIMEOUT });
+    expect(entry.reason).toMatch(/^x{1,1024}$/);
+  });
+
   it('answers requests to a down remote host with host-unavailable', async () => {
     ssh.failHost('box', 'ssh: Could not resolve hostname box');
     configure([{ name: 'box', ssh: 'box' }]);
@@ -655,6 +663,19 @@ describe('remote hosts', () => {
     await client.waitHost(1, (h) => h.status === 'reconnecting' || h.status === 'down');
     const reply = await client.request(1, { t: 'watchRepo', repo: '/srv/app' });
     expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: 1, code: 'host-unavailable' } });
+  });
+
+  it('kills SSH processes of a closed session that ignore SIGTERM', async () => {
+    ssh.addHost('box');
+    ssh.hangHost('box');
+    configure([{ name: 'box', ssh: 'box' }]);
+    const client = await host.session();
+    const pids = await waitUntil(() => {
+      const live = ssh.livePids('box');
+      return live.length > 0 && live;
+    }, 'an SSH process for box');
+    client.close();
+    await waitUntil(() => pids.every((pid) => !alive(pid)), 'the session’s SSH processes to be killed', 5000);
   });
 
   it('ends the SSH processes of a closed session', async () => {

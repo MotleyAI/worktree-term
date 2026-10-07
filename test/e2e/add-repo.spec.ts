@@ -28,6 +28,10 @@ const openAddRepo = async (page: Page): Promise<Locator> => {
   return dialog;
 };
 
+/** Waits until the dialog lists `host` as connected. */
+const hostConnected = (dialog: Locator, host: number): Promise<void> =>
+  expect(dialog.locator(byTestId(TID.addRepoHost)).locator(`option[value="${String(host)}"]`)).toContainText('(connected)');
+
 /** Paths of the discovered repos the dialog offers, in order. */
 const offered = (dialog: Locator): Promise<string[]> =>
   dialog.locator(byTestId(TID.addRepoOption)).evaluateAll((options) => options.map((o) => o.getAttribute('title') ?? ''));
@@ -86,6 +90,7 @@ test.describe('add repo', () => {
     writeHubConfig(hub, { repos: [repo], roots: [join(hub.dir, 'nothing-here')] });
     await openUi(hub, page);
     const dialog = await openAddRepo(page);
+    await hostConnected(dialog, LOCAL);
     const mark = wire.markSent();
     await dialog.locator(byTestId(TID.addRepoPath)).fill(plain);
     await dialog.locator(byTestId(TID.addRepoPath)).press('Enter');
@@ -101,6 +106,7 @@ test.describe('add repo', () => {
     writeHubConfig(hub, { repos: [repo], roots: [join(hub.dir, 'nothing-here')] });
     await openUi(hub, page);
     const dialog = await openAddRepo(page);
+    await hostConnected(dialog, LOCAL);
     await dialog.locator(byTestId(TID.addRepoPath)).fill(other.repo);
     await dialog.locator(byTestId(TID.addRepoPath)).press('Enter');
     await expect(dialog).toHaveCount(0);
@@ -118,7 +124,7 @@ test.describe('add repo', () => {
     const mark = wire.markSent();
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(hubRequests(wire, mark)).toEqual([]);
     await expect(page.locator(repoTab(b))).toHaveCount(0);
   });
@@ -159,6 +165,28 @@ test.describe('add repo', () => {
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(repoTab(other))).toContainText('box:other');
     await expect(page.locator(repoTab(other))).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('a dialog opened while its host connects discovers once the host is connected', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    const remote = nodeRemote(ssh, 'box');
+    const app = makeRepo(join(remote.home, 'app'));
+    const other = makeRepo(join(remote.home, 'other'));
+    await installRemote(hub, ssh, 'box');
+    const release = ssh.holdHost('box');
+    writeHubConfig(hub, {
+      roots: [join(hub.dir, 'nothing-here')],
+      hosts: [{ name: 'box', ssh: 'box', repos: [app], roots: [remote.home] }],
+    });
+    await openUi(hub, page);
+    await selectRepo(page, app);
+    const dialog = await openAddRepo(page);
+    const select = dialog.locator(byTestId(TID.addRepoHost));
+    await expect(select).toHaveValue(String(REMOTE));
+    await expect(select.locator(`option[value="${String(REMOTE)}"]`)).toContainText('connecting');
+    release();
+    await expect.poll(() => offered(dialog), { timeout: 15_000 }).toEqual([other]);
+    await expect(dialog.locator(byTestId(TID.addRepoError))).toHaveCount(0);
   });
 
   test('a repo added by another session is watched and shown with its worktrees', async ({ hub, page }) => {

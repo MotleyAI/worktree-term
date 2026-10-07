@@ -21,3 +21,22 @@ export const hasBanner = (host: Pick<HostEntry, 'status'>): boolean => host.stat
 /** Discovered repos the host does not list yet, narrowed to those whose path contains `filter`. */
 export const offeredRepos = (discovered: readonly string[], listed: readonly string[], filter: string): string[] =>
   discovered.filter((repo) => !listed.includes(repo) && repo.includes(filter));
+
+/** Numbered requests where only the latest counts: an answer to an earlier one is stale. */
+export class Latest {
+  private last = 0;
+
+  /** Starts a request and returns its number. */
+  start(): number {
+    return ++this.last;
+  }
+
+  /** Makes every request started so far stale. */
+  drop(): void {
+    this.last++;
+  }
+
+  isLatest(request: number): boolean {
+    return request === this.last;
+  }
+}

@@ -70,7 +70,7 @@ describe('tarArchive', () => {
     expect(readFileSync(join(out, 'a', 'x.txt'), 'utf8')).toBe('hello\n');
     expect(statSync(join(out, 'a', 'x.txt')).mode & 0o777).toBe(0o644);
     expect(statSync(join(out, 'a', 'run')).mode & 0o777).toBe(0o755);
-    expect(readFileSync(join(out, 'a', 'empty')).length).toBe(0);
+    expect(readFileSync(join(out, 'a', 'empty'))).toHaveLength(0);
     expect(statSync(join(out, 'a', 'empty')).mode & 0o777).toBe(0o600);
     expect(readFileSync(join(out, 'a', 'é-ünïcode'), 'utf8')).toBe('ü');
   });

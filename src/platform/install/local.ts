@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { dial, StderrTail, systemctlProgram } from '../dialer/index.js';
+import { dial, StderrTail, stopProcess, systemctlProgram } from '../dialer/index.js';
 import { makePrivateDirs, UNIT_NAME, writeFileAtomic, type EntryKind, type HostPaths } from '../files/index.js';
 import { checkNodePath, desktopEntry, shimScript, systemdUnit } from './formats.js';
 import { checkOwned, installRelease, layoutOf, releaseEntries } from './release.js';
@@ -24,6 +24,8 @@ export interface Installed {
   dataDir: string;
 }
 
+const KILL_GRACE_MS = 1000;
+
 /** Runs `systemctl --user <args>`; throws naming the command and its last error line when it fails. */
 const systemctl = (...args: string[]): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -33,7 +35,9 @@ const systemctl = (...args: string[]): Promise<void> =>
       reject(new Error(`${command.join(' ')} failed: ${cause}`));
     };
     const child = spawn(command[0] ?? 'systemctl', command.slice(1), { stdio: ['ignore', 'ignore', 'pipe'] });
-    tail.follow(child.stderr);
+    tail.follow(child.stderr, () => {
+      stopProcess(child, KILL_GRACE_MS);
+    });
     child.once('error', (error) => {
       fail(error.message);
     });

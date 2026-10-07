@@ -170,7 +170,10 @@ class ProcessLink implements Link {
     this.child.stdout.once('end', () => {
       this.lost();
     });
-    this.tail.follow(this.child.stderr);
+    this.tail.follow(this.child.stderr, () => {
+      this.child.kill('SIGTERM');
+      this.signalLater('SIGKILL', CLOSE_GRACE_MS);
+    });
     this.child.stderr.once('close', () => {
       this.stderrDone = true;
       if (this.exit !== null) this.finish(this.cause());
@@ -204,13 +207,22 @@ class ProcessLink implements Link {
     this.terminate();
   }
 
-  /** Ends standard input, then sends SIGTERM if the process is still running 1 s later. */
+  /** Ends standard input, then sends SIGTERM if the process is still running 1 s later, and SIGKILL 1 s after that. */
   private terminate(): void {
     this.child.stdin.end();
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
+    this.signalLater('SIGTERM', CLOSE_GRACE_MS);
+    this.signalLater('SIGKILL', 2 * CLOSE_GRACE_MS);
+  }
+
+  private signalLater(signal: NodeJS.Signals, ms: number): void {
+    if (!this.running()) return;
     setTimeout(() => {
-      if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill('SIGTERM');
-    }, CLOSE_GRACE_MS).unref();
+      if (this.running()) this.child.kill(signal);
+    }, ms).unref();
+  }
+
+  private running(): boolean {
+    return this.child.exitCode === null && this.child.signalCode === null;
   }
 
   private receive(chunk: Uint8Array): void {

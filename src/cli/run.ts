@@ -189,21 +189,26 @@ interface Invocation {
 
 const isCommandOption = (name: string): name is keyof CommandOptions => name === 'systemd' || name === 'node';
 
+/** Records one option in `invocation`; throws UsageError for a misused or unknown one. */
+const applyOption = (
+  invocation: Invocation,
+  { name, rawName, value }: { name: string; rawName: string; value: string | undefined },
+): void => {
+  if (name === 'node') {
+    if (value === undefined) throw new UsageError(`option ${rawName} needs a value`);
+    invocation.options.node = value;
+  } else if (value !== undefined) throw new UsageError(`option ${rawName} takes no value`);
+  if (name === 'help') invocation.help = true;
+  else if (name === 'version') invocation.version = true;
+  else if (name === 'systemd') invocation.options.systemd = true;
+  else if (!isCommandOption(name)) throw new UsageError(`unknown option ${rawName}`);
+  if (isCommandOption(name)) invocation.given.push({ name, rawName });
+};
+
 const parse = (argv: readonly string[]): Invocation => {
   const { tokens, positionals } = parseArgs({ args: [...argv], options: OPTIONS, allowPositionals: true, strict: false, tokens: true });
   const invocation: Invocation = { help: false, version: false, positionals, options: { systemd: false, node: null }, given: [] };
-  for (const token of tokens) {
-    if (token.kind !== 'option') continue;
-    if (token.name === 'node') {
-      if (token.value === undefined) throw new UsageError(`option ${token.rawName} needs a value`);
-      invocation.options.node = token.value;
-    } else if (token.value !== undefined) throw new UsageError(`option ${token.rawName} takes no value`);
-    if (token.name === 'help') invocation.help = true;
-    else if (token.name === 'version') invocation.version = true;
-    else if (token.name === 'systemd') invocation.options.systemd = true;
-    else if (!isCommandOption(token.name)) throw new UsageError(`unknown option ${token.rawName}`);
-    if (isCommandOption(token.name)) invocation.given.push({ name: token.name, rawName: token.rawName });
-  }
+  for (const token of tokens) if (token.kind === 'option') applyOption(invocation, token);
   return invocation;
 };
 

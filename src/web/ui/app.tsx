@@ -94,7 +94,10 @@ const ConfirmBody = ({ confirmation }: { confirmation: Confirmation }) => {
       <p>These running terminals on {host.name} will be killed:</p>
       <ul>
         {recalled.terminals.map((t, i) => (
-          <li key={String(i)} data-testid="confirm-target">
+          <li
+            key={String(i)} // NOSONAR(S6479) — a static list that may repeat a worktree and preset, so it has no other unique key
+            data-testid="confirm-target"
+          >
             {t.worktree}: {t.preset}
           </li>
         ))}
@@ -181,6 +184,7 @@ const AddRepoBox = ({ client, view, dialog }: { client: HubClient; view: View; d
             type="button"
             key={repo}
             role="option"
+            aria-selected={false}
             data-testid="add-repo-option"
             title={repo}
             onClick={() => {

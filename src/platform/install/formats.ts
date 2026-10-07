@@ -8,8 +8,10 @@ export const checkNodePath = (path: string): void => {
   }
 };
 
+const QUOTED_QUOTE = String.raw`'\''`;
+
 /** POSIX single-quoted form of `value`. */
-export const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+export const shellQuote = (value: string): string => `'${value.replaceAll("'", QUOTED_QUOTE)}'`;
 
 /** The `~/.local/bin/wtd` shim: runs `node` with the current release's `wtd.mjs` and every argument. */
 export const shimScript = (node: string): string => {
@@ -19,34 +21,42 @@ export const shimScript = (node: string): string => {
 
 /** A Desktop Entry string value. */
 const desktopString = (value: string): string =>
-  value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('\t', '\\t').replaceAll('\r', '\\r');
+  value
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('\n', String.raw`\n`)
+    .replaceAll('\t', String.raw`\t`)
+    .replaceAll('\r', String.raw`\r`);
+
+const ESCAPED_MATCH = String.raw`\$&`;
 
 /** One `Exec` argument, double-quoted as the Desktop Entry specification requires. */
-const execArgument = (value: string): string => `"${value.replace(/["`$\\]/g, '\\$&')}"`.replaceAll('%', '%%');
+const execArgument = (value: string): string => `"${value.replace(/["`$\\]/g, ESCAPED_MATCH)}"`.replaceAll('%', '%%');
 
 /** The launcher: runs `shim ui` outside a terminal, matching the app window `wtd ui` opens. */
-export const desktopEntry = ({ shim, icon }: { shim: string; icon: string }): string =>
-  [
+export const desktopEntry = ({ shim, icon }: { shim: string; icon: string }): string => {
+  const exec = `${execArgument(shim)} ui`;
+  return [
     '[Desktop Entry]',
     'Type=Application',
     'Name=worktree-term',
     'Comment=Worktree-centric terminal manager',
-    `Exec=${desktopString(`${execArgument(shim)} ui`)}`,
+    `Exec=${desktopString(exec)}`,
     `Icon=${desktopString(icon)}`,
     'Terminal=false',
     `StartupWMClass=${WM_CLASS}`,
     'Categories=Development;',
     '',
   ].join('\n');
+};
 
 /** One `ExecStart` argument, double-quoted with C escapes, `%%` and `$$`. */
 const unitArgument = (value: string): string => {
   const escaped = value
-    .replaceAll('\\', '\\\\')
-    .replaceAll('"', '\\"')
-    .replaceAll('\n', '\\n')
-    .replaceAll('\t', '\\t')
-    .replaceAll('\r', '\\r')
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('"', String.raw`\"`)
+    .replaceAll('\n', String.raw`\n`)
+    .replaceAll('\t', String.raw`\t`)
+    .replaceAll('\r', String.raw`\r`)
     .replaceAll('%', '%%')
     .replaceAll('$', '$$$$');
   return `"${escaped}"`;

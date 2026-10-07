@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { connect, type Socket } from 'node:net';
 import { openLog, pathExists, preparePrivateDirs, sshControlPath, UNIT_NAME, type HostPaths } from '../files/index.js';
 
@@ -78,7 +78,7 @@ const startDaemon = async (paths: HostPaths, command: readonly string[]): Promis
 const SSH_OPTIONS = ['BatchMode=yes', 'ConnectTimeout=10', 'ControlMaster=auto', 'ControlPersist=10m'];
 const MAX_ALIAS = 255;
 // eslint-disable-next-line no-control-regex -- control characters are what aliases must not contain
-const BAD_ALIAS_CHARACTER = /[\s\u0000-\u001f\u007f]/;
+const BAD_ALIAS_CHARACTER = /[\s\u0000-\u0008\u000e-\u001f\u007f]/;
 
 /** Throws naming `alias` unless it is a usable SSH alias: 1–255 characters, no leading `-`, whitespace or control characters. */
 export const checkSshAlias = (alias: string): void => {
@@ -125,6 +125,16 @@ export const dial = async (paths: HostPaths, command: readonly string[]): Promis
       throw new Error(`daemon did not start; see ${paths.log}`, { cause: result });
     }
   }
+};
+
+/** Sends `child` SIGTERM, then SIGKILL if it is still running `graceMs` later. */
+export const stopProcess = (child: ChildProcess, graceMs: number): void => {
+  const running = (): boolean => child.exitCode === null && child.signalCode === null;
+  if (!running()) return;
+  child.kill('SIGTERM');
+  setTimeout(() => {
+    if (running()) child.kill('SIGKILL');
+  }, graceMs).unref();
 };
 
 export { StderrTail } from './tail.js';

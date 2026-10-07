@@ -1,10 +1,23 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { hostPaths } from '../../src/platform/files/index.js';
+import { installRemote, type InstalledRemote } from '../../src/platform/install/index.js';
 import { PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { DaemonClient } from '../support/daemon-client.js';
-import { DaemonHost, waitUntil } from '../support/daemon-host.js';
+import { alive, BUNDLE, DaemonHost, waitUntil } from '../support/daemon-host.js';
 import { REPO_ROOT } from '../support/exec.js';
 import { currentNodeDir, FakeSsh, oldNodeDir, runInstallRemote, shellQuote, type FakeRemote } from '../support/fake-ssh.js';
 import { expectOneLine, installPaths, PTY_PACKAGE, packageVersion, treeSnapshot } from './install-helpers.js';
@@ -289,5 +302,49 @@ describe('wtd install-remote', () => {
     }
     expect(remote.releases()).toHaveLength(2);
     expect(remote.releases()).toContain(remote.current()?.split('/').pop());
+  });
+});
+
+describe('installRemote with a stand-in SSH', () => {
+  /** Installs through `WTD_SSH` = a script running `body` after reading the archive. */
+  const installWith = async (body: string, timeoutMs = 30_000): Promise<InstalledRemote> => {
+    const program = join(host.dir, 'stand-in-ssh');
+    writeFileSync(program, `#!/bin/sh\ncat >/dev/null\n${body}\n`);
+    chmodSync(program, 0o755);
+    vi.stubEnv('WTD_SSH', program);
+    try {
+      const paths = hostPaths({ env: { XDG_STATE_HOME: join(host.dir, 'state') }, home: host.dir, host: 'test' });
+      return await installRemote({ paths, alias: 'box', bundle: BUNDLE, version: '1.2.3', node: null, timeoutMs });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  it('finds the result line after 1 MB of other output', async () => {
+    const installed = await installWith(
+      String.raw`head -c 1000000 /dev/zero | tr '\000' x; echo; echo '@@wtd-install@@ ok 1.2.3-abc /opt/node/bin/node'`,
+    );
+    expect(installed).toEqual({ version: '1.2.3', release: '1.2.3-abc', node: '/opt/node/bin/node' });
+  });
+
+  it('takes the last result line', async () => {
+    const install = installWith("echo '@@wtd-install@@ ok 9.9.9-early /tmp/node'; echo '@@wtd-install@@ error no Node 20 or later'");
+    await expect(install).rejects.toThrow('box: no Node 20 or later');
+  });
+
+  it('ends an SSH ignoring SIGTERM once it has written 1 MiB to standard error', async () => {
+    const started = Date.now();
+    const install = installWith(String.raw`trap '' TERM; head -c 2097152 /dev/zero | tr '\000' x >&2; exec sleep 60`);
+    await expect(install).rejects.toThrow(/^x{1,1024}$/);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
+  it('kills an SSH that ignores SIGTERM after the timeout', async () => {
+    const pidFile = join(host.dir, 'ssh.pid');
+    const body = `trap '' TERM; echo $$ > ${shellQuote(pidFile)}; exec sleep 60`;
+    const install = installWith(body, 500);
+    await expect(install).rejects.toThrow('box: the installation did not finish within 0.5 s');
+    const pid = Number(readFileSync(pidFile, 'utf8'));
+    await waitUntil(() => !alive(pid), 'the stand-in SSH to be killed', 5000);
   });
 });

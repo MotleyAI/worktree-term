@@ -83,8 +83,10 @@ export const writeHubConfig = (
 };
 
 /** A reachable fake remote whose PATH offers this runner's Node, so the hub can install there. */
-export const nodeRemote = (ssh: FakeSsh, alias: string): FakeRemote =>
-  ssh.addHost(alias, { path: `${currentNodeDir(join(ssh.dir, `node-${alias}`))}:${ssh.pathWithoutNode}` });
+export const nodeRemote = (ssh: FakeSsh, alias: string): FakeRemote => {
+  const nodeDir = currentNodeDir(join(ssh.dir, `node-${alias}`));
+  return ssh.addHost(alias, { path: `${nodeDir}:${ssh.pathWithoutNode}` });
+};
 
 /** Clicks the action of `host`'s banner and waits for the confirmation dialog. */
 export const openHostAction = async (page: Page, host: number, label: string): Promise<void> => {

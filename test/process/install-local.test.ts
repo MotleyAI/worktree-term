@@ -252,6 +252,27 @@ describe('--systemd', () => {
   });
 });
 
+describe('--systemd with a systemctl flooding standard error', () => {
+  it('ends a systemctl ignoring SIGTERM after 1 MiB of standard error and fails naming it', async () => {
+    const systemctl = join(host.dir, 'noisy-systemctl');
+    writeFileSync(
+      systemctl,
+      String.raw`#!/bin/sh
+trap '' TERM
+head -c 2097152 /dev/zero | tr '\000' x >&2
+exec sleep 60
+`,
+    );
+    chmodSync(systemctl, 0o755);
+    const started = Date.now();
+    const run = await installLocal(['--systemd'], { WTD_SYSTEMCTL: systemctl });
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect(run.exit).toEqual({ code: 1, signal: null });
+    expectOneLine(run.stderr);
+    expect(run.stderr).toContain('--user daemon-reload failed');
+  });
+});
+
 describe('reinstalling', () => {
   it('installs the same version into a new release, keeping the first', async () => {
     const paths = installPaths(host.home);

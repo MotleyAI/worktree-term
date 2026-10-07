@@ -13,6 +13,7 @@
     "wtd": "dist/wtd.mjs"
   },
   "scripts": {
+    "dev": "vite",
     "build": "vite build && esbuild src/cli/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/wtd.mjs \"--banner:js=#!/usr/bin/env node\nimport { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --external:@homebridge/node-pty-prebuilt-multiarch",
     "typecheck": "tsc -b",
     "lint": "tsc -b && eslint . --max-warnings 0",

@@ -28,7 +28,18 @@ import { hostAction, Latest, offeredRepos, type HostAction } from './hosts.js';
 import { keymap, type Action } from './keymap.js';
 import { pickerValid, type PickerContext, type PickerOp, type PickerWorld } from './picker.js';
 import { repoTabs, type RepoTab } from './repo-tabs.js';
-import { defaultWorktree, sidebarEntries, visibleWorktrees, type SidebarEntry, type WorktreeFilter } from './sidebar.js';
+import {
+  clampSidebarWidth,
+  defaultWorktree,
+  filterOf,
+  parseSidebarWidth,
+  sidebarEntries,
+  visibleWorktrees,
+  withFilter,
+  type RepoFilters,
+  type SidebarEntry,
+  type WorktreeFilter,
+} from './sidebar.js';
 
 /** Performance marks around a worktree switch (design D13). */
 export const SWITCH_START = 'wtd:switch-start';
@@ -42,13 +53,15 @@ export const PANE_HEADER = 20;
 
 const REPO_KEY = 'wtd.repo';
 const WORKTREES_KEY = 'wtd.worktrees';
-const FILTER_KEY = 'wtd.filter';
+const FILTERS_KEY = 'wtd.filters';
+const SIDEBAR_WIDTH_KEY = 'wtd.sidebarWidth';
 
 const load = (key: string): string | null => localStorage.getItem(key);
 
-const loadSelections = (): Readonly<Record<string, string>> => {
+/** The string-valued entries of the object stored at `key`. */
+const loadRecord = (key: string): Readonly<Record<string, string>> => {
   try {
-    const value: unknown = JSON.parse(load(WORKTREES_KEY) ?? '{}');
+    const value: unknown = JSON.parse(load(key) ?? '{}');
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
     return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   } catch (error) {
@@ -159,8 +172,9 @@ export interface AddRepoDialog {
 /** The page's selection, stored per browser, and what it shows; keeps the terminal manager in step. */
 export class View {
   readonly selectedRepo = signal<string | null>(load(REPO_KEY));
-  readonly selections = signal<Readonly<Record<string, string>>>(loadSelections());
-  readonly filter = signal<WorktreeFilter>(load(FILTER_KEY) === 'checked' ? 'checked' : 'all');
+  readonly selections = signal<Readonly<Record<string, string>>>(loadRecord(WORKTREES_KEY));
+  readonly filters = signal<RepoFilters>(loadRecord(FILTERS_KEY));
+  readonly sidebarWidth = signal<number>(parseSidebarWidth(load(SIDEBAR_WIDTH_KEY)));
   /** The terminal area in client coordinates. */
   readonly area = signal<Rect>({ left: 0, top: 0, width: 0, height: 0 });
   readonly picker = signal<Picker | null>(null);
@@ -202,6 +216,11 @@ export class View {
   readonly repo = computed<RepoState | null>(() => {
     const tab = this.tab.value;
     return tab === null ? null : (this.client.store.repos.value.get(repoKey(tab.host, tab.repo)) ?? null);
+  });
+  /** The selected repo's filter. */
+  readonly filter = computed<WorktreeFilter>(() => {
+    const tab = this.tab.value;
+    return tab === null ? 'all' : filterOf(this.filters.value, repoKey(tab.host, tab.repo));
   });
   readonly entries = computed<SidebarEntry[]>(() => {
     const repo = this.repo.value;
@@ -348,9 +367,23 @@ export class View {
     markAfterPaint(SWITCH_END);
   }
 
+  /** Sets the selected repo's filter. */
   setFilter(filter: WorktreeFilter): void {
-    this.filter.value = filter;
-    localStorage.setItem(FILTER_KEY, filter);
+    const tab = this.tab.value;
+    if (tab === null) return;
+    const filters = withFilter(this.filters.value, repoKey(tab.host, tab.repo), filter);
+    this.filters.value = filters;
+    localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+  }
+
+  /** Sets the sidebar width, within its bounds, without storing it. */
+  resizeSidebar(width: number): void {
+    this.sidebarWidth.value = clampSidebarWidth(width);
+  }
+
+  /** Stores the sidebar width for later sessions. */
+  storeSidebarWidth(): void {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth.value));
   }
 
   /** Shows the tab of `termId` at once, then stores it as the worktree's active tab. */

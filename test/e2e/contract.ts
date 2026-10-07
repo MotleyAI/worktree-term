@@ -60,8 +60,10 @@ export const TID = {
   worktree: 'worktree',
   /** The label inside a sidebar entry; clicking it selects the worktree. */
   worktreeLabel: 'worktree-label',
-  /** Checkbox input: checked = show checked worktrees only. */
+  /** Checkbox input: checked = show checked worktrees only, in the selected repo; each repo keeps its own, across reloads. */
   filterChecked: 'filter-checked',
+  /** Separator on the sidebar's right edge; dragging or ArrowLeft/ArrowRight resizes the sidebar; `aria-valuenow` = its width in px, kept across reloads. */
+  sidebarResizer: 'sidebar-resizer',
   /** Terminal tab; `data-term` = its first live terminal's id, `aria-selected`, text contains "exited" once that terminal exited. */
   termTab: 'term-tab',
   /** Close button inside a terminal tab; closes every terminal of the tab, confirming first when any is running. */

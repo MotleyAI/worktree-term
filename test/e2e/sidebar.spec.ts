@@ -104,10 +104,11 @@ test.describe('worktree sidebar', () => {
 });
 
 test.describe('checked filter', () => {
-  test('"checked only" persists across a reload, lists only checked worktrees and applies to every repo', async ({ hub, page }) => {
+  test('"checked only" persists across a reload, lists only checked worktrees and belongs to its repo', async ({ hub, page }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b', 'c']);
     const [a = '', b = '', c = ''] = worktrees;
-    const second = makeRepoWith(hub, 'second', []);
+    const second = makeRepoWith(hub, 'second', ['d']);
+    const [d = ''] = second.worktrees;
     hub.writeRepos([repo, second.repo]);
     await openUi(hub, page);
     await selectWorktree(page, a);
@@ -121,11 +122,41 @@ test.describe('checked filter', () => {
     expect(await listedWorktrees(page)).toEqual([a]);
     for (const hidden of [repo, b, c]) await expect(page.locator(worktreeEntry(hidden))).toHaveCount(0);
 
+    // The other repo keeps showing all its worktrees.
     await selectRepo(page, second.repo);
+    await expect(page.locator(byTestId(TID.filterChecked))).not.toBeChecked();
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([second.repo, d].sort());
+
+    // Turning it on there leaves the first repo's filter as it was.
+    await page.locator(byTestId(TID.filterChecked)).check();
+    await expect.poll(() => listedWorktrees(page)).toEqual([second.repo]);
+    await page.locator(byTestId(TID.filterChecked)).uncheck();
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([second.repo, d].sort());
+    await selectRepo(page, repo);
     await expect(page.locator(byTestId(TID.filterChecked))).toBeChecked();
-    // Nothing checked there: its first worktree is selected and listed.
-    await expect(page.locator(worktreeEntry(second.repo))).toHaveAttribute('aria-selected', 'true');
-    expect(await listedWorktrees(page)).toEqual([second.repo]);
+    expect(await listedWorktrees(page)).toEqual([a]);
+  });
+
+  test('switching to a repo with another filter shows its switch without animating it; a click animates', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    const second = makeRepoWith(hub, 'second', []);
+    hub.writeRepos([repo, second.repo]);
+    await openUi(hub, page);
+    // Long transitions, so a running one is still running when checked.
+    await page.addStyleTag({ content: '* , *::before, *::after { transition-duration: 10s !important; }' });
+    const toggle = page.locator(byTestId(TID.filterChecked));
+    const animating = (): Promise<boolean> =>
+      toggle.evaluate((input) => input.getAnimations({ subtree: true }).some((a) => a.playState === 'running'));
+
+    await toggle.check();
+    expect(await animating()).toBe(true);
+
+    await selectRepo(page, second.repo);
+    await expect(toggle).not.toBeChecked();
+    expect(await animating()).toBe(false);
+    await selectRepo(page, repo);
+    await expect(toggle).toBeChecked();
+    expect(await animating()).toBe(false);
   });
 
   test('the selected worktree stays listed and selected when unchecked under "checked only"', async ({ hub, page, wire }) => {
@@ -150,5 +181,52 @@ test.describe('checked filter', () => {
     await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
     expect((await listedWorktrees(page)).sort()).toEqual([a, b].sort());
     await expect(page.locator(checkbox(b))).not.toBeChecked();
+  });
+});
+
+test.describe('sidebar width', () => {
+  test('dragging the sidebar edge resizes the sidebar within bounds, arrow keys nudge it, and the width survives a reload', async ({
+    hub,
+    page,
+  }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const sidebar = page.getByRole('navigation');
+    const resizer = page.locator(byTestId(TID.sidebarResizer));
+    const dragTo = async (x: number): Promise<void> => {
+      const box = await resizer.boundingBox();
+      if (box === null) throw new Error('the sidebar resizer is not shown');
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x, box.y + box.height / 2, { steps: 5 });
+      await page.mouse.up();
+    };
+    const sidebarWidth = async (): Promise<number> => (await sidebar.boundingBox())?.width ?? 0;
+    const left = (await sidebar.boundingBox())?.x ?? 0;
+
+    await expect(resizer).toHaveAttribute('aria-valuenow', '260');
+    await dragTo(left + 400);
+    await expect(resizer).toHaveAttribute('aria-valuenow', '400');
+    expect(await sidebarWidth()).toBe(400);
+    const terminals = page.locator('.terminal-pane');
+    expect((await terminals.boundingBox())?.x).toBe(left + 400);
+
+    await dragTo(left + 20);
+    await expect(resizer).toHaveAttribute('aria-valuenow', '160');
+    await dragTo(left + 5000);
+    await expect(resizer).toHaveAttribute('aria-valuenow', '640');
+
+    await dragTo(left + 400);
+    await resizer.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(resizer).toHaveAttribute('aria-valuenow', '416');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await expect(resizer).toHaveAttribute('aria-valuenow', '384');
+
+    await page.reload();
+    await expect(resizer).toHaveAttribute('aria-valuenow', '384');
+    expect(await sidebarWidth()).toBe(384);
   });
 });

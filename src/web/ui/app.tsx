@@ -7,7 +7,7 @@ import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction } from './hosts.js';
 import { aggregate, markTitle, type Aggregate } from './marks.js';
 import { pickerKey } from './picker.js';
-import type { SidebarEntry } from './sidebar.js';
+import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import { PANE_HEADER, type AddRepoDialog, type CloseRequest, type Confirmation, type ShownPane, type ShownTab, type View } from './view.js';
 
@@ -293,6 +293,9 @@ const WorktreeEntry = ({
     {!entry.gone && (
       <input
         type="checkbox"
+        class="worktree-star"
+        aria-label={`${entry.checked ? 'Unstar' : 'Star'} ${entry.label}`}
+        title={entry.checked ? 'Remove from starred' : 'Add to starred'}
         checked={entry.checked}
         onChange={(event) => {
           view.setChecked(entry.path, event.currentTarget.checked).catch(report('checking a worktree'));
@@ -650,6 +653,46 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
   );
 };
 
+/** Sidebar width change per arrow key, in pixels. */
+const SIDEBAR_KEY_STEPS: Readonly<Record<string, number>> = { ArrowLeft: -16, ArrowRight: 16 };
+
+/** The draggable edge between the sidebar and the terminals; arrow keys move it too. */
+const SidebarResizer = ({ view }: { view: View }) => {
+  const width = view.sidebarWidth.value;
+  return (
+    <div
+      class="sidebar-resizer"
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label="Resize the worktree list"
+      aria-valuemin={SIDEBAR_WIDTH.min}
+      aria-valuemax={SIDEBAR_WIDTH.max}
+      aria-valuenow={width}
+      data-testid="sidebar-resizer"
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const sidebar = event.currentTarget.previousElementSibling;
+        if (!event.currentTarget.hasPointerCapture(event.pointerId) || sidebar === null) return;
+        view.resizeSidebar(event.clientX - sidebar.getBoundingClientRect().left);
+      }}
+      onLostPointerCapture={() => {
+        view.storeSidebarWidth();
+      }}
+      onKeyDown={(event) => {
+        const step = SIDEBAR_KEY_STEPS[event.key];
+        if (step === undefined) return;
+        event.preventDefault();
+        view.resizeSidebar(width + step);
+        view.storeSidebarWidth();
+      }}
+    />
+  );
+};
+
 const Workspace = ({ client, manager, view }: AppProps) => {
   const tab = view.tab.value;
   const repo = view.repo.value;
@@ -658,17 +701,38 @@ const Workspace = ({ client, manager, view }: AppProps) => {
   const closing = view.closing.value;
   return (
     <div class="workspace">
-      <nav class="sidebar">
-        {view.listed.value.map((e) => (
-          <WorktreeEntry
-            key={e.path}
-            entry={e}
-            selected={e.path === worktree}
-            terminals={(repo?.terminals ?? []).filter((t) => t.worktree === e.path)}
-            view={view}
-          />
-        ))}
+      <nav class="sidebar" style={{ width: px(view.sidebarWidth.value) }}>
+        <div class="sidebar-header">
+          <span class="sidebar-title">Worktrees</span>
+          <label class="star-filter" title="Show starred worktrees only">
+            <span>Starred</span>
+            {/* Keyed by repo: switching repos mounts it in place, so only a click animates it. */}
+            <input
+              key={tab === null ? '' : repoKey(tab.host, tab.repo)}
+              type="checkbox"
+              role="switch"
+              aria-label="Show starred worktrees only"
+              data-testid="filter-checked"
+              checked={view.filter.value === 'checked'}
+              onChange={(event) => {
+                view.setFilter(event.currentTarget.checked ? 'checked' : 'all');
+              }}
+            />
+          </label>
+        </div>
+        <div class="worktree-list">
+          {view.listed.value.map((e) => (
+            <WorktreeEntry
+              key={e.path}
+              entry={e}
+              selected={e.path === worktree}
+              terminals={(repo?.terminals ?? []).filter((t) => t.worktree === e.path)}
+              view={view}
+            />
+          ))}
+        </div>
       </nav>
+      <SidebarResizer view={view} />
       <main class="terminal-pane">
         {tab !== null && repo?.error != null && (
           <div class="repo-error" data-testid="repo-error">
@@ -723,17 +787,6 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
             Reconnecting…
           </span>
         )}
-        <label class="filter">
-          <input
-            type="checkbox"
-            data-testid="filter-checked"
-            checked={view.filter.value === 'checked'}
-            onChange={(event) => {
-              view.setFilter(event.currentTarget.checked ? 'checked' : 'all');
-            }}
-          />{' '}
-          Checked only
-        </label>
       </div>
       {client.store.hosts.value.filter(hasBanner).map((h) => (
         <HostBanner key={h.idx} host={h} view={view} />

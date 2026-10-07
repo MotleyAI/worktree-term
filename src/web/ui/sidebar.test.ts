@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal, Worktree } from '../../protocol/index.js';
-import { defaultWorktree, sidebarEntries, visibleWorktrees, worktreeLabel, type SidebarEntry } from './sidebar.js';
+import {
+  clampSidebarWidth,
+  defaultWorktree,
+  filterOf,
+  parseSidebarWidth,
+  SIDEBAR_WIDTH,
+  sidebarEntries,
+  visibleWorktrees,
+  withFilter,
+  worktreeLabel,
+  type SidebarEntry,
+} from './sidebar.js';
 
 const REPO = '/home/u/repo';
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
@@ -138,5 +149,50 @@ describe('defaultWorktree', () => {
 
   it('selects nothing without entries', () => {
     expect(defaultWorktree([], 'checked')).toBeNull();
+  });
+});
+
+describe('clampSidebarWidth', () => {
+  it.each([
+    ['keeps a width within bounds', 300, 300],
+    ['rounds to a whole pixel', 300.6, 301],
+    ['raises a width below the minimum', 20, SIDEBAR_WIDTH.min],
+    ['lowers a width above the maximum', 5000, SIDEBAR_WIDTH.max],
+    ['raises a negative width', -50, SIDEBAR_WIDTH.min],
+  ])('%s', (_name, width, expected) => {
+    expect(clampSidebarWidth(width)).toBe(expected);
+  });
+});
+
+describe('parseSidebarWidth', () => {
+  it.each([
+    ['a stored width', '320', 320],
+    ['the default when nothing is stored', null, SIDEBAR_WIDTH.initial],
+    ['the default for an empty value', '', SIDEBAR_WIDTH.initial],
+    ['the default for a non-number', 'wide', SIDEBAR_WIDTH.initial],
+    ['the default for a fraction', '300.5', SIDEBAR_WIDTH.initial],
+    ['the default for a negative number', '-300', SIDEBAR_WIDTH.initial],
+    ['the default for an overlong number', '1e999', SIDEBAR_WIDTH.initial],
+    ['a stored width held within bounds', '9999', SIDEBAR_WIDTH.max],
+  ])('reads %s', (_name, stored, expected) => {
+    expect(parseSidebarWidth(stored)).toBe(expected);
+  });
+});
+
+describe('repo filters', () => {
+  it('shows all in a repo without an entry or with an unknown value', () => {
+    expect(filterOf({}, '0:/a')).toBe('all');
+    expect(filterOf({ '0:/a': 'odd' }, '0:/a')).toBe('all');
+  });
+
+  it('sets one repo to checked without touching the others', () => {
+    const filters = withFilter({ '0:/b': 'checked' }, '0:/a', 'checked');
+    expect(filters).toEqual({ '0:/a': 'checked', '0:/b': 'checked' });
+    expect(filterOf(filters, '0:/a')).toBe('checked');
+    expect(filterOf(filters, '1:/a')).toBe('all');
+  });
+
+  it('drops the entry of a repo set back to all', () => {
+    expect(withFilter({ '0:/a': 'checked', '0:/b': 'checked' }, '0:/a', 'all')).toEqual({ '0:/b': 'checked' });
   });
 });

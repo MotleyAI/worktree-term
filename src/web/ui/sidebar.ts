@@ -15,6 +15,28 @@ export interface SidebarEntry {
 
 export type WorktreeFilter = 'all' | 'checked';
 
+/** Each repo's filter by repo key; a repo without an entry shows all. */
+export type RepoFilters = Readonly<Record<string, string>>;
+
+/** The filter of the repo `key`. */
+export const filterOf = (filters: RepoFilters, key: string): WorktreeFilter => (filters[key] === 'checked' ? 'checked' : 'all');
+
+/** `filters` with the repo `key` set to `filter`; showing all drops its entry. */
+export const withFilter = (filters: RepoFilters, key: string, filter: WorktreeFilter): RepoFilters => {
+  const rest = Object.fromEntries(Object.entries(filters).filter(([k]) => k !== key));
+  return filter === 'all' ? rest : { ...rest, [key]: filter };
+};
+
+/** Sidebar width bounds and default, in pixels. */
+export const SIDEBAR_WIDTH = { min: 160, max: 640, initial: 260 } as const;
+
+/** `width` rounded and held within the sidebar's bounds. */
+export const clampSidebarWidth = (width: number): number => Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, width)));
+
+/** A stored sidebar width, or the default when missing or malformed. */
+export const parseSidebarWidth = (stored: string | null): number =>
+  stored !== null && /^\d{1,5}$/.test(stored) ? clampSidebarWidth(Number(stored)) : SIDEBAR_WIDTH.initial;
+
 const directoryName = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
 
 /** Listed worktrees in the daemon's order without bare ones, then vanished worktrees that still have terminals. */

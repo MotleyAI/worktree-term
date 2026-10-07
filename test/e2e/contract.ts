@@ -20,14 +20,42 @@ export const TID = {
   outdatedUi: 'outdated-ui',
   /** Visible while the WebSocket is closed and the page reconnects. */
   reconnecting: 'reconnecting',
-  /** One per repo, in hub order; text = label, `title` = full path, `aria-selected="true"` when selected. */
+  /** One per repo, in hub order; text starts with the label (`<host>:` prefixed for a remote host), `title` = full path, `aria-selected="true"` when selected. */
   repoTab: 'repo-tab',
+  /** Inside the repo tab of a host that is not `connected`: text = the host's status; absent while connected. */
+  hostStatus: 'host-status',
+  /** Button inside each repo tab; opens the confirmation dialog, then sends `removeRepo` for that tab's host and repo. */
+  removeRepo: 'remove-repo',
   /** In the selected repo's area when its watch failed; text holds the error code and the path. */
   repoError: 'repo-error',
-  /** Banner of an `outdated` host; text contains "outdated". */
-  hostOutdated: 'host-outdated',
-  /** Button in the outdated banner; asks `window.confirm` (message says terminals will be killed), then sends `restartDaemon`. */
-  restartDaemon: 'restart-daemon',
+  /** One per `down` or `outdated` host, none for other statuses; `data-host` = host index; text names the host, its status and its reason when present. */
+  hostBanner: 'host-banner',
+  /** Button inside a host banner: "Restart daemon" (outdated local), "Reinstall & restart" (outdated remote) or "Install" (down remote); opens the confirmation dialog, then sends `restartDaemon` or `reinstallDaemon`. */
+  hostAction: 'host-action',
+  /** In-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed; text says every running terminal on the host will be killed when it lists none. */
+  confirmDialog: 'confirm-dialog',
+  /** One running terminal the page last saw on the daemon instance the host reports; text holds its worktree label and preset. */
+  confirmTarget: 'confirm-target',
+  /** Present when the dialog lists terminals; text says when the page last saw them. */
+  confirmSeen: 'confirm-seen',
+  /** Confirms the confirmation dialog. */
+  confirmOk: 'confirm-ok',
+  /** Cancels the confirmation dialog, sending nothing. */
+  confirmCancel: 'confirm-cancel',
+  /** Last control of the repo tab bar; opens the add-repo dialog. */
+  addRepo: 'add-repo',
+  /** The add-repo dialog; Escape closes it without sending anything. */
+  addRepoDialog: 'add-repo-dialog',
+  /** `<select>` in the add-repo dialog: one `<option>` per host, `value` = host index, text holds the host name and its status, `disabled` unless `connected`; preselects the selected tab's host. */
+  addRepoHost: 'add-repo-host',
+  /** A repo discovered on the selected host and not listed for it by the hub; `title` = its path; clicking it sends `addRepo`. */
+  addRepoOption: 'add-repo-option',
+  /** Text input narrowing the discovered repos to those whose path contains its value. */
+  addRepoFilter: 'add-repo-filter',
+  /** Text input for a typed absolute path; Enter sends `addRepo` for it. */
+  addRepoPath: 'add-repo-path',
+  /** In the add-repo dialog after a failed `addRepo`; text holds the error code. */
+  addRepoError: 'add-repo-error',
   /** Sidebar entry; `title` = path, `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone. */
   worktree: 'worktree',
   /** The label inside a sidebar entry; clicking it selects the worktree. */
@@ -66,7 +94,7 @@ export const TID = {
   closeCancel: 'close-cancel',
   /** Attention mark inside a pane, terminal tab, worktree entry or repo tab, absent without a mark; `data-mark` = input|failed|exited|done|output; `title` gives the number of terminals per mark, one line `<mark>: <count>` per mark present, in rank order. */
   mark: 'mark',
-  /** Banner for problems reported on the page, such as a failed copy. */
+  /** Banner for problems reported on the page, such as a failed copy, a failed host action or a repo that cannot be removed. */
   notice: 'notice',
   /** Terminal container, `data-host` and `data-term`; holds the `.xterm` element; hidden ones are not visible. */
   terminal: 'terminal',
@@ -88,6 +116,8 @@ export const DRAG_PAINT = 'wtd:drag-paint';
 export const byTestId = (id: string): string => `[data-testid="${id}"]`;
 
 export const repoTab = (path: string): string => `${byTestId(TID.repoTab)}[title="${path}"]`;
+
+export const hostBanner = (host: number): string => `${byTestId(TID.hostBanner)}[data-host="${String(host)}"]`;
 
 export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[title="${path}"]`;
 

@@ -92,7 +92,9 @@ export const split = (layout: Layout | null, termId: number, dir: SplitDir, newT
   const index = selected.active;
   return {
     tabs: selected.tabs.map((tab, i) =>
-      i === index ? { ...tab, root: replaceLeaf(tab.root, termId, { split: dir, ratio: 0.5, a: { term: termId }, b: { term: newTerm } }) } : tab,
+      i === index
+        ? { ...tab, root: replaceLeaf(tab.root, termId, { split: dir, ratio: 0.5, a: { term: termId }, b: { term: newTerm } }) }
+        : tab,
     ),
     active: index,
   };

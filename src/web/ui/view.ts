@@ -224,7 +224,10 @@ export class View {
   readonly panes = computed<ShownPane[]>(() => {
     const tab = this.activeTab.value;
     if (tab === null) return [];
-    return paneRects(tab.root, this.localArea.value).map((p) => ({ ...p, terminal: tab.terminals.find((t) => t.termId === p.termId) ?? null }));
+    return paneRects(tab.root, this.localArea.value).map((p) => ({
+      ...p,
+      terminal: tab.terminals.find((t) => t.termId === p.termId) ?? null,
+    }));
   });
   readonly dividers = computed<Divider[]>(() => {
     const tab = this.activeTab.value;
@@ -571,13 +574,15 @@ export class View {
     let next: Layout;
     if (op.t === 'split' && terminals.some((t) => t.termId === op.target) && canSplit(latest, op.target)) {
       next = split(latest, op.target, op.dir, termId);
-    }
-    else if (canAddTab(latest)) next = selectTab(latest, termId);
+    } else if (canAddTab(latest)) next = selectTab(latest, termId);
     else return;
     const tab = next.tabs[next.active];
     batch(() => {
       if (tab !== undefined) {
-        this.focusRecords.value = new Map(this.focusRecords.peek()).set(`${String(host)}:${worktree}:${tab.id}`, { termId, root: tab.root });
+        this.focusRecords.value = new Map(this.focusRecords.peek()).set(`${String(host)}:${worktree}:${tab.id}`, {
+          termId,
+          root: tab.root,
+        });
       }
       this.storeLayout(host, worktree, next);
     });

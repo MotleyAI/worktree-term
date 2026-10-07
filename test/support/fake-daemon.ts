@@ -15,6 +15,8 @@ export interface FakeDaemonOptions {
   accept?: 'hello' | 'close';
   /** `exit`: stop serving on a `shutdown` message; `ignore`: keep serving. */
   onShutdown?: 'exit' | 'ignore';
+  /** Raw control payloads sent on every connection right after `hello`. */
+  afterHello?: readonly string[];
 }
 
 /** A test-controlled daemon socket speaking only the frozen handshake. */
@@ -53,6 +55,7 @@ export class FakeDaemon {
       instance: 'fake_instance',
       accept: 'hello',
       onShutdown: 'exit',
+      afterHello: [],
       ...options,
     });
   }
@@ -82,10 +85,11 @@ export class FakeDaemon {
     socket.on('data', (chunk: Buffer) => {
       for (const frame of frames.push(chunk)) this.onFrame(frame);
     });
-    const { protocol, version, instance } = this.options;
+    const { protocol, version, instance, afterHello } = this.options;
     socket.write(
       encodeFrame({ kind: FrameKind.control, payload: encoder.encode(JSON.stringify({ t: 'hello', protocol, version, instance })) }),
     );
+    for (const text of afterHello) socket.write(encodeFrame({ kind: FrameKind.control, payload: encoder.encode(text) }));
   }
 
   private onFrame(frame: Frame): void {

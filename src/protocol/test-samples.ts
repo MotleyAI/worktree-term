@@ -90,11 +90,29 @@ export const fullTabLayout: Layout = {
 };
 
 export const hosts: HostEntry[] = [
-  { idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [REPO] },
-  { idx: 1, name: 'devbox', remote: true, status: 'outdated', daemonVersion: '0.0.9', instance: null, repos: [] },
-  { idx: 2, name: 'gpu', remote: true, status: 'connecting', daemonVersion: null, instance: null, repos: [WT] },
-  { idx: 3, name: 'old', remote: true, status: 'reconnecting', daemonVersion: null, instance: null, repos: [] },
-  { idx: 65535, name: 'x'.repeat(64), remote: true, status: 'down', daemonVersion: null, instance: null, repos: [] },
+  { idx: 0, name: 'local', remote: false, status: 'connected', reason: null, daemonVersion: '0.1.0', instance: 'd_1-A', repos: [REPO] },
+  { idx: 1, name: 'devbox', remote: true, status: 'outdated', reason: null, daemonVersion: '0.0.9', instance: 'old_D', repos: [] },
+  { idx: 2, name: 'gpu', remote: true, status: 'connecting', reason: null, daemonVersion: null, instance: null, repos: [WT] },
+  {
+    idx: 3,
+    name: 'old',
+    remote: true,
+    status: 'reconnecting',
+    reason: 'ssh: connect to host old port 22: Connection refused',
+    daemonVersion: null,
+    instance: null,
+    repos: [],
+  },
+  {
+    idx: 65535,
+    name: 'x'.repeat(64),
+    remote: true,
+    status: 'down',
+    reason: 'r'.repeat(1024),
+    daemonVersion: null,
+    instance: null,
+    repos: [],
+  },
 ];
 
 export const TOKEN = '0123456789abcdef'.repeat(4);
@@ -105,6 +123,7 @@ export const clientToDaemonSamples: MessageOf<'clientToDaemon'>[] = [
   { t: 'watchRepo', req: 1, repo: REPO },
   { t: 'unwatchRepo', req: 2, repo: REPO },
   { t: 'discoverRepos', req: 3, roots: ['/home/u/GitHub', '/srv'], depth: 3 },
+  { t: 'discoverRepos', req: 11, roots: ['~', '~/GitHub'], depth: 3 },
   { t: 'createTerm', req: 4, worktree: WT, preset: 'claude', command: 'claude --resume', cols: 80, rows: 24 },
   { t: 'createTerm', req: 5, worktree: WT, preset: 'shell', command: null, cols: 1000, rows: 1 },
   { t: 'attach', req: 6, termId: 1 },

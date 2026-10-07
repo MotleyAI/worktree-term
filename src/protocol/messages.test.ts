@@ -435,6 +435,20 @@ describe('value limits', () => {
     ['0 discovery roots', 'clientToDaemon', discover([], 1), false],
     ['32 discovery roots', 'clientToDaemon', discover(paths(32), 1), true],
     ['33 discovery roots', 'clientToDaemon', discover(paths(33), 1), false],
+    ['home discovery root', 'clientToDaemon', discover(['~'], 1), true],
+    ['home-relative discovery root', 'clientToDaemon', discover(['~/GitHub'], 1), true],
+    ['relative discovery root', 'clientToDaemon', discover(['GitHub'], 1), false],
+    ['other user home discovery root', 'clientToDaemon', discover(['~user/x'], 1), false],
+    ['bare ~/ discovery root', 'clientToDaemon', discover(['~/'], 1), false],
+    ['home-relative discovery root with NUL', 'clientToDaemon', discover(['~/a\u0000b'], 1), false],
+    ['4096-char home-relative discovery root', 'clientToDaemon', discover(['~/' + 'a'.repeat(4094)], 1), true],
+    ['4097-char home-relative discovery root', 'clientToDaemon', discover(['~/' + 'a'.repeat(4095)], 1), false],
+    ['home-relative watchRepo path', 'clientToDaemon', watch('~/x'), false],
+    ['home-relative addRepo repo', 'browserToHub', { t: 'addRepo', req: 1, host: 0, repo: '~/x' }, false],
+    ['home-relative removeRepo repo', 'browserToHub', { t: 'removeRepo', req: 1, host: 0, repo: '~/x' }, false],
+    ['home-relative createTerm worktree', 'clientToDaemon', { ...create('shell', null), worktree: '~/w' }, false],
+    ['1024-char host reason', 'hubToBrowser', { t: 'hosts', hosts: [{ ...hosts[0], status: 'down', reason: 'r'.repeat(1024) }] }, true],
+    ['1025-char host reason', 'hubToBrowser', { t: 'hosts', hosts: [{ ...hosts[0], status: 'down', reason: 'r'.repeat(1025) }] }, false],
     ['4096 discovered repos', 'daemonToClient', { t: 'reposDiscovered', req: 1, repos: paths(4096) }, true],
     ['4097 discovered repos', 'daemonToClient', { t: 'reposDiscovered', req: 1, repos: paths(4097) }, false],
     ['4097 discovered repos via hub', 'hubToBrowser', { t: 'reposDiscovered', req: 1, host: 0, repos: paths(4097) }, false],
@@ -461,6 +475,15 @@ describe('value limits', () => {
 
   it.each(cases)('%s in %s', (_name, dir, value, ok) => {
     expect(decodes(dir, value)).toBe(ok);
+  });
+
+  it('decodes home-relative discovery roots unchanged', () => {
+    expect(decodeMessage('clientToDaemon', raw({ t: 'discoverRepos', req: 1, roots: ['~', '~/GitHub'], depth: 3 }))).toEqual({
+      t: 'discoverRepos',
+      req: 1,
+      roots: ['~', '~/GitHub'],
+      depth: 3,
+    });
   });
 
   it('rejects a relative watchRepo path', () => {
@@ -525,6 +548,26 @@ describe('host entries and tokens', () => {
   it('rejects a host entry without instance', () => {
     const withoutInstance = Object.fromEntries(Object.entries(entry ?? {}).filter(([key]) => key !== 'instance'));
     expectRejected('hubToBrowser', raw({ t: 'hosts', hosts: [withoutInstance] }));
+  });
+
+  it('rejects a host entry without reason', () => {
+    const withoutReason = Object.fromEntries(Object.entries(entry ?? {}).filter(([key]) => key !== 'reason'));
+    expectRejected('hubToBrowser', raw({ t: 'hosts', hosts: [withoutReason] }));
+  });
+
+  it('decodes an outdated host entry carrying its instance', () => {
+    const outdated = { ...entry, status: 'outdated', daemonVersion: '0.0.9', instance: 'old_D' };
+    expect(decodeMessage('hubToBrowser', raw({ t: 'hosts', hosts: [outdated] }))).toEqual({ t: 'hosts', hosts: [outdated] });
+  });
+
+  it.each([
+    ['a null reason', null, true],
+    ['an SSH error line', 'ssh: Could not resolve hostname box: Name or service not known', true],
+    ['a 1024-char reason', 'r'.repeat(1024), true],
+    ['a 1025-char reason', 'r'.repeat(1025), false],
+    ['a numeric reason', 255, false],
+  ])('decodes a host entry with %s', (_name, reason, ok) => {
+    expect(decodes('hubToBrowser', withEntry({ status: 'down', reason }))).toBe(ok);
   });
 
   it.each([

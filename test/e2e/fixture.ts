@@ -2,16 +2,22 @@ import { test as base, expect, type BrowserContext, type ElementHandle, type Pag
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DaemonClient } from '../support/daemon-client.js';
-import { addWorktree, git, makeRepo, waitUntil } from '../support/daemon-host.js';
+import { addWorktree, alive, git, makeRepo, waitUntil } from '../support/daemon-host.js';
+import { currentNodeDir, FakeSsh, type FakeRemote } from '../support/fake-ssh.js';
 import { HubHost } from '../support/hub-host.js';
-import { byTestId, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
+import { byTestId, hostBanner, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
 import { installWebglProbe } from './webgl.js';
-import { WireRecorder } from './wire.js';
+import { WireRecorder, type HubMessage } from './wire.js';
+
+type HostEntry = Extract<HubMessage, { t: 'hosts' }>['hosts'][number];
 
 export { expect };
 
 /** The local host's index. */
 export const LOCAL = 0;
+
+/** The index of the first configured remote host. */
+export const REMOTE = 1;
 
 /** Presets every e2e hub is configured with: a plain shell and a command preset. */
 export const PRESETS = [
@@ -24,6 +30,8 @@ export interface Fixtures {
   hub: HubHost;
   /** Records the default page's WebSocket traffic from its first navigation. */
   wire: WireRecorder;
+  /** A fake `ssh` the hub uses as `WTD_SSH`; requesting it is what makes a test's hub use it. */
+  ssh: FakeSsh;
 }
 
 export const test = base.extend<Fixtures>({
@@ -41,7 +49,75 @@ export const test = base.extend<Fixtures>({
   wire: async ({ page }, use) => {
     await use(new WireRecorder(page));
   },
+  ssh: async ({ hub }, use) => {
+    const ssh = new FakeSsh(join(hub.dir, 'ssh'));
+    hub.sshProgram = ssh.program;
+    await use(ssh);
+    // The hub would start new SSH runs while the remotes are torn down.
+    for (const pid of hub.hubPids()) process.kill(pid, 'SIGKILL');
+    await waitUntil(() => hub.hubPids().every((pid) => !alive(pid)), 'hubs to exit').catch(() => undefined);
+    await ssh.cleanup();
+  },
 });
+
+/** A configured remote host: its `name`, SSH alias, absolute repos and discovery roots. */
+export interface HostConfig {
+  name: string;
+  ssh: string;
+  repos?: readonly string[];
+  roots?: readonly string[];
+}
+
+/** Writes `config.json` with the e2e presets, the local `repos` and `roots`, and remote `hosts`. */
+export const writeHubConfig = (
+  hub: HubHost,
+  { repos = [], roots, hosts }: { repos?: readonly string[]; roots?: readonly string[]; hosts?: readonly HostConfig[] },
+): void => {
+  hub.writeConfig({
+    port: hub.port,
+    presets: PRESETS,
+    repos,
+    ...(roots === undefined ? {} : { roots }),
+    ...(hosts === undefined ? {} : { hosts }),
+  });
+};
+
+/** A reachable fake remote whose PATH offers this runner's Node, so the hub can install there. */
+export const nodeRemote = (ssh: FakeSsh, alias: string): FakeRemote =>
+  ssh.addHost(alias, { path: `${currentNodeDir(join(ssh.dir, `node-${alias}`))}:${ssh.pathWithoutNode}` });
+
+/** Clicks the action of `host`'s banner and waits for the confirmation dialog. */
+export const openHostAction = async (page: Page, host: number, label: string): Promise<void> => {
+  const action = page.locator(hostBanner(host)).locator(byTestId(TID.hostAction));
+  await expect(action).toHaveText(label);
+  await action.click();
+  await expect(page.locator(byTestId(TID.confirmDialog))).toBeVisible();
+};
+
+/** Confirms the open confirmation dialog. */
+export const confirmAction = async (page: Page): Promise<void> => {
+  const dialog = page.locator(byTestId(TID.confirmDialog));
+  await dialog.locator(byTestId(TID.confirmOk)).click();
+  await expect(dialog).toHaveCount(0);
+};
+
+/** Hub-level requests (not `host` envelopes or `hello`) the page sent since `from`, without their `req`. */
+export const hubRequests = (wire: WireRecorder, from = 0): { t: string; host: number }[] =>
+  wire.sentMessages(from).flatMap((m) => (m.t === 'hello' || m.t === 'host' ? [] : [{ t: m.t, host: m.host }]));
+
+/** Every entry of `host` in the `hosts` messages the page received since `from`. */
+export const hostEntries = (wire: WireRecorder, host: number, from = 0): HostEntry[] =>
+  wire.receivedMessages(from).flatMap((m) => (m.t === 'hosts' ? m.hosts.filter((h) => h.idx === host) : []));
+
+/** Records the browser dialogs (such as `window.confirm`) the page opens, dismissing each. */
+export const refuseBrowserDialogs = (page: Page): string[] => {
+  const seen: string[] = [];
+  page.on('dialog', (dialog) => {
+    seen.push(dialog.message());
+    void dialog.dismiss();
+  });
+  return seen;
+};
 
 /** Runs `wtd ui` with the stub browser and returns the URL it opened. */
 export const runUi = async (hub: HubHost): Promise<string> => {
@@ -156,7 +232,7 @@ export const focusedPane = async (page: Page): Promise<number> => {
 };
 
 /** Waits for a pane holding a terminal not in `before` and returns its id once its container is visible. */
-const newPane = async (page: Page, before: readonly number[]): Promise<number> => {
+const newPane = async (page: Page, before: readonly number[], host = LOCAL): Promise<number> => {
   let termId = 0;
   await expect
     .poll(async () => {
@@ -164,12 +240,12 @@ const newPane = async (page: Page, before: readonly number[]): Promise<number> =
       return termId;
     })
     .toBeGreaterThan(0);
-  await expect(page.locator(terminalBox(LOCAL, termId))).toBeVisible();
+  await expect(page.locator(terminalBox(host, termId))).toBeVisible();
   return termId;
 };
 
 /** Clicks new-tab, picks `preset`, and resolves with the new active terminal's id once its container is visible. */
-export const newTerminal = async (page: Page, preset: PresetName = 'shell'): Promise<number> => {
+export const newTerminal = async (page: Page, preset: PresetName = 'shell', host = LOCAL): Promise<number> => {
   const before = await page
     .locator(byTestId(TID.termTab))
     .evaluateAll((tabs) => tabs.map((t) => (t instanceof HTMLElement ? (t.dataset['term'] ?? null) : null)));
@@ -178,7 +254,7 @@ export const newTerminal = async (page: Page, preset: PresetName = 'shell'): Pro
   const tab = page.locator(`${byTestId(TID.termTab)}[aria-selected="true"]`);
   await expect.poll(async () => (await tab.count()) === 1 && !before.includes(await tab.getAttribute('data-term'))).toBe(true);
   const termId = Number(await tab.getAttribute('data-term'));
-  await expect(page.locator(terminalBox(LOCAL, termId))).toBeVisible();
+  await expect(page.locator(terminalBox(host, termId))).toBeVisible();
   return termId;
 };
 
@@ -205,8 +281,8 @@ export const markOf = async (page: Page, selector: string): Promise<string | nul
 };
 
 /** Types `line` and Enter into the terminal. */
-export const typeLine = async (page: Page, termId: number, line: string): Promise<void> => {
-  await page.locator(terminalBox(LOCAL, termId)).click();
+export const typeLine = async (page: Page, termId: number, line: string, host = LOCAL): Promise<void> => {
+  await page.locator(terminalBox(host, termId)).click();
   await page.keyboard.type(line);
   await page.keyboard.press('Enter');
 };
@@ -216,15 +292,15 @@ export const screenOf = (page: Page, termId: number, host = LOCAL): Promise<stri
   page.evaluate(([h, t]) => window.__wtdInspect?.screen(h, t) ?? null, [host, termId] as const);
 
 /** Waits until the terminal's text contains `pattern`. */
-export const waitScreen = async (page: Page, termId: number, pattern: string, timeout = 10_000): Promise<string> => {
-  await expect.poll(async () => (await screenOf(page, termId)) ?? '', { timeout }).toContain(pattern);
-  return (await screenOf(page, termId)) ?? '';
+export const waitScreen = async (page: Page, termId: number, pattern: string, timeout = 10_000, host = LOCAL): Promise<string> => {
+  await expect.poll(async () => (await screenOf(page, termId, host)) ?? '', { timeout }).toContain(pattern);
+  return (await screenOf(page, termId, host)) ?? '';
 };
 
 /** Waits until the shell prompt of a fresh terminal settled, by echoing a marker. */
-export const ready = async (page: Page, termId: number): Promise<void> => {
-  await typeLine(page, termId, "echo READY''-MARK");
-  await waitScreen(page, termId, 'READY-MARK');
+export const ready = async (page: Page, termId: number, host = LOCAL): Promise<void> => {
+  await typeLine(page, termId, "echo READY''-MARK", host);
+  await waitScreen(page, termId, 'READY-MARK', 10_000, host);
 };
 
 /** The terminal's `.xterm` element. */

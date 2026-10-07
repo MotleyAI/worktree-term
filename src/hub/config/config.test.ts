@@ -40,11 +40,11 @@ const presets = (n: number): { name: string; command: string | null }[] =>
 describe('parseConfig', () => {
   it('uses port 7417, no repos and the shell preset for a missing file', () => {
     expect(DEFAULT_PORT).toBe(7417);
-    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], presets: SHELL });
+    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] });
   });
 
   it('uses the defaults for an empty object', () => {
-    expect(parse({})).toEqual({ port: 7417, repos: [], presets: SHELL });
+    expect(parse({})).toEqual({ port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] });
   });
 
   it.each([1024, 8080, 65535])('accepts port %d', (port) => {
@@ -164,6 +164,111 @@ describe('parseConfig', () => {
     expect(problem(text)).not.toBe('');
   });
 
+  it('defaults the local discovery roots to ~ and keeps given roots unexpanded', () => {
+    expect(parse({}).roots).toEqual(['~']);
+    expect(parse({ roots: ['~', '~/src', '/srv/git'] }).roots).toEqual(['~', '~/src', '/srv/git']);
+  });
+
+  it('accepts 32 roots and refuses 33', () => {
+    expect(parse({ roots: paths(32) }).roots).toHaveLength(32);
+    expect(problem(JSON.stringify({ roots: paths(33) }))).toContain('roots');
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['a relative root', ['src']],
+    ['a bare ~/', ['~/']],
+    ['another user’s home', ['~bob/src']],
+    ['a root with NUL', ['/a\u0000b']],
+    ['a root over 4096 characters', ['/' + 'a'.repeat(4096)]],
+    ['a number', [1]],
+    ['a single string', '~'],
+  ])('refuses %s as roots, naming the key', (_name, roots) => {
+    expect(problem(JSON.stringify({ roots }))).toContain('roots');
+  });
+
+  it('lists remote hosts in order with their repos and roots, defaulting both', () => {
+    const config = parse({
+      hosts: [
+        { name: 'b', ssh: 'b.example.org', repos: ['/srv/app'], roots: ['~/src'] },
+        { name: 'a.1_x-y', ssh: 'user@a' },
+      ],
+    });
+    expect(config.hosts).toEqual([
+      { name: 'b', ssh: 'b.example.org', repos: ['/srv/app'], roots: ['~/src'] },
+      { name: 'a.1_x-y', ssh: 'user@a', repos: [], roots: ['~'] },
+    ]);
+  });
+
+  it('accepts 63 hosts and refuses 64', () => {
+    const hosts = (n: number): unknown[] => Array.from({ length: n }, (_, i) => ({ name: `h${String(i)}`, ssh: `h${String(i)}` }));
+    expect(parse({ hosts: hosts(63) }).hosts).toHaveLength(63);
+    expect(problem(JSON.stringify({ hosts: hosts(64) }))).toContain('hosts');
+  });
+
+  it.each([
+    ['an option-like alias', '-oProxyCommand=x'],
+    ['an alias with a space', 'a b'],
+    ['an alias with a tab', 'a\tb'],
+    ['an alias with a control character', 'a\u0007b'],
+    ['an empty alias', ''],
+    ['a 256-character alias', 'h'.repeat(256)],
+    ['a numeric alias', 7],
+  ])('refuses %s, naming ssh', (_name, ssh) => {
+    expect(problem(JSON.stringify({ hosts: [{ name: 'box', ssh }] }))).toContain('ssh');
+  });
+
+  it('accepts a 255-character alias', () => {
+    expect(parse({ hosts: [{ name: 'box', ssh: 'h'.repeat(255) }] }).hosts[0]?.ssh).toBe('h'.repeat(255));
+  });
+
+  it.each([
+    ['an empty name', ''],
+    ['a name with a space', 'my box'],
+    ['a name with a slash', 'a/b'],
+    ['a name with a colon', 'a:b'],
+    ['a 65-character name', 'h'.repeat(65)],
+  ])('refuses %s, naming the key', (_name, name) => {
+    expect(problem(JSON.stringify({ hosts: [{ name, ssh: 'box' }] }))).toContain('name');
+  });
+
+  it('refuses duplicate host names, naming hosts', () => {
+    expect(
+      problem(
+        JSON.stringify({
+          hosts: [
+            { name: 'box', ssh: 'a' },
+            { name: 'box', ssh: 'b' },
+          ],
+        }),
+      ),
+    ).toContain('hosts');
+  });
+
+  it.each([
+    ['a home-relative repo', ['~/app']],
+    ['a relative repo', ['app']],
+    ['257 repos', paths(257)],
+  ])('refuses %s on a remote host, naming repos', (_name, repos) => {
+    expect(problem(JSON.stringify({ hosts: [{ name: 'box', ssh: 'box', repos }] }))).toContain('repos');
+  });
+
+  it('refuses a remote host’s invalid roots, naming roots', () => {
+    expect(problem(JSON.stringify({ hosts: [{ name: 'box', ssh: 'box', roots: ['src'] }] }))).toContain('roots');
+  });
+
+  it.each([
+    ['an unknown key', { name: 'box', ssh: 'box', user: 'u' }, 'user'],
+    ['a missing alias', { name: 'box' }, 'ssh'],
+    ['a missing name', { ssh: 'box' }, 'name'],
+  ])('refuses a host with %s, naming the key', (_name, host, key) => {
+    expect(problem(JSON.stringify({ hosts: [host] }))).toContain(key);
+  });
+
+  it('refuses hosts that are not a list', () => {
+    expect(problem(JSON.stringify({ hosts: { name: 'box', ssh: 'box' } }))).toContain('hosts');
+  });
+
   it('states its problem on one line', () => {
     expect(problem(JSON.stringify({ port: 1, repos: ['x'], extra: 1 }))).not.toContain('\n');
   });
@@ -172,14 +277,14 @@ describe('parseConfig', () => {
 describe('loadConfig', () => {
   it('uses the defaults for a missing file without creating it or its directory', async () => {
     const path = join(dir, 'worktree-term', 'config.json');
-    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], presets: SHELL });
+    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] });
     expect(existsSync(join(dir, 'worktree-term'))).toBe(false);
   });
 
   it('reads the file', async () => {
     const path = join(dir, 'config.json');
-    writeFileSync(path, JSON.stringify({ port: 9000, repos: ['~/app'], presets: [CLAUDE] }));
-    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'], presets: [CLAUDE] });
+    writeFileSync(path, JSON.stringify({ port: 9000, repos: ['~/app'], roots: ['~'], presets: [CLAUDE], hosts: [] }));
+    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'], roots: ['~'], presets: [CLAUDE], hosts: [] });
   });
 
   it('fails with one line naming the file and the problem', async () => {
@@ -221,7 +326,10 @@ describe('ConfigSource', () => {
     write(path, { repos: ['/a'] });
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a', '/b'] });
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/a', '/b'], presets: SHELL }, problem: null });
+    expect(await source.snapshot()).toEqual({
+      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: SHELL, hosts: [] },
+      problem: null,
+    });
   });
 
   it('keeps the last valid configuration and reports the problem of an invalid file', async () => {
@@ -232,12 +340,15 @@ describe('ConfigSource', () => {
     await source.snapshot();
     write(path, { repos: ['relative'] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], presets: SHELL });
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: SHELL, hosts: [] });
     expect(snapshot.problem).toContain('repos');
     write(path, '{');
     expect((await source.snapshot()).config.repos).toEqual(['/a', '/b']);
     write(path, { repos: ['/c'] });
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/c'], presets: SHELL }, problem: null });
+    expect(await source.snapshot()).toEqual({
+      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: SHELL, hosts: [] },
+      problem: null,
+    });
   });
 
   it('snapshots edited presets and keeps the last valid ones when they become invalid', async () => {
@@ -245,19 +356,22 @@ describe('ConfigSource', () => {
     write(path, { repos: ['/a'] });
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a'], presets: [CLAUDE, ...SHELL] });
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: ['/a'], presets: [CLAUDE, ...SHELL] }, problem: null });
+    expect(await source.snapshot()).toEqual({
+      config: { port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [] },
+      problem: null,
+    });
     write(path, { repos: ['/b'], presets: [{ name: 'claude', command: '' }] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a'], presets: [CLAUDE, ...SHELL] });
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [] });
     expect(snapshot.problem).toContain('presets');
   });
 
   it('uses the defaults once the file is removed', async () => {
     const path = join(dir, 'config.json');
-    write(path, { port: 9000, repos: ['/a'], presets: [CLAUDE] });
+    write(path, { port: 9000, repos: ['/a'], roots: ['~'], presets: [CLAUDE], hosts: [] });
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     rmSync(path);
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: [], presets: SHELL }, problem: null });
+    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] }, problem: null });
   });
 });
 
@@ -283,6 +397,24 @@ describe('README', () => {
     expect(blocks.length).toBeGreaterThan(0);
     for (const block of blocks) expect(() => parseConfig(block, HOME)).not.toThrow();
     expect(parseConfig(blocks[0] ?? '', HOME).presets).toEqual([CLAUDE, ...SHELL]);
+  });
+
+  it('gives a configuration example with remote hosts and discovery roots', () => {
+    const configs = jsonBlocks(section('Configuration')).map((block) => parseConfig(block, HOME));
+    expect(configs.some((config) => config.hosts.length > 0 && config.hosts.some((host) => host.repos.length > 0))).toBe(true);
+    expect(configs.some((config) => config.roots.join() !== '~')).toBe(true);
+  });
+
+  it.each([
+    'wtd install-local',
+    'wtd install-local --systemd',
+    'loginctl enable-linger',
+    'wtd install-remote',
+    '--node',
+    'WTD_SSH',
+    'MaxSessions',
+  ])('documents %s', (text) => {
+    expect(readme).toContain(text);
   });
 
   it('tells Claude Code to ring the bell', () => {

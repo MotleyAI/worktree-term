@@ -1,5 +1,6 @@
 import { connect, type Socket } from 'node:net';
 import { dial, spawnDetached } from '../../platform/dialer/index.js';
+import { installRemote } from '../../platform/install/index.js';
 import { ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
 
 /** The host files a local link needs. */
@@ -153,3 +154,6 @@ export class LocalDaemon {
 
 /** Starts `command` detached in its own session, appending its output to `log` (ignored when null). */
 export const startDetached = (command: readonly string[], log: string | null): Promise<void> => spawnDetached(command, log);
+
+/** Installs the hub's bundle on a remote host. */
+export const reinstallRemote = (): Promise<never> => installRemote();

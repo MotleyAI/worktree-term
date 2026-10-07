@@ -16,6 +16,7 @@ flowchart TD
   subgraph platform["Platform"]
     platform__files["Files"]
     platform__dialer["Dialer"]
+    platform__install["Install"]
   end
   subgraph daemon["Daemon"]
     daemon__worktrees["Worktrees"]
@@ -40,6 +41,8 @@ flowchart TD
     web__main["Main"]
   end
   platform__dialer --> platform__files
+  platform__install --> platform__files
+  platform__install --> platform__dialer
   daemon --> protocol
   daemon --> platform__files
   daemon__main --> daemon__server
@@ -53,6 +56,7 @@ flowchart TD
   hub__server --> platform__files
   hub__config --> platform__files
   hub__links --> platform__dialer
+  hub__links --> platform__install
   hub__main --> hub__server
   hub__main --> hub__router
   hub__main --> hub__links
@@ -64,6 +68,7 @@ flowchart TD
   cli --> hub__main
   cli --> platform__files
   cli --> platform__dialer
+  cli --> platform__install
   cli --> protocol
   web__client --> protocol
   web__main --> web__ui
@@ -74,7 +79,7 @@ flowchart TD
   web__ui --> web__layout
   web__terminals --> web__client
   classDef leaf fill:none;
-  class protocol,platform__files,platform__dialer,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,hub__server,hub__links,hub__config,hub__router,hub__main,cli,web__client,web__terminals,web__layout,web__ui,web__main leaf;
+  class protocol,platform__files,platform__dialer,platform__install,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,hub__server,hub__links,hub__config,hub__router,hub__main,cli,web__client,web__terminals,web__layout,web__ui,web__main leaf;
 ```
 <!-- /likec4:system -->
 

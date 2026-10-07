@@ -7,6 +7,7 @@ import { AlreadyRunningError, runDaemon } from '../daemon/main/index.js';
 import { HubAlreadyRunningError, openUi, runHub } from '../hub/main/index.js';
 import { dial } from '../platform/dialer/index.js';
 import { currentHostPaths } from '../platform/files/index.js';
+import { installLocal, installRemote } from '../platform/install/index.js';
 import { PROTOCOL_VERSION } from '../protocol/index.js';
 
 export interface CliIo {
@@ -39,16 +40,6 @@ interface Command {
   /** Runs the command and resolves with its exit code. */
   run: (io: CliIo) => Promise<number>;
 }
-
-/** Adapts a synchronous placeholder entry to a command. */
-const placeholderRun = (entry: () => void) => (): Promise<number> => {
-  entry();
-  return Promise.resolve(0);
-};
-
-const notImplemented = (): void => {
-  throw new Error(NOT_IMPLEMENTED);
-};
 
 const message = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
@@ -131,8 +122,8 @@ const COMMANDS: ReadonlyMap<string, Command> = new Map([
   ['hub', { args: [], run: hub }],
   ['daemon', { args: [], run: daemon }],
   ['connect', { args: [], run: connect }],
-  ['install-local', { args: [], run: placeholderRun(notImplemented) }],
-  ['install-remote', { args: ['alias'], run: placeholderRun(notImplemented) }],
+  ['install-local', { args: [], run: installLocal }],
+  ['install-remote', { args: ['alias'], run: installRemote }],
 ]);
 
 class UsageError extends Error {

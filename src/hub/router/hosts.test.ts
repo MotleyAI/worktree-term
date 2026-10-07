@@ -3,22 +3,53 @@ import { PROTOCOL_VERSION } from '../../protocol/index.js';
 import { hostTransition, initialHostState, localHostName, retryDelay, type HostEvent, type HostState } from './hosts.js';
 
 const hello = (protocol: number, instance = 'd_1'): HostEvent => ({ kind: 'hello', protocol, version: '9.9.9', instance });
-const failed: HostEvent = { kind: 'failed' };
+const failed: HostEvent = { kind: 'failed', reason: 'ssh: connect to host box port 22: Connection refused' };
+const failedWith = (reason: string): HostEvent => ({ kind: 'failed', reason });
 
 const run = (...events: HostEvent[]): HostState => events.reduce(hostTransition, initialHostState);
 
 describe('host status', () => {
   it('starts connecting with no daemon', () => {
-    expect(initialHostState).toEqual({ status: 'connecting', daemonVersion: null, instance: null, failures: 0 });
+    expect(initialHostState).toEqual({ status: 'connecting', reason: null, daemonVersion: null, instance: null, failures: 0 });
   });
 
   it('is connected to a daemon speaking our protocol', () => {
-    expect(run(hello(PROTOCOL_VERSION))).toEqual({ status: 'connected', daemonVersion: '9.9.9', instance: 'd_1', failures: 0 });
+    expect(run(hello(PROTOCOL_VERSION))).toEqual({
+      status: 'connected',
+      reason: null,
+      daemonVersion: '9.9.9',
+      instance: 'd_1',
+      failures: 0,
+    });
   });
 
-  it('is outdated for a daemon speaking another protocol, without an instance', () => {
-    expect(run(hello(PROTOCOL_VERSION + 1))).toEqual({ status: 'outdated', daemonVersion: '9.9.9', instance: null, failures: 0 });
-    expect(run(hello(1)).status).toBe('outdated');
+  it('is outdated for a daemon speaking another protocol, keeping its instance', () => {
+    expect(run(hello(PROTOCOL_VERSION + 1))).toEqual({
+      status: 'outdated',
+      reason: null,
+      daemonVersion: '9.9.9',
+      instance: 'd_1',
+      failures: 0,
+    });
+    expect(run(hello(1, 'old_7'))).toMatchObject({ status: 'outdated', instance: 'old_7' });
+  });
+
+  it('names the latest failure as the reason while reconnecting and down', () => {
+    expect(run(failedWith('first')).reason).toBe('first');
+    expect(run(failedWith('first'), failedWith('second')).reason).toBe('second');
+    expect(run(failedWith('a'), failedWith('b'), failedWith('ssh: Could not resolve hostname box'))).toMatchObject({
+      status: 'down',
+      reason: 'ssh: Could not resolve hostname box',
+    });
+  });
+
+  it('clears the reason on a hello', () => {
+    expect(run(failed, hello(PROTOCOL_VERSION)).reason).toBeNull();
+    expect(run(failed, hello(1)).reason).toBeNull();
+  });
+
+  it('cuts a reason to 1024 characters', () => {
+    expect(run(failedWith('r'.repeat(5000))).reason).toBe('r'.repeat(1024));
   });
 
   it('is reconnecting after one or two consecutive failures and down after three', () => {
@@ -43,7 +74,7 @@ describe('host status', () => {
 
   it('resets the failure count on a hello', () => {
     const recovered = run(failed, failed, failed, hello(PROTOCOL_VERSION, 'd_2'));
-    expect(recovered).toEqual({ status: 'connected', daemonVersion: '9.9.9', instance: 'd_2', failures: 0 });
+    expect(recovered).toEqual({ status: 'connected', reason: null, daemonVersion: '9.9.9', instance: 'd_2', failures: 0 });
     expect(hostTransition(recovered, failed)).toMatchObject({ status: 'reconnecting', failures: 1 });
   });
 

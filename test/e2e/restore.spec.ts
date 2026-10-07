@@ -1,15 +1,19 @@
 import { waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
-import { byTestId, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
+import { byTestId, hostBanner, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
+  confirmAction,
   expect,
+  hubRequests,
   isCurrent,
   LOCAL,
   makeRepoWith,
   newTerminal,
   oneDaemon,
+  openHostAction,
   openUi,
   ready,
+  refuseBrowserDialogs,
   screenOf,
   stopHub,
   test,
@@ -110,26 +114,25 @@ test.describe('reconnect and restore', () => {
 });
 
 test.describe('outdated host', () => {
-  test('restarting an outdated daemon from the page shows the repos again', async ({ hub, page }) => {
+  test('restarting an outdated daemon through the in-page confirmation shows the repos again', async ({ hub, page, wire }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     const fake = await FakeDaemon.listen(hub.socket, { protocol: 99, version: '9.9.9' });
     try {
+      const browserDialogs = refuseBrowserDialogs(page);
       await openUi(hub, page);
-      await expect(page.locator(byTestId(TID.hostOutdated))).toContainText('outdated');
-      let question = '';
-      page.once('dialog', (dialog) => {
-        question = dialog.message();
-        void dialog.accept();
-      });
-      await page.locator(byTestId(TID.restartDaemon)).click();
+      await expect(page.locator(hostBanner(LOCAL))).toContainText('outdated');
+      const mark = wire.markSent();
+      await openHostAction(page, LOCAL, 'Restart daemon');
+      expect(hubRequests(wire, mark)).toEqual([]);
+      await confirmAction(page);
       await fake.closed;
       expect(fake.shutdowns).toBe(1);
-      expect(question).toMatch(/kill/i);
-      expect(question).toMatch(/terminal/i);
-      await expect(page.locator(byTestId(TID.hostOutdated))).toHaveCount(0, { timeout: 15_000 });
+      await expect.poll(() => hubRequests(wire, mark)).toEqual([{ t: 'restartDaemon', host: LOCAL }]);
+      await expect(page.locator(hostBanner(LOCAL))).toHaveCount(0, { timeout: 15_000 });
       await expect(page.locator(worktreeEntry(repo))).toBeVisible();
       await oneDaemon(hub);
+      expect(browserDialogs).toEqual([]);
     } finally {
       await fake.close().catch(() => undefined);
     }

@@ -52,11 +52,19 @@ const OutdatedHost = ({ host, client }: { host: HostEntry; client: HubClient }) 
 
 /** An attention mark, absent without one; its title gives the number of terminals per mark. */
 const Mark = ({ of }: { of: Aggregate }) =>
-  of.mark === null ? null : (
-    <span class={`mark mark-${of.mark}`} data-testid="mark" data-mark={of.mark} title={markTitle(of.counts)} />
-  );
+  of.mark === null ? null : <span class={`mark mark-${of.mark}`} data-testid="mark" data-mark={of.mark} title={markTitle(of.counts)} />;
 
-const WorktreeEntry = ({ entry, selected, terminals, view }: { entry: SidebarEntry; selected: boolean; terminals: Terminal[]; view: View }) => (
+const WorktreeEntry = ({
+  entry,
+  selected,
+  terminals,
+  view,
+}: {
+  entry: SidebarEntry;
+  selected: boolean;
+  terminals: Terminal[];
+  view: View;
+}) => (
   <div
     class={`worktree${entry.prunable ? ' prunable' : ''}${entry.gone ? ' gone' : ''}`}
     data-testid="worktree"

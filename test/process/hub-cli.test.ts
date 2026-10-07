@@ -139,6 +139,21 @@ describe('wtd hub', () => {
       'presets',
     ],
     ['a preset whose command is empty', { presets: [{ name: 'a', command: '' }] }, 'presets'],
+    ['an option-like host alias', { hosts: [{ name: 'box', ssh: '-oProxyCommand=x' }] }, 'ssh'],
+    ['a host alias with a space', { hosts: [{ name: 'box', ssh: 'a b' }] }, 'ssh'],
+    ['a home-relative remote repo', { hosts: [{ name: 'box', ssh: 'box', repos: ['~/app'] }] }, 'repos'],
+    [
+      'two hosts named box',
+      {
+        hosts: [
+          { name: 'box', ssh: 'a' },
+          { name: 'box', ssh: 'b' },
+        ],
+      },
+      'hosts',
+    ],
+    ['an unknown host key', { hosts: [{ name: 'box', ssh: 'box', user: 'me' }] }, 'user'],
+    ['a relative discovery root', { roots: ['GitHub'] }, 'roots'],
   ])('reports a configuration with %s in one line naming the file and the key', async (_name, config, key) => {
     host.writeConfig({ port: host.port, ...config });
     const hub = host.wtd(['hub']);
@@ -154,6 +169,19 @@ describe('wtd hub', () => {
       presets: [
         { name: 'claude', command: 'claude' },
         { name: 'shell', command: null },
+      ],
+    });
+    const hub = await host.startHub();
+    expect(host.record()?.pid).toBe(hub.pid);
+  });
+
+  it('starts with discovery roots and remote hosts', async () => {
+    host.writeConfig({
+      port: host.port,
+      roots: ['~', '~/src', '/srv'],
+      hosts: [
+        { name: 'box', ssh: 'box', repos: ['/srv/app'], roots: ['~/GitHub'] },
+        { name: 'gpu.lab-1', ssh: 'user@gpu' },
       ],
     });
     const hub = await host.startHub();

@@ -98,11 +98,15 @@ A local installation SHALL install, as the installed layout states, the bundle o
 - **THEN** the unit is enabled but not started, and the running daemon keeps its instance
 
 ### Requirement: Remote installation
-A remote installation SHALL send the bundle of the running `wtd` as one tar archive to the SSH command for the alias, whose remote command SHALL be fixed and contain no quote inside its single-quoted part, so that every common login shell runs it alike. Every value the remote side needs — the version, the Node path given, the install script — SHALL travel inside the archive, never in the command. On the remote host it SHALL refuse a system other than Linux; take the given Node path, else `node` on the command's PATH, else the path `$SHELL -l -i -c 'command -v node'` prints between markers; refuse a Node older than 20; and install as the installed layout states, without launcher or unit file. It SHALL succeed naming the release and the Node used, and fail with one line naming the cause: the remote installer's message, or else the last non-empty line SSH wrote to standard error.
+A remote installation SHALL send the bundle of the running `wtd` as one tar archive to the SSH command for the alias, whose remote command SHALL be fixed and contain no quote inside its single-quoted part, so that every common login shell runs it alike. Every value the remote side needs — the version, the Node path given, the install script — SHALL travel inside the archive, never in the command. On the remote host it SHALL refuse a system other than Linux; take the given Node path, refusing it when it is older than 20; without one, take the first Node of version 20 or later among `node` on the command's PATH and the path `$SHELL -l -i -c 'command -v node'` prints between markers, in that order; and install as the installed layout states, without launcher or unit file. It SHALL succeed naming the release and the Node used, and fail with one line naming the cause: the remote installer's message, or else the last non-empty line SSH wrote to standard error.
 
 #### Scenario: Remote installed
 - **WHEN** a remote installation runs to a host with Node 22 only in its login shell's PATH
 - **THEN** the remote `~/.local/bin/wtd connect` bridges to a daemon of the installed version, run by that Node
+
+#### Scenario: Old Node on the command's PATH passed over
+- **WHEN** the command's PATH holds Node 18 and the login shell's PATH holds Node 22
+- **THEN** the installation uses the login shell's Node 22
 
 #### Scenario: Hostile Node path is data
 - **WHEN** the given Node path is `/opt/n'; touch x; '/node`

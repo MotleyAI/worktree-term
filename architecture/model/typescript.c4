@@ -24,6 +24,7 @@ model {
       }
       files = component 'Files'
       dialer = component 'Dialer'
+      install = component 'Install'
     }
 
     daemon = node 'Daemon' {
@@ -74,6 +75,8 @@ model {
     }
 
     platform.dialer -> platform.files
+    platform.install -> platform.files
+    platform.install -> platform.dialer
 
     daemon -> protocol
     daemon -> platform.files
@@ -89,6 +92,7 @@ model {
     hub.server -> platform.files
     hub.config -> platform.files
     hub.links -> platform.dialer
+    hub.links -> platform.install
     hub.main -> hub.server
     hub.main -> hub.router
     hub.main -> hub.links
@@ -101,6 +105,7 @@ model {
     cli -> hub.main
     cli -> platform.files
     cli -> platform.dialer
+    cli -> platform.install
     cli -> protocol
 
     web.client -> protocol

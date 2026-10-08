@@ -14,7 +14,7 @@
 ## 4. Web
 
 - [x] 4.1 `terminalStatus`, `worktreeTitle`, `removalReasons` with unit tests; row `title` and `data-path`; e2e contract by `data-path`
-- [x] 4.2 Worktree context menu, "Delete worktree" with its blockers, confirmation listing reasons; e2e: hover text follows terminals, clean worktree deleted without asking, at-risk worktree lists all reasons and is kept on cancel and deleted on confirm, detached worktree names the reflog, main worktree disabled, Escape closes the menu
+- [x] 4.2 Worktree context menu, "Delete worktree" with its blockers, confirmation listing reasons; e2e: hover text follows terminals, clean worktree deleted without asking, at-risk worktree lists all reasons and is kept on cancel and deleted on confirm, detached worktree says its commits become unreachable and names its head, main worktree disabled, Escape closes the menu
 
 ## 5. Final gates
 

@@ -148,16 +148,18 @@ describe('removeWorktree', () => {
     expect(existsSync(wt)).toBe(false);
   });
 
-  it('prunes a worktree whose directory is gone', async () => {
+  it('removes a worktree whose directory is gone, leaving other missing worktrees registered', async () => {
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
+    const other = addWorktree(repo, join(root, 'other'), 'other');
     rmSync(wt, { recursive: true });
+    rmSync(other, { recursive: true });
     const gone = await listed(wt);
     expect(gone.prunable).toBe(true);
     await removeWorktree(repo, gone, false);
-    expect((await listWorktrees(repo)).map((w) => w.path)).toEqual([repo]);
+    expect((await listWorktrees(repo)).map((w) => w.path)).toEqual([repo, other]);
   });
 
-  it('prunes a worktree whose directory went after it was listed', async () => {
+  it('removes a worktree whose directory went after it was listed', async () => {
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
     const cached = await listed(wt);
     rmSync(wt, { recursive: true });

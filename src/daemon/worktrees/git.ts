@@ -140,11 +140,7 @@ export const worktreeRisks = async (repo: string, worktree: Worktree): Promise<W
   return { base, ahead, changes: status.split('\n').filter((line) => line !== '').length };
 };
 
-/** Removes `worktree` of `repo`, `force` also discarding its changes; a worktree whose directory is gone is pruned. */
+/** Removes `worktree` of `repo`, also when its directory is gone, `force` also discarding its changes. */
 export const removeWorktree = async (repo: string, worktree: Worktree, force: boolean): Promise<void> => {
-  if (!(await isDirectory(worktree.path))) {
-    await git(repo, ['worktree', 'prune']);
-    return;
-  }
   await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), worktree.path]);
 };

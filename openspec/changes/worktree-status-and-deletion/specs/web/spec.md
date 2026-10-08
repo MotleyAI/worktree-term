@@ -22,7 +22,7 @@ The sidebar SHALL list the selected repo's worktrees in the daemon's order witho
 ## ADDED Requirements
 
 ### Requirement: Deleting worktrees
-Right-clicking a worktree SHALL open a menu offering "Delete worktree", disabled with the reason on hover for the main worktree, a locked or gone worktree, or while its host is not `connected`; Escape or a press outside SHALL close the menu. Choosing it SHALL send `removeWorktree` with `force` false. On `done` nothing more SHALL be asked. On `worktreeAtRisk` the page SHALL show an in-page confirmation naming the worktree, listing every reason that applies — the commits not in the base ref, or that there is no `origin/main` to check against; the uncommitted changes, untracked files included; the running terminals that will be closed, by preset and id — and saying that its branch is kept or, for a detached worktree, that its commits not in `origin/main` will be reachable only through the reflog; confirming SHALL send `removeWorktree` with `force` true, cancelling SHALL send nothing. A failure SHALL be shown on the page.
+Right-clicking a worktree SHALL open a menu offering "Delete worktree", disabled with the reason on hover for the main worktree, a locked or gone worktree, or while its host is not `connected`; Escape or a press outside SHALL close the menu. Choosing it SHALL send `removeWorktree` with `force` false. On `done` nothing more SHALL be asked. On `worktreeAtRisk` the page SHALL show an in-page confirmation naming the worktree, listing every reason that applies — the commits not in the base ref, or that there is no `origin/main` to check against; the uncommitted changes, untracked files included; the running terminals that will be closed, by preset and id — and saying that its branch is kept or, for a detached worktree, that its commits not in the base ref become unreachable, naming its head commit; confirming SHALL send `removeWorktree` with `force` true, cancelling SHALL send nothing. A failure SHALL be shown on the page.
 
 #### Scenario: Clean worktree deleted without asking
 - **WHEN** the user deletes a worktree whose branch is in `origin/main`, without changes or running terminals
@@ -34,7 +34,7 @@ Right-clicking a worktree SHALL open a menu offering "Delete worktree", disabled
 
 #### Scenario: Detached worktree
 - **WHEN** the user deletes a detached worktree with one commit not in `origin/main`
-- **THEN** the confirmation lists that commit and says its commits will be reachable only through the reflog
+- **THEN** the confirmation lists that commit, says its commits become unreachable and names its head
 
 #### Scenario: Cancel keeps the worktree
 - **WHEN** the user cancels that confirmation

@@ -190,6 +190,69 @@ test.describe('checked filter', () => {
   });
 });
 
+test.describe('name search', () => {
+  test('lists the worktrees whose label contains the text, belongs to its repo, persists, and × empties it', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feature/login', 'fix/Logout', 'docs']);
+    const [login = '', logout = '', docs = ''] = worktrees;
+    const second = makeRepoWith(hub, 'second', ['logbook']);
+    const [logbook = ''] = second.worktrees;
+    hub.writeRepos([repo, second.repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, docs);
+    const search = page.locator(byTestId(TID.worktreeSearch));
+    const clear = page.locator(byTestId(TID.worktreeSearchClear));
+    await expect(clear).toHaveCount(0);
+
+    // Ignores case; the selected worktree stays listed although it does not match.
+    await search.fill('LOG');
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([login, logout, docs].sort());
+    await selectWorktree(page, login);
+    await search.fill('log');
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([login, logout].sort());
+    await search.fill('login');
+    await expect.poll(() => listedWorktrees(page)).toEqual([login]);
+
+    await page.reload();
+    await expect(search).toHaveValue('login');
+    await expect.poll(() => listedWorktrees(page)).toEqual([login]);
+
+    // The other repo has no search of its own; searching there leaves the first repo's.
+    await selectRepo(page, second.repo);
+    await expect(search).toHaveValue('');
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([second.repo, logbook].sort());
+    await selectWorktree(page, logbook);
+    await search.fill('book');
+    await expect.poll(() => listedWorktrees(page)).toEqual([logbook]);
+    await selectRepo(page, repo);
+    await expect(search).toHaveValue('login');
+    await expect.poll(() => listedWorktrees(page)).toEqual([login]);
+
+    await clear.click();
+    await expect(search).toHaveValue('');
+    await expect(search).toBeFocused();
+    await expect(clear).toHaveCount(0);
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([repo, login, logout, docs].sort());
+    await page.reload();
+    await expect(search).toHaveValue('');
+    await selectRepo(page, second.repo);
+    await expect(search).toHaveValue('book');
+  });
+
+  test('applies together with "checked only"', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat-a', 'feat-b', 'other']);
+    const [a = '', b = '', other = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, a);
+    await page.locator(checkbox(a)).check();
+    await page.locator(checkbox(other)).check();
+    await page.locator(byTestId(TID.worktreeSearch)).fill('feat');
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([a, b].sort());
+    await page.locator(byTestId(TID.filterChecked)).check();
+    await expect.poll(() => listedWorktrees(page)).toEqual([a]);
+  });
+});
+
 test.describe('sidebar width', () => {
   test('dragging the sidebar edge resizes the sidebar within bounds, arrow keys nudge it, and the width survives a reload', async ({
     hub,

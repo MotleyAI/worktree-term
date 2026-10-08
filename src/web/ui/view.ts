@@ -35,10 +35,13 @@ import {
   keptNote,
   parseSidebarWidth,
   removalReasons,
+  searchOf,
   sidebarEntries,
   visibleWorktrees,
   withFilter,
+  withSearch,
   type RepoFilters,
+  type RepoSearches,
   type SidebarEntry,
   type WorktreeFilter,
 } from './sidebar.js';
@@ -56,6 +59,7 @@ export const PANE_HEADER = 20;
 const REPO_KEY = 'wtd.repo';
 const WORKTREES_KEY = 'wtd.worktrees';
 const FILTERS_KEY = 'wtd.filters';
+const SEARCHES_KEY = 'wtd.searches';
 const SIDEBAR_WIDTH_KEY = 'wtd.sidebarWidth';
 
 const load = (key: string): string | null => localStorage.getItem(key);
@@ -185,6 +189,7 @@ export class View {
   readonly selectedRepo = signal<string | null>(load(REPO_KEY));
   readonly selections = signal<Readonly<Record<string, string>>>(loadRecord(WORKTREES_KEY));
   readonly filters = signal<RepoFilters>(loadRecord(FILTERS_KEY));
+  readonly searches = signal<RepoSearches>(loadRecord(SEARCHES_KEY));
   readonly sidebarWidth = signal<number>(parseSidebarWidth(load(SIDEBAR_WIDTH_KEY)));
   /** The terminal area in client coordinates. */
   readonly area = signal<Rect>({ left: 0, top: 0, width: 0, height: 0 });
@@ -234,6 +239,11 @@ export class View {
     const tab = this.tab.value;
     return tab === null ? 'all' : filterOf(this.filters.value, repoKey(tab.host, tab.repo));
   });
+  /** The selected repo's name search. */
+  readonly search = computed<string>(() => {
+    const tab = this.tab.value;
+    return tab === null ? '' : searchOf(this.searches.value, repoKey(tab.host, tab.repo));
+  });
   readonly entries = computed<SidebarEntry[]>(() => {
     const repo = this.repo.value;
     return repo === null ? [] : sidebarEntries(repo);
@@ -246,7 +256,9 @@ export class View {
     if (stored !== undefined && entries.some((e) => e.path === stored)) return stored;
     return defaultWorktree(entries, this.filter.value);
   });
-  readonly listed = computed<SidebarEntry[]>(() => visibleWorktrees(this.entries.value, this.filter.value, this.worktree.value));
+  readonly listed = computed<SidebarEntry[]>(() =>
+    visibleWorktrees(this.entries.value, this.filter.value, this.search.value, this.worktree.value),
+  );
   readonly terminals = computed<Terminal[]>(() => {
     const worktree = this.worktree.value;
     return (this.repo.value?.terminals ?? []).filter((t) => t.worktree === worktree);
@@ -391,6 +403,15 @@ export class View {
     const filters = withFilter(this.filters.value, repoKey(tab.host, tab.repo), filter);
     this.filters.value = filters;
     localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+  }
+
+  /** Sets the selected repo's name search; empty shows every worktree. */
+  setSearch(search: string): void {
+    const tab = this.tab.value;
+    if (tab === null) return;
+    const searches = withSearch(this.searches.value, repoKey(tab.host, tab.repo), search);
+    this.searches.value = searches;
+    localStorage.setItem(SEARCHES_KEY, JSON.stringify(searches));
   }
 
   /** Sets the sidebar width, within its bounds, without storing it. */

@@ -122,6 +122,7 @@ input:focus-visible,
   overflow: hidden;
   background: var(--panel);
   border-right: 1px solid var(--border);
+  container-type: inline-size;
 }
 
 /* Over the sidebar's right border, so the terminal layer never covers it. */
@@ -145,11 +146,61 @@ input:focus-visible,
 
 .sidebar-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 6px 10px;
   min-height: 38px;
-  padding: 0 10px 0 13px;
+  padding: 6px 10px 6px 13px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
+}
+
+/* Too narrow for one row: the search takes its own row below. */
+@container (max-width: 250px) {
+  .worktree-search {
+    order: 1;
+    flex-basis: 100%;
+  }
+}
+
+.worktree-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 60px;
+  min-width: 0;
+}
+
+.worktree-search input {
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 0 20px 0 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.worktree-search input::placeholder {
+  color: var(--muted);
+}
+
+.worktree-search button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 22px;
+  padding: 0 6px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.worktree-search button:hover {
+  color: var(--text);
 }
 
 .sidebar-title {

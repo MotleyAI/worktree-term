@@ -5,12 +5,15 @@ import {
   defaultWorktree,
   filterOf,
   keptNote,
+  matchesSearch,
   parseSidebarWidth,
   removalReasons,
+  searchOf,
   SIDEBAR_WIDTH,
   sidebarEntries,
   visibleWorktrees,
   withFilter,
+  withSearch,
   worktreeLabel,
   type SidebarEntry,
 } from './sidebar.js';
@@ -123,16 +126,51 @@ describe('visibleWorktrees', () => {
   ];
 
   it('lists every entry with the all filter', () => {
-    expect(visibleWorktrees(entries, 'all', null)).toEqual(entries);
+    expect(visibleWorktrees(entries, 'all', '', null)).toEqual(entries);
   });
 
   it('lists only checked entries with the checked filter', () => {
-    expect(visibleWorktrees(entries, 'checked', null).map((e) => e.path)).toEqual(['/a', '/c']);
+    expect(visibleWorktrees(entries, 'checked', '', null).map((e) => e.path)).toEqual(['/a', '/c']);
   });
 
   it('keeps the selected entry listed with the checked filter', () => {
-    expect(visibleWorktrees(entries, 'checked', '/b').map((e) => e.path)).toEqual(['/a', '/b', '/c']);
-    expect(visibleWorktrees(entries, 'checked', '/d').map((e) => e.path)).toEqual(['/a', '/c', '/d']);
+    expect(visibleWorktrees(entries, 'checked', '', '/b').map((e) => e.path)).toEqual(['/a', '/b', '/c']);
+    expect(visibleWorktrees(entries, 'checked', '', '/d').map((e) => e.path)).toEqual(['/a', '/c', '/d']);
+  });
+
+  describe('with a name search', () => {
+    const named: SidebarEntry[] = [
+      { path: '/m', label: 'main', prunable: false, gone: false, checked: false },
+      { path: '/f', label: 'feature/Login', prunable: false, gone: false, checked: true },
+      { path: '/g', label: 'fix/logout', prunable: false, gone: false, checked: false },
+      { path: '/h', label: 'wt2 @ 0123456', prunable: false, gone: false, checked: true },
+    ];
+    const paths = (filter: 'all' | 'checked', search: string, selected: string | null = null): string[] =>
+      visibleWorktrees(named, filter, search, selected).map((e) => e.path);
+
+    it('lists the entries whose label contains the search, ignoring case', () => {
+      expect(paths('all', 'log')).toEqual(['/f', '/g']);
+      expect(paths('all', 'LOGIN')).toEqual(['/f']);
+      expect(paths('all', '@ 0123')).toEqual(['/h']);
+    });
+
+    it('ignores surrounding whitespace, and a blank search lists every entry', () => {
+      expect(paths('all', '  fix ')).toEqual(['/g']);
+      expect(paths('all', '   ')).toEqual(['/m', '/f', '/g', '/h']);
+    });
+
+    it('lists nothing when no label matches', () => {
+      expect(paths('all', 'nope')).toEqual([]);
+    });
+
+    it('applies together with the checked filter', () => {
+      expect(paths('checked', 'log')).toEqual(['/f']);
+    });
+
+    it('keeps the selected entry listed when it does not match', () => {
+      expect(paths('all', 'log', '/m')).toEqual(['/m', '/f', '/g']);
+      expect(paths('checked', 'log', '/g')).toEqual(['/f', '/g']);
+    });
   });
 });
 
@@ -196,6 +234,38 @@ describe('repo filters', () => {
 
   it('drops the entry of a repo set back to all', () => {
     expect(withFilter({ '0:/a': 'checked', '0:/b': 'checked' }, '0:/a', 'all')).toEqual({ '0:/b': 'checked' });
+  });
+});
+
+describe('repo searches', () => {
+  it('searches nothing in a repo without an entry', () => {
+    expect(searchOf({ '0:/b': 'x' }, '0:/a')).toBe('');
+  });
+
+  it('sets one repo’s search without touching the others, keeping the text as typed', () => {
+    const searches = withSearch({ '0:/b': 'x' }, '0:/a', ' Feat ');
+    expect(searches).toEqual({ '0:/a': ' Feat ', '0:/b': 'x' });
+    expect(searchOf(searches, '0:/a')).toBe(' Feat ');
+    expect(searchOf(searches, '1:/a')).toBe('');
+  });
+
+  it('replaces a repo’s search and drops its entry when emptied', () => {
+    expect(withSearch({ '0:/a': 'x', '0:/b': 'y' }, '0:/a', 'z')).toEqual({ '0:/a': 'z', '0:/b': 'y' });
+    expect(withSearch({ '0:/a': 'x', '0:/b': 'y' }, '0:/a', '')).toEqual({ '0:/b': 'y' });
+  });
+});
+
+describe('matchesSearch', () => {
+  it.each([
+    ['a substring', 'feature/login', 'ture/lo', true],
+    ['the whole label', 'main', 'main', true],
+    ['another case', 'Feature/Login', 'feature/LOGIN', true],
+    ['a trimmed search', 'main', ' ain\t', true],
+    ['an empty search', 'main', '', true],
+    ['a non-substring', 'main', 'mian', false],
+    ['a search longer than the label', 'main', 'mains', false],
+  ])('%s', (_name, label, search, expected) => {
+    expect(matchesSearch(label, search)).toBe(expected);
   });
 });
 

@@ -3,7 +3,7 @@ import type { HostPaths } from '../../platform/files/index.js';
 import { bindSocket, Daemon } from '../server/index.js';
 import { StateStore } from '../state/index.js';
 import { TerminalProcess } from '../terminals/index.js';
-import { discoverRepos, listWorktrees, watchWorktrees } from '../worktrees/index.js';
+import { discoverRepos, listWorktrees, removeWorktree, watchWorktrees, worktreeRisks } from '../worktrees/index.js';
 
 export { AlreadyRunningError } from '../server/index.js';
 
@@ -39,7 +39,14 @@ export const runDaemon = async ({ version, paths, env }: DaemonRun): Promise<voi
     try {
       const store = await StateStore.load(paths.state);
       const daemon = new Daemon({
-        services: { watchWorktrees, listWorktrees, discoverRepos, spawnTerminal: (spec, events) => TerminalProcess.spawn(spec, events) },
+        services: {
+          watchWorktrees,
+          listWorktrees,
+          discoverRepos,
+          worktreeRisks,
+          removeWorktree,
+          spawnTerminal: (spec, events) => TerminalProcess.spawn(spec, events),
+        },
         version,
         instance: randomBytes(12).toString('base64url'),
         store,

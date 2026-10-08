@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type HostEntry } from '../../protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION, type HostEntry } from '../../protocol/index.js';
 
 /** The status of one host as one session sees it. */
 export interface HostState {
@@ -23,7 +23,7 @@ export const initialHostState: HostState = { status: 'connecting', reason: null,
 
 export const hostTransition = (state: HostState, event: HostEvent): HostState => {
   if (event.kind === 'hello') {
-    const status = event.protocol === PROTOCOL_VERSION ? 'connected' : 'outdated';
+    const status = event.protocol === DAEMON_PROTOCOL_VERSION ? 'connected' : 'outdated';
     return { status, reason: null, daemonVersion: event.version, instance: event.instance, failures: 0 };
   }
   const failures = state.failures + 1;

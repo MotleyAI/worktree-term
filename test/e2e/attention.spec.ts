@@ -86,7 +86,8 @@ test.describe('attention marks', () => {
     await expectMark(page, worktreeEntry(feat), null);
     await expectMark(page, repoTab(repo), null);
     await expectMark(page, termTab(failing), 'failed');
-    await expectMark(page, pane(failing), 'failed');
+    // A lone pane has no header: its tab carries the mark.
+    await expectMark(page, pane(failing), null);
   });
 
   test('a hidden terminal that printed and then stayed quiet for 3 s is marked done', async ({ hub, page }) => {

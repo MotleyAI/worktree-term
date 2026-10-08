@@ -386,3 +386,96 @@ describe('discoverRepos', () => {
     expect(reply).toEqual({ t: 'reposDiscovered', req: ANY_REQ, repos: [app] });
   });
 });
+
+describe('removeWorktree', () => {
+  /** Gives the repo a bare `origin` holding its `main`, with `origin/HEAD` pointing at it. */
+  const withOrigin = (): void => {
+    const origin = join(host.dir, 'origin.git');
+    git(host.dir, 'init', '-q', '--bare', '-b', 'main', origin);
+    git(repo, 'remote', 'add', 'origin', origin);
+    git(repo, 'push', '-q', 'origin', 'main');
+    git(repo, 'remote', 'set-head', 'origin', 'main');
+  };
+
+  const commit = (cwd: string, file: string): void => {
+    writeFileSync(join(cwd, file), file);
+    git(cwd, 'add', file);
+    git(cwd, 'commit', '-q', '-m', file);
+  };
+
+  it('removes a merged, clean worktree at once, closing its exited terminals and keeping its branch', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    const client = await host.client();
+    await client.watch(repo);
+    const exited = await client.create(wt, { command: 'true' });
+    await client.waitFor('termExited', (m) => m.termId === exited.termId);
+    const from = client.mark();
+    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toEqual({ t: 'done', req: ANY_REQ });
+    expect(existsSync(wt)).toBe(false);
+    await client.waitFor('termClosed', (m) => m.termId === exited.termId, { from });
+    await client.waitFor('worktreesChanged', (m) => find(m.worktrees, wt) === undefined, { from });
+    expect(git(repo, 'branch', '--list', 'feat')).toContain('feat');
+  });
+
+  it('keeps a worktree at risk and reports every risk: commits ahead, changes and running terminals', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    commit(wt, 'a');
+    writeFileSync(join(wt, 'untracked'), 'new');
+    const client = await host.client();
+    await client.watch(repo);
+    const running = await client.create(wt, { command: 'exec sleep 60' });
+    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toEqual({
+      t: 'worktreeAtRisk',
+      req: ANY_REQ,
+      worktree: wt,
+      base: 'origin/main',
+      ahead: 1,
+      changes: 1,
+      running: [running.termId],
+    });
+    expect(existsSync(wt)).toBe(true);
+    await client.expectNone('termClosed', () => true, 300);
+  });
+
+  it('reports a worktree of a repo without an origin as at risk', async () => {
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    const client = await host.client();
+    await client.watch(repo);
+    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toMatchObject({
+      t: 'worktreeAtRisk',
+      base: null,
+      ahead: null,
+      changes: 0,
+      running: [],
+    });
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it('removes a worktree at risk when forced, closing its running terminals', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    commit(wt, 'a');
+    writeFileSync(join(wt, 'untracked'), 'new');
+    const client = await host.client();
+    await client.watch(repo);
+    const running = await client.create(wt, { command: 'exec sleep 60' });
+    const from = client.mark();
+    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: true })).toEqual({ t: 'done', req: ANY_REQ });
+    expect(existsSync(wt)).toBe(false);
+    await client.waitFor('termClosed', (m) => m.termId === running.termId, { from });
+    expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('refuses the main worktree, a locked one and a path that is not a worktree', async () => {
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    git(repo, 'worktree', 'lock', wt);
+    const client = await host.client();
+    await client.watch(repo);
+    expect(await client.fails({ t: 'removeWorktree', worktree: repo, force: true })).toBe('busy');
+    expect(await client.fails({ t: 'removeWorktree', worktree: wt, force: true })).toBe('busy');
+    expect(await client.fails({ t: 'removeWorktree', worktree: join(host.dir, 'nope'), force: true })).toBe('unknown-worktree');
+    expect(existsSync(repo) && existsSync(wt)).toBe(true);
+  });
+});

@@ -1,4 +1,4 @@
-import { decodeMessage, FrameKind, PROTOCOL_VERSION, ProtocolError, type Frame, type MessageOf } from '../../protocol/index.js';
+import { decodeMessage, FrameKind, DAEMON_PROTOCOL_VERSION, ProtocolError, type Frame, type MessageOf } from '../../protocol/index.js';
 import type { DaemonEndpoint, Link } from '../links/index.js';
 import { controlFrame } from './restart.js';
 
@@ -69,7 +69,7 @@ export const requestOnce = (daemon: DaemonEndpoint, hello: Hello, request: Reque
           greeted = true;
           if (message?.t !== 'hello') {
             fail('internal', 'the daemon did not greet');
-          } else if (message.protocol === PROTOCOL_VERSION) {
+          } else if (message.protocol === DAEMON_PROTOCOL_VERSION) {
             link?.send(controlFrame(hello));
             link?.send(controlFrame(request));
           } else {

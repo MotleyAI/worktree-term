@@ -5,7 +5,7 @@ import {
   decodeWsData,
   encodeMessage,
   encodeWsData,
-  PROTOCOL_VERSION,
+  BROWSER_PROTOCOL_VERSION,
   type MessageOf,
   type Terminal,
 } from '../../src/protocol/index.js';
@@ -33,7 +33,7 @@ export interface ReceivedData {
 
 /** A reply correlated to a request: a daemon reply inside an envelope, or a hub-level reply. */
 export type Reply =
-  | { from: 'daemon'; host: number; m: DaemonEventOf<'done' | 'error' | 'termCreated' | 'reposDiscovered'> }
+  | { from: 'daemon'; host: number; m: DaemonEventOf<'done' | 'error' | 'termCreated' | 'reposDiscovered' | 'worktreeAtRisk'> }
   | { from: 'hub'; m: HubMessageOf<'done' | 'error' | 'reposDiscovered'> };
 
 /** Thrown when the hub answers an upgrade with an HTTP response instead of switching protocols. */
@@ -125,7 +125,7 @@ export class HubClient {
   }
 
   /** Waits for the hub's hello, sends ours, and waits for the first `hosts`. */
-  async handshake(protocol = PROTOCOL_VERSION): Promise<{ hello: HubMessageOf<'hello'>; hosts: HubMessageOf<'hosts'> }> {
+  async handshake(protocol = BROWSER_PROTOCOL_VERSION): Promise<{ hello: HubMessageOf<'hello'>; hosts: HubMessageOf<'hosts'> }> {
     const hello = await this.waitFor('hello');
     const from = this.mark();
     this.sendHello(protocol);
@@ -133,7 +133,7 @@ export class HubClient {
     return { hello, hosts };
   }
 
-  sendHello(protocol = PROTOCOL_VERSION): void {
+  sendHello(protocol = BROWSER_PROTOCOL_VERSION): void {
     this.send({ t: 'hello', protocol, version: '0.0.0-test', instance: 'test_browser' });
   }
 

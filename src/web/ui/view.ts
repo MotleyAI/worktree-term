@@ -32,7 +32,9 @@ import {
   clampSidebarWidth,
   defaultWorktree,
   filterOf,
+  keptNote,
   parseSidebarWidth,
+  removalReasons,
   sidebarEntries,
   visibleWorktrees,
   withFilter,
@@ -87,13 +89,14 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 /** An error as the add-repo dialog shows it: the code of a refused request, then its message. */
 const describe = (error: unknown): string => (error instanceof RequestError ? `${error.code}: ${error.message}` : message(error));
 
-/** The box of a pane's terminal: the pane below its header. */
-export const terminalBoxOf = (rect: Rect): Box => ({
-  left: rect.left,
-  top: rect.top + PANE_HEADER,
-  width: rect.width,
-  height: Math.max(0, rect.height - PANE_HEADER),
-});
+/** Whether panes show headers: only in a split, where they tell the panes apart. */
+export const hasPaneHeaders = (paneCount: number): boolean => paneCount > 1;
+
+/** The box of a pane's terminal: the pane below its header, if it has one. */
+export const terminalBoxOf = (rect: Rect, header: boolean): Box => {
+  const height = header ? PANE_HEADER : 0;
+  return { left: rect.left, top: rect.top + height, width: rect.width, height: Math.max(0, rect.height - height) };
+};
 
 /**
  * The focused pane of `tab`: the one last chosen, else the one that took its place, else the first.
@@ -155,7 +158,15 @@ interface Picker {
 /** What the in-page confirmation asks about. */
 export type Confirmation =
   | { t: 'host'; host: HostEntry; action: HostAction; recalled: Recalled | null }
-  | { t: 'removeRepo'; host: number; repo: string; label: string };
+  | { t: 'removeRepo'; host: number; repo: string; label: string }
+  | { t: 'removeWorktree'; host: number; worktree: string; label: string; reasons: readonly string[]; note: string };
+
+/** The worktree context menu, at its viewport position. */
+export interface WorktreeMenu {
+  worktree: string;
+  x: number;
+  y: number;
+}
 
 /** The add-repo dialog. */
 export interface AddRepoDialog {
@@ -182,6 +193,7 @@ export class View {
   /** A problem of the page itself, such as a failed copy. */
   readonly notice = signal<string | null>(null);
   readonly confirmation = signal<Confirmation | null>(null);
+  readonly worktreeMenu = signal<WorktreeMenu | null>(null);
   readonly addRepo = signal<AddRepoDialog | null>(null);
   private readonly drag = signal<Drag | null>(null);
   /** The focused pane per tab key, with the tab's panes when it was last resolved; replaced when the user chooses a pane. */
@@ -316,7 +328,12 @@ export class View {
   });
   /** Whether a picker or dialog owns the keys. */
   readonly modal = computed<boolean>(
-    () => this.picker.value !== null || this.closing.value !== null || this.confirmation.value !== null || this.addRepo.value !== null,
+    () =>
+      this.picker.value !== null ||
+      this.closing.value !== null ||
+      this.confirmation.value !== null ||
+      this.addRepo.value !== null ||
+      this.worktreeMenu.value !== null,
   );
 
   private shownKey = '';
@@ -451,6 +468,29 @@ export class View {
     this.picker.value = null;
   }
 
+  /** Adds a preset; rejects with the hub's refusal. */
+  addPreset(preset: Preset): Promise<void> {
+    return this.client.addPreset(preset);
+  }
+
+  /** Moves the preset named `name` to position `to`, reporting a failure on the page; resolves with whether the hub did. */
+  movePreset(name: string, to: number): Promise<boolean> {
+    return this.client.movePreset(name, to).then(
+      () => true,
+      (error: unknown) => {
+        this.notice.value = `Moving preset ${name} failed: ${message(error)}`;
+        return false;
+      },
+    );
+  }
+
+  /** Removes the preset named `name`, reporting a refusal on the page. */
+  removePreset(name: string): void {
+    this.client.removePreset(name).catch((error: unknown) => {
+      this.notice.value = `Removing preset ${name} failed: ${message(error)}`;
+    });
+  }
+
   /** Runs `preset` as a new tab of the selected worktree, which has no terminals. */
   choose(preset: Preset): void {
     const tab = this.tab.value;
@@ -499,11 +539,70 @@ export class View {
     this.confirmation.value = null;
   }
 
+  openWorktreeMenu(worktree: string, x: number, y: number): void {
+    this.worktreeMenu.value = { worktree, x, y };
+  }
+
+  closeWorktreeMenu(): void {
+    this.worktreeMenu.value = null;
+  }
+
+  /** Why `worktree` of the selected repo cannot be deleted now, or null when it can. */
+  deleteBlocker(worktree: string): string | null {
+    const entry = this.entries.value.find((e) => e.path === worktree);
+    const listed = this.repo.value?.worktrees.find((w) => w.path === worktree);
+    if (entry === undefined || entry.gone || listed === undefined) return 'It is no longer a worktree';
+    if (listed.main) return 'The main worktree cannot be deleted';
+    if (listed.locked) return 'It is locked';
+    if (this.host.value?.status !== 'connected') return 'Its host is not connected';
+    return null;
+  }
+
+  /** Deletes `worktree` of the selected repo; when the daemon reports what that would lose, asks to confirm first. */
+  deleteWorktree(worktree: string): void {
+    this.worktreeMenu.value = null;
+    const tab = this.tab.value;
+    const repo = this.repo.value;
+    if (tab === null || repo === null || this.deleteBlocker(worktree) !== null) return;
+    const label = this.entries.value.find((e) => e.path === worktree)?.label ?? worktree;
+    const { host } = tab;
+    this.client
+      .request(host, { t: 'removeWorktree', worktree, force: false })
+      .then((reply) => {
+        if (reply.t !== 'worktreeAtRisk') return;
+        const terminals = this.client.store.repo(host, tab.repo)?.terminals ?? [];
+        const running = reply.running.map((id) => {
+          const term = terminals.find((t) => t.termId === id);
+          return term === undefined ? `terminal ${String(id)}` : `${term.preset} ${String(id)}`;
+        });
+        const detached = repo.worktrees.find((w) => w.path === worktree)?.detached === true;
+        this.confirmation.value = {
+          t: 'removeWorktree',
+          host,
+          worktree,
+          label,
+          reasons: removalReasons({ ...reply, running }),
+          note: keptNote(detached),
+        };
+      })
+      .catch((error: unknown) => {
+        this.notice.value = `Deleting ${label} failed: ${message(error)}`;
+      });
+  }
+
   /** Runs the confirmed action, showing its failure on the page. */
   confirm(): void {
     const confirmation = this.confirmation.value;
     this.confirmation.value = null;
     if (confirmation === null) return;
+    if (confirmation.t === 'removeWorktree') {
+      this.client
+        .request(confirmation.host, { t: 'removeWorktree', worktree: confirmation.worktree, force: true })
+        .catch((error: unknown) => {
+          this.notice.value = `Deleting ${confirmation.label} failed: ${message(error)}`;
+        });
+      return;
+    }
     if (confirmation.t === 'removeRepo') {
       this.client.removeRepo(confirmation.host, confirmation.repo).catch((error: unknown) => {
         this.notice.value =
@@ -765,11 +864,11 @@ export class View {
   /** The box the terminal `op` creates will have. */
   private newPaneBox(op: PickerOp): Box {
     const area = this.localArea.value;
-    if (op.t === 'newTab') return terminalBoxOf(area);
+    if (op.t === 'newTab') return terminalBoxOf(area, false);
     const layout = split(this.layout.value, op.target, op.dir, 0);
     const root = layout.tabs[layout.active]?.root;
     const rect = root === undefined ? undefined : paneRects(root, area).find((p) => p.termId === 0)?.rect;
-    return terminalBoxOf(rect ?? area);
+    return terminalBoxOf(rect ?? area, rect !== undefined);
   }
 
   /** Adds the created terminal `termId` to the latest layout, as `op` asked if still possible, and focuses it. */
@@ -832,7 +931,7 @@ export class View {
     const focused = this.focused.value;
     const modal = this.modal.value;
     if ((status !== 'open' && status !== 'reconnecting') || tab === null || worktree === null) {
-      this.showOnly(null, []);
+      this.showOnly(null, [], false);
       return;
     }
     if (this.host.value?.status === 'connected' && status === 'open') {
@@ -841,20 +940,20 @@ export class View {
       }
     }
     const shown = panes.filter((p) => this.manager.has(tab.host, p.termId));
-    this.showOnly(tab.host, shown, this.drag.value !== null);
+    this.showOnly(tab.host, shown, hasPaneHeaders(panes.length), this.drag.value !== null);
     const focusKey = `${String(tab.host)}:${shown.map((p) => p.termId).join(',')}:${String(focused)}:${String(modal)}`;
     if (focusKey === this.focusKey) return;
     this.focusKey = focusKey;
     if (!modal && focused !== null && this.manager.has(tab.host, focused)) this.manager.focus(tab.host, focused);
   }
 
-  private showOnly(host: number | null, panes: readonly PaneRect[], dragging = false): void {
-    const key = `${String(host)}:${JSON.stringify(panes.map((p) => [p.termId, p.rect]))}`;
+  private showOnly(host: number | null, panes: readonly PaneRect[], headers: boolean, dragging = false): void {
+    const key = `${String(host)}:${String(headers)}:${JSON.stringify(panes.map((p) => [p.termId, p.rect]))}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
     this.manager.show(
       host,
-      panes.map((p) => ({ termId: p.termId, box: terminalBoxOf(p.rect) })),
+      panes.map((p) => ({ termId: p.termId, box: terminalBoxOf(p.rect, headers) })),
       dragging,
     );
   }

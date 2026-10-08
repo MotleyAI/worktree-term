@@ -33,18 +33,20 @@ const paths = (n: number): string[] => Array.from({ length: n }, (_, i) => `/r/$
 
 const SHELL = [{ name: 'shell', command: null }];
 const CLAUDE = { name: 'claude', command: 'claude' };
+/** The presets of a configuration without `presets`. */
+const DEFAULT_PRESETS = [...SHELL, CLAUDE, { name: 'codex', command: 'codex' }];
 
 const presets = (n: number): { name: string; command: string | null }[] =>
   Array.from({ length: n }, (_, i) => ({ name: `p${String(i)}`, command: null }));
 
 describe('parseConfig', () => {
-  it('uses port 7417, no repos and the shell preset for a missing file', () => {
+  it('uses port 7417, no repos and the shell, claude and codex presets for a missing file', () => {
     expect(DEFAULT_PORT).toBe(7417);
-    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] });
+    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
   });
 
   it('uses the defaults for an empty object', () => {
-    expect(parse({})).toEqual({ port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] });
+    expect(parse({})).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
   });
 
   it.each([1024, 8080, 65535])('accepts port %d', (port) => {
@@ -277,7 +279,7 @@ describe('parseConfig', () => {
 describe('loadConfig', () => {
   it('uses the defaults for a missing file without creating it or its directory', async () => {
     const path = join(dir, 'worktree-term', 'config.json');
-    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] });
+    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
     expect(existsSync(join(dir, 'worktree-term'))).toBe(false);
   });
 
@@ -327,7 +329,7 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a', '/b'] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: SHELL, hosts: [] },
+      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] },
       problem: null,
     });
   });
@@ -340,13 +342,13 @@ describe('ConfigSource', () => {
     await source.snapshot();
     write(path, { repos: ['relative'] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: SHELL, hosts: [] });
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
     expect(snapshot.problem).toContain('repos');
     write(path, '{');
     expect((await source.snapshot()).config.repos).toEqual(['/a', '/b']);
     write(path, { repos: ['/c'] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: SHELL, hosts: [] },
+      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] },
       problem: null,
     });
   });
@@ -371,7 +373,10 @@ describe('ConfigSource', () => {
     write(path, { port: 9000, repos: ['/a'], roots: ['~'], presets: [CLAUDE], hosts: [] });
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     rmSync(path);
-    expect(await source.snapshot()).toEqual({ config: { port: 7417, repos: [], roots: ['~'], presets: SHELL, hosts: [] }, problem: null });
+    expect(await source.snapshot()).toEqual({
+      config: { port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] },
+      problem: null,
+    });
   });
 });
 

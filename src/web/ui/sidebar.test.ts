@@ -4,7 +4,9 @@ import {
   clampSidebarWidth,
   defaultWorktree,
   filterOf,
+  keptNote,
   parseSidebarWidth,
+  removalReasons,
   SIDEBAR_WIDTH,
   sidebarEntries,
   visibleWorktrees,
@@ -194,5 +196,39 @@ describe('repo filters', () => {
 
   it('drops the entry of a repo set back to all', () => {
     expect(withFilter({ '0:/a': 'checked', '0:/b': 'checked' }, '0:/a', 'all')).toEqual({ '0:/b': 'checked' });
+  });
+});
+
+describe('removalReasons', () => {
+  const safe = { base: 'origin/main', ahead: 0, changes: 0, running: [] };
+
+  it('gives no reason for a merged, clean worktree without running terminals', () => {
+    expect(removalReasons(safe)).toEqual([]);
+  });
+
+  it('names every reason that applies, in order', () => {
+    expect(removalReasons({ base: 'origin/main', ahead: 3, changes: 2, running: ['claude 3', 'shell 4'] })).toEqual([
+      'It has 3 commits not in origin/main.',
+      'It has 2 uncommitted changes, untracked files included.',
+      'Running terminals will be closed: claude 3, shell 4.',
+    ]);
+  });
+
+  it('uses the singular for one commit or change', () => {
+    expect(removalReasons({ ...safe, ahead: 1, changes: 1 })).toEqual([
+      'It has 1 commit not in origin/main.',
+      'It has 1 uncommitted change, untracked files included.',
+    ]);
+  });
+
+  it('says when there is no origin/main to compare with', () => {
+    expect(removalReasons({ ...safe, base: null, ahead: null })).toEqual(['There is no origin/main to check that its commits are merged.']);
+  });
+});
+
+describe('keptNote', () => {
+  it('says the branch is kept, or that a detached worktree leaves its commits only in the reflog', () => {
+    expect(keptNote(false)).toBe('Its branch is kept.');
+    expect(keptNote(true)).toContain('reachable only through the reflog');
   });
 });

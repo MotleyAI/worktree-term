@@ -1,4 +1,13 @@
-export { ACK_EVERY, FLOW_HIGH, FLOW_LOW, LAG_EVICT_MS, MAX_FRAME, MAX_INPUT, PROTOCOL_VERSION } from './constants.js';
+export {
+  ACK_EVERY,
+  FLOW_HIGH,
+  FLOW_LOW,
+  LAG_EVICT_MS,
+  MAX_FRAME,
+  MAX_INPUT,
+  DAEMON_PROTOCOL_VERSION,
+  BROWSER_PROTOCOL_VERSION,
+} from './constants.js';
 export { ProtocolError } from './errors.js';
 export {
   decodeStreamData,

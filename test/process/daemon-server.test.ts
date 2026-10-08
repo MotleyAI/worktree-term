@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { encodeStreamData, PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { encodeStreamData, DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import type { DaemonClient } from '../support/daemon-client.js';
 import { REPO_ROOT } from '../support/exec.js';
 import {
@@ -141,15 +141,15 @@ describe('single instance', () => {
 });
 
 describe('handshake', () => {
-  it('greets every connection with hello for protocol 5, the package version and one instance id', async () => {
+  it('greets every connection with hello for protocol 6, the package version and one instance id', async () => {
     await host.start();
     const a = await host.rawClient();
     const b = await host.rawClient();
     const helloA = await a.waitFor('hello');
     const helloB = await b.waitFor('hello');
     expect(a.received[0]).toEqual({ kind: 'message', message: helloA });
-    expect(helloA.protocol).toBe(PROTOCOL_VERSION);
-    expect(helloA.protocol).toBe(5);
+    expect(helloA.protocol).toBe(DAEMON_PROTOCOL_VERSION);
+    expect(helloA.protocol).toBe(6);
     expect(helloA.version).toBe(packageVersion());
     expect(helloA.instance).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
     expect(helloB.instance).toBe(helloA.instance);
@@ -192,7 +192,7 @@ describe('handshake', () => {
 describe('malformed traffic', () => {
   const output = encodeStreamData({ kind: 'output', termId: 1, offset: 0, data: new Uint8Array([120]) });
   const snapshot = encodeStreamData({ kind: 'snapshot', termId: 1, offset: 0, data: new Uint8Array([120]) });
-  const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: '1', instance: 'again' };
+  const hello = { t: 'hello', protocol: DAEMON_PROTOCOL_VERSION, version: '1', instance: 'again' };
 
   it.each([
     [

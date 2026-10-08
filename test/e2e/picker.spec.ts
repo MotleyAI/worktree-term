@@ -1,4 +1,5 @@
-import type { Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import type { Locator, Page } from '@playwright/test';
 import { decodeMessage } from '../../src/protocol/index.js';
 import { byTestId, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
@@ -7,7 +8,9 @@ import {
   LOCAL,
   makeRepoWith,
   newTerminal,
+  openPage,
   openUi,
+  presetRequests,
   PRESETS,
   ready,
   selectWorktree,
@@ -306,5 +309,161 @@ test.describe('preset choices of a worktree without terminals', () => {
     await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Enter');
     await expect.poll(() => createsSent(wire, mark).map((m) => [m.preset, m.command])).toEqual([[SHELL.name, SHELL.command]]);
+  });
+});
+
+test.describe('editing presets', () => {
+  const NEW = { name: 'echo', command: 'echo PRESET-NEW; exec cat -v' };
+
+  /** The configured presets in `config.json`. */
+  const configured = (path: string): unknown => {
+    const config: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return typeof config === 'object' && config !== null && 'presets' in config ? config.presets : undefined;
+  };
+
+  /** Opens the add form in `list` and submits `name` and `command`. */
+  const addPreset = async (list: Locator, name: string, command: string): Promise<void> => {
+    await list.locator(byTestId(TID.presetAdd)).click();
+    const form = list.locator(byTestId(TID.presetForm));
+    await expect(form.locator(byTestId(TID.presetName))).toBeFocused();
+    await form.locator(byTestId(TID.presetName)).fill(name);
+    await form.locator(byTestId(TID.presetCommand)).fill(command);
+    await form.locator(byTestId(TID.presetSubmit)).click();
+  };
+
+  test('a preset added from the choices is saved, shown in every page, and runs its command', async ({ hub, page, wire, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const other = await openPage(hub, context);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    const mark = wire.markSent();
+
+    await addPreset(choices, `  ${NEW.name} `, NEW.command);
+    expect(presetRequests(wire, mark)).toEqual([{ t: 'addPreset', preset: NEW }]);
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    const names = [...PRESETS.map((p) => p.name), NEW.name];
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText(names);
+    await expect(other.page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption))).toHaveText(names);
+    expect(configured(hub.configPath)).toEqual([...PRESETS, NEW]);
+
+    await choices.locator(byTestId(TID.presetOption), { hasText: NEW.name }).click();
+    await waitScreen(page, await activeTerm(page), 'PRESET-NEW');
+  });
+
+  test('× removes a preset from every page and config.json, and the last preset offers none', async ({ hub, page, wire, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const other = await openPage(hub, context);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    const mark = wire.markSent();
+
+    await choices.locator(byTestId(TID.presetOption), { hasText: CAT.name }).locator('..').locator(byTestId(TID.presetRemove)).click();
+    expect(presetRequests(wire, mark)).toEqual([{ t: 'removePreset', name: CAT.name }]);
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([SHELL.name]);
+    await expect(other.page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption))).toHaveText([SHELL.name]);
+    expect(configured(hub.configPath)).toEqual([SHELL]);
+    await expect(choices.locator(byTestId(TID.presetRemove))).toHaveCount(0);
+  });
+
+  test('the add form refuses a taken name without sending, and Escape closes it', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    const mark = wire.markSent();
+
+    await addPreset(choices, CAT.name, 'anything');
+    await expect(choices.locator(byTestId(TID.presetError))).toHaveText(`A preset named ${CAT.name} exists`);
+    await choices.locator(byTestId(TID.presetName)).fill('  ');
+    await choices.locator(byTestId(TID.presetName)).press('Enter');
+    await expect(choices.locator(byTestId(TID.presetError))).toHaveText('Give the preset a name');
+    await choices.locator(byTestId(TID.presetName)).press('Escape');
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(choices.locator(byTestId(TID.presetAdd))).toBeVisible();
+    expect(presetRequests(wire, mark)).toEqual([]);
+    expect(configured(hub.configPath)).toEqual(PRESETS);
+  });
+
+  test('a preset added in the new-tab picker keeps the picker open and can be chosen there', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await newTerminal(page);
+    await page.locator(byTestId(TID.newTab)).click();
+    const picker = page.locator(byTestId(TID.presetPicker));
+    await expect(picker).toBeVisible();
+
+    await addPreset(picker, NEW.name, NEW.command);
+    await expect(picker.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await expect(picker).toBeVisible();
+    const before = await activeTerm(page);
+    const mark = wire.markSent();
+    await picker.locator(byTestId(TID.presetOption), { hasText: NEW.name }).click();
+    await expect.poll(() => createsSent(wire, mark).map((m) => [m.preset, m.command])).toEqual([[NEW.name, NEW.command]]);
+    await expect.poll(() => activeTerm(page)).not.toBe(before);
+    await waitScreen(page, await activeTerm(page), 'PRESET-NEW');
+  });
+
+  test('dragging a preset reorders the presets in every page and in config.json', async ({ hub, page, wire, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const other = await openPage(hub, context);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    const row = (name: string): Locator => choices.locator(byTestId(TID.presetRow), { hasText: name });
+    const mark = wire.markSent();
+
+    await row(CAT.name).dragTo(row(SHELL.name), { targetPosition: { x: 20, y: 2 } });
+    await expect.poll(() => presetRequests(wire, mark)).toEqual([{ t: 'movePreset', name: CAT.name, to: 0 }]);
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([CAT.name, SHELL.name]);
+    await expect(other.page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption))).toHaveText([CAT.name, SHELL.name]);
+    expect(configured(hub.configPath)).toEqual([CAT, SHELL]);
+  });
+
+  test('Alt+Up moves the highlighted preset up in the picker, which keeps it highlighted', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await newTerminal(page);
+    await page.locator(byTestId(TID.newTab)).click();
+    const picker = page.locator(byTestId(TID.presetPicker));
+    const options = picker.locator(byTestId(TID.presetOption));
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+
+    await page.keyboard.press('Alt+ArrowUp');
+    await expect(options).toHaveText([CAT.name, SHELL.name]);
+    await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(0)).toBeFocused();
+    expect(configured(hub.configPath)).toEqual([CAT, SHELL]);
+
+    const mark = wire.markSent();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => createsSent(wire, mark).map((m) => m.preset)).toEqual([CAT.name]);
+  });
+
+  test('two quick Alt+Down presses only ever move the highlighted preset', async ({ hub, page }) => {
+    const third = { name: 'third', command: 'echo THIRD' };
+    hub.presets = [...PRESETS, third];
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await newTerminal(page);
+    await page.locator(byTestId(TID.newTab)).click();
+    const options = page.locator(byTestId(TID.presetPicker)).locator(byTestId(TID.presetOption));
+    await expect(options.nth(0)).toBeFocused();
+
+    await page.keyboard.press('Alt+ArrowDown');
+    await page.keyboard.press('Alt+ArrowDown');
+    await expect(options.nth(0)).toHaveText(CAT.name);
+    // The second press either waited for the first move or moved the same preset again.
+    const order = await options.allTextContents();
+    expect([
+      [CAT.name, SHELL.name, third.name],
+      [CAT.name, third.name, SHELL.name],
+    ]).toContainEqual(order);
+    expect(configured(hub.configPath)).toEqual(order.map((name) => [...PRESETS, third].find((p) => p.name === name)));
   });
 });

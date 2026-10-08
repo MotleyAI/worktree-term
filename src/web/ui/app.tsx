@@ -5,11 +5,21 @@ import { repoKey, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction } from './hosts.js';
-import { aggregate, markTitle, type Aggregate } from './marks.js';
-import { pickerKey } from './picker.js';
+import { aggregate, markTitle, worktreeTitle, type Aggregate } from './marks.js';
+import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
-import { PANE_HEADER, type AddRepoDialog, type CloseRequest, type Confirmation, type ShownPane, type ShownTab, type View } from './view.js';
+import {
+  hasPaneHeaders,
+  PANE_HEADER,
+  type AddRepoDialog,
+  type CloseRequest,
+  type Confirmation,
+  type ShownPane,
+  type ShownTab,
+  type View,
+  type WorktreeMenu,
+} from './view.js';
 
 export interface AppProps {
   client: HubClient;
@@ -78,6 +88,21 @@ const ConfirmBody = ({ confirmation }: { confirmation: Confirmation }) => {
   if (confirmation.t === 'removeRepo') {
     return <div class="title">Remove {confirmation.label} from the repo tabs?</div>;
   }
+  if (confirmation.t === 'removeWorktree') {
+    return (
+      <>
+        <div class="title">Delete the worktree {confirmation.label}?</div>
+        <ul>
+          {confirmation.reasons.map((reason) => (
+            <li key={reason} data-testid="confirm-reason">
+              {reason}
+            </li>
+          ))}
+        </ul>
+        <p data-testid="confirm-note">{confirmation.note}</p>
+      </>
+    );
+  }
   const { host, action, recalled } = confirmation;
   const title = action.kind === 'restart' ? `Restart the daemon on ${host.name}?` : `${action.label} wtd on ${host.name}?`;
   if (recalled === null) {
@@ -107,7 +132,13 @@ const ConfirmBody = ({ confirmation }: { confirmation: Confirmation }) => {
   );
 };
 
-/** The in-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed. */
+/** The confirm button's label. */
+const confirmLabel = (confirmation: Confirmation): string => {
+  if (confirmation.t === 'removeRepo') return 'Remove';
+  return confirmation.t === 'removeWorktree' ? 'Delete' : confirmation.action.label;
+};
+
+/** The in-page confirmation of a host action, a repo removal or a worktree deletion; nothing is sent before it is confirmed. */
 const ConfirmDialog = ({ view, confirmation }: { view: View; confirmation: Confirmation }) => {
   const dialog = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
@@ -132,7 +163,7 @@ const ConfirmDialog = ({ view, confirmation }: { view: View; confirmation: Confi
       <ConfirmBody confirmation={confirmation} />
       <div class="buttons">
         <button type="button" data-testid="confirm-ok" onClick={confirm}>
-          {confirmation.t === 'removeRepo' ? 'Remove' : confirmation.action.label}
+          {confirmLabel(confirmation)}
         </button>
         <button type="button" data-testid="confirm-cancel" onClick={cancel}>
           Cancel
@@ -285,10 +316,15 @@ const WorktreeEntry = ({
   <div
     class={`worktree${entry.prunable ? ' prunable' : ''}${entry.gone ? ' gone' : ''}`}
     data-testid="worktree"
-    title={entry.path}
+    data-path={entry.path}
+    title={worktreeTitle(entry.path, terminals)}
     aria-selected={selected ? 'true' : 'false'}
     data-prunable={entry.prunable ? 'true' : undefined}
     data-gone={entry.gone ? 'true' : undefined}
+    onContextMenu={(event) => {
+      event.preventDefault();
+      view.openWorktreeMenu(entry.path, event.clientX, event.clientY);
+    }}
   >
     {!entry.gone && (
       <input
@@ -316,6 +352,51 @@ const WorktreeEntry = ({
     <Mark of={aggregate(terminals, 'group')} />
   </div>
 );
+
+/** The worktree context menu; Escape or a press outside closes it. */
+const WorktreeMenuBox = ({ view, menu }: { view: View; menu: WorktreeMenu }) => {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    box.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    const outside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && box.current?.contains(event.target) !== true) view.closeWorktreeMenu();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+    };
+  }, [view]);
+  const blocker = view.deleteBlocker(menu.worktree);
+  return (
+    <div
+      class="context-menu"
+      role="menu"
+      data-testid="worktree-menu"
+      tabIndex={-1}
+      ref={box}
+      style={{ left: px(menu.x), top: px(menu.y) }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        view.closeWorktreeMenu();
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="delete-worktree"
+        disabled={blocker !== null}
+        title={blocker ?? undefined}
+        onClick={() => {
+          view.deleteWorktree(menu.worktree);
+        }}
+      >
+        Delete worktree
+      </button>
+    </div>
+  );
+};
 
 const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: View }) => (
   <div
@@ -383,7 +464,8 @@ const TabControls = ({ view }: { view: View }) => (
   </span>
 );
 
-const PaneFrame = ({ pane, focused, view }: { pane: ShownPane; focused: boolean; view: View }) => (
+/** A pane of the shown tab; only in a split does it have a header naming it, with its mark and close button. */
+const PaneFrame = ({ pane, focused, header, view }: { pane: ShownPane; focused: boolean; header: boolean; view: View }) => (
   <div
     class={`pane${focused ? ' focused' : ''}`}
     data-testid="pane"
@@ -391,30 +473,32 @@ const PaneFrame = ({ pane, focused, view }: { pane: ShownPane; focused: boolean;
     data-focused={focused ? 'true' : undefined}
     style={{ left: px(pane.rect.left), top: px(pane.rect.top), width: px(pane.rect.width), height: px(pane.rect.height) }}
   >
-    <div // NOSONAR(S6848) — a pointer shortcut; the keyboard moves between panes with Alt+arrows
-      class="pane-header"
-      style={{ height: px(PANE_HEADER) }}
-      onMouseDown={() => {
-        view.focusPane(pane.termId);
-      }}
-    >
-      <span class="pane-label">
-        {pane.terminal?.preset ?? 'terminal'} {pane.termId}
-        {pane.terminal?.exit != null ? ' (exited)' : ''}
-      </span>
-      <Mark of={aggregate(pane.terminal === null ? [] : [pane.terminal], 'tab')} />
-      <button
-        type="button"
-        class="close"
-        data-testid="pane-close"
-        title="Close (Ctrl+Shift+W)"
-        onClick={() => {
-          view.requestClose([pane.termId]);
+    {header && (
+      <div // NOSONAR(S6848) — a pointer shortcut; the keyboard moves between panes with Alt+arrows
+        class="pane-header"
+        style={{ height: px(PANE_HEADER) }}
+        onMouseDown={() => {
+          view.focusPane(pane.termId);
         }}
       >
-        ×
-      </button>
-    </div>
+        <span class="pane-label">
+          {pane.terminal?.preset ?? 'terminal'} {pane.termId}
+          {pane.terminal?.exit != null ? ' (exited)' : ''}
+        </span>
+        <Mark of={aggregate(pane.terminal === null ? [] : [pane.terminal], 'tab')} />
+        <button
+          type="button"
+          class="close"
+          data-testid="pane-close"
+          title="Close (Ctrl+Shift+W)"
+          onClick={() => {
+            view.requestClose([pane.termId]);
+          }}
+        >
+          ×
+        </button>
+      </div>
+    )}
   </div>
 );
 
@@ -452,6 +536,8 @@ const PresetList = ({
   move,
   choose,
   cancel,
+  remove,
+  reorder,
   focusFirst,
 }: {
   presets: readonly Preset[];
@@ -459,17 +545,40 @@ const PresetList = ({
   move: (index: number) => void;
   choose: (index: number) => void;
   cancel: () => void;
+  /** Removes the named preset; offered while more than one is left. */
+  remove: (name: string) => void;
+  /** Moves the named preset to position `to`, by dragging or Alt+Up/Down; resolves with whether the hub did. */
+  reorder: (name: string, to: number) => Promise<boolean>;
   /** Whether the list takes the keyboard focus when shown; it follows the highlighted option once it has it. */
   focusFirst: boolean;
 }) => {
   const list = useRef<HTMLDivElement>(null);
   const shown = useRef(false);
-  // Before the browser handles the next key, so no key meant for the list reaches a terminal.
+  /** The dragged preset's position and the gap it would be dropped into (0 = before the first). */
+  const [drag, setDrag] = useState<{ from: number; slot: number | null } | null>(null);
+  const order = presets.map((p) => p.name).join('\n');
+  // Before the browser handles the next key, so no key meant for the list reaches a terminal; again after a reorder.
   useLayoutEffect(() => {
     const options = list.current?.querySelectorAll<HTMLElement>('[data-testid="preset-option"]');
     if (focusFirst || shown.current) options?.[index]?.focus();
     shown.current = true;
-  }, [index, focusFirst]);
+  }, [index, focusFirst, order]);
+  /** The order a keyboard move was sent from; further moves wait until the new order arrives or the move fails. */
+  const movingFrom = useRef<string | null>(null);
+  const moveBy = (step: number): void => {
+    const preset = presets[index];
+    const to = index + step;
+    if (preset === undefined || to < 0 || to >= presets.length || movingFrom.current === order) return;
+    movingFrom.current = order;
+    move(to);
+    void reorder(preset.name, to).then((moved) => {
+      if (!moved) movingFrom.current = null;
+    });
+  };
+  const dropClass = (i: number): string => {
+    if (drag?.slot === i) return ' drop-before';
+    return drag?.slot === presets.length && i === presets.length - 1 ? ' drop-after' : '';
+  };
   return (
     <div
       class="preset-list"
@@ -477,6 +586,12 @@ const PresetList = ({
       tabIndex={-1}
       ref={list}
       onKeyDown={(event) => {
+        if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+          event.preventDefault();
+          event.stopPropagation();
+          moveBy(event.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
         const key = pickerKey(event.key, index, presets.length);
         if (key === null) return;
         event.preventDefault();
@@ -487,26 +602,168 @@ const PresetList = ({
       }}
     >
       {presets.map((preset, i) => (
-        <button
-          type="button"
+        <div
+          class={`preset-row${dropClass(i)}`}
+          role="none"
           key={preset.name}
-          role="option"
-          class="preset-option"
-          data-testid="preset-option"
-          aria-selected={i === index ? 'true' : 'false'}
-          data-digit={i < 9 ? String(i + 1) : undefined}
-          title={preset.command ?? 'shell'}
-          onFocus={() => {
-            if (i !== index) move(i);
+          data-testid="preset-row"
+          draggable={presets.length > 1}
+          onDragStart={(event) => {
+            event.dataTransfer?.setData('text/plain', preset.name);
+            if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'move';
+            setDrag({ from: i, slot: null });
           }}
-          onClick={() => {
-            choose(i);
+          onDragOver={(event) => {
+            if (drag === null) return;
+            event.preventDefault();
+            const box = event.currentTarget.getBoundingClientRect();
+            const slot = event.clientY < box.top + box.height / 2 ? i : i + 1;
+            if (slot !== drag.slot) setDrag({ ...drag, slot });
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const slot = drag?.slot ?? null;
+            const dragged = drag === null ? undefined : presets[drag.from];
+            if (drag !== null && slot !== null && dragged !== undefined) {
+              const to = dropPosition(drag.from, slot);
+              if (to !== drag.from) void reorder(dragged.name, to);
+            }
+            setDrag(null);
+          }}
+          onDragEnd={() => {
+            setDrag(null);
           }}
         >
-          {preset.name}
-        </button>
+          <button
+            type="button"
+            role="option"
+            class="preset-option"
+            data-testid="preset-option"
+            aria-selected={i === index ? 'true' : 'false'}
+            data-digit={i < 9 ? String(i + 1) : undefined}
+            title={preset.command ?? 'shell'}
+            onFocus={() => {
+              if (i !== index) move(i);
+            }}
+            onClick={() => {
+              choose(i);
+            }}
+          >
+            {preset.name}
+          </button>
+          {presets.length > 1 && (
+            <button
+              type="button"
+              class="preset-remove"
+              data-testid="preset-remove"
+              tabIndex={-1}
+              title={`Remove ${preset.name}`}
+              aria-label={`Remove preset ${preset.name}`}
+              onClick={() => {
+                remove(preset.name);
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       ))}
     </div>
+  );
+};
+
+/** "+ Add preset", which opens a form for a new preset's name and command; Escape closes the form. */
+const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [command, setCommand] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (open) nameInput.current?.focus();
+  }, [open]);
+  const close = (): void => {
+    setOpen(false);
+    setName('');
+    setCommand('');
+    setError(null);
+  };
+  if (!open) {
+    return (
+      <button
+        type="button"
+        class="preset-add"
+        data-testid="preset-add"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        + Add preset
+      </button>
+    );
+  }
+  return (
+    <form
+      class="preset-form"
+      data-testid="preset-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const result = presetFromForm(name, command, presets);
+        if ('error' in result) {
+          setError(result.error);
+          return;
+        }
+        setSending(true);
+        view
+          .addPreset(result.preset)
+          .then(close, (failure: unknown) => {
+            setError(failure instanceof Error ? failure.message : String(failure));
+          })
+          .finally(() => {
+            setSending(false);
+          });
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }}
+    >
+      <input
+        ref={nameInput}
+        data-testid="preset-name"
+        aria-label="Preset name"
+        placeholder="Name"
+        value={name}
+        onInput={(event) => {
+          setName(event.currentTarget.value);
+        }}
+      />
+      <input
+        data-testid="preset-command"
+        aria-label="Preset command"
+        placeholder="Command (empty: login shell)"
+        value={command}
+        onInput={(event) => {
+          setCommand(event.currentTarget.value);
+        }}
+      />
+      {error !== null && (
+        <div class="error" data-testid="preset-error">
+          {error}
+        </div>
+      )}
+      <div class="buttons">
+        <button type="button" onClick={close}>
+          Cancel
+        </button>
+        <button type="submit" data-testid="preset-submit" disabled={sending}>
+          Add
+        </button>
+      </div>
+    </form>
   );
 };
 
@@ -531,7 +788,7 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
       <div class="title">{picker.context.op.t === 'newTab' ? 'New tab' : `Split ${picker.context.op.dir}`}</div>
       <PresetList
         presets={presets}
-        index={picker.index}
+        index={Math.min(picker.index, presets.length - 1)}
         focusFirst
         move={(i) => {
           view.movePicker(i);
@@ -542,7 +799,12 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
         cancel={() => {
           view.cancelPicker();
         }}
+        remove={(name) => {
+          view.removePreset(name);
+        }}
+        reorder={(name, to) => view.movePreset(name, to)}
       />
+      <PresetAdder view={view} presets={presets} />
     </dialog>
   );
 };
@@ -563,7 +825,12 @@ const PresetChoices = ({ view, presets }: { view: View; presets: readonly Preset
           if (preset !== undefined) view.choose(preset);
         }}
         cancel={() => undefined}
+        remove={(name) => {
+          view.removePreset(name);
+        }}
+        reorder={(name, to) => view.movePreset(name, to)}
       />
+      <PresetAdder view={view} presets={presets} />
     </div>
   );
 };
@@ -642,7 +909,13 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
   return (
     <div class="terminal-area" ref={area}>
       {view.panes.value.map((pane) => (
-        <PaneFrame key={pane.termId} pane={pane} focused={pane.termId === focused} view={view} />
+        <PaneFrame
+          key={pane.termId}
+          pane={pane}
+          focused={pane.termId === focused}
+          header={hasPaneHeaders(view.panes.value.length)}
+          view={view}
+        />
       ))}
       {view.dividers.value.map((divider) => (
         <DividerHandle key={divider.path.join('.')} divider={divider} view={view} />
@@ -749,6 +1022,7 @@ const Workspace = ({ client, manager, view }: AppProps) => {
         <TerminalArea client={client} manager={manager} view={view} />
       </main>
       {closing !== null && <CloseDialog view={view} request={closing} />}
+      {view.worktreeMenu.value !== null && <WorktreeMenuBox view={view} menu={view.worktreeMenu.value} />}
     </div>
   );
 };

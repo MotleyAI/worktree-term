@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { makeRepo, waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
 import { installRemote, type FakeRemote } from '../support/fake-ssh.js';
@@ -149,7 +149,7 @@ test.describe('host actions', () => {
     process.kill(await oneDaemon(hub), 'SIGKILL');
     await waitUntil(() => hub.daemonPids().length === 0, 'the daemon to exit');
     rmSync(hub.socket, { force: true });
-    const fake = await FakeDaemon.listen(hub.socket, { protocol: PROTOCOL_VERSION - 1, version: '0.0.9', instance });
+    const fake = await FakeDaemon.listen(hub.socket, { protocol: DAEMON_PROTOCOL_VERSION - 1, version: '0.0.9', instance });
     try {
       await hub.startHub();
       await page.reload();
@@ -173,7 +173,7 @@ test.describe('host actions', () => {
     const app = makeRepo(join(remote.home, 'app'));
     await installRemote(hub, ssh, 'box');
     const before = remote.current();
-    const fake = await FakeDaemon.listen(remote.socket, { protocol: PROTOCOL_VERSION - 1, version: '0.0.9' });
+    const fake = await FakeDaemon.listen(remote.socket, { protocol: DAEMON_PROTOCOL_VERSION - 1, version: '0.0.9' });
     writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: [app] }] });
     try {
       const browserDialogs = refuseBrowserDialogs(page);

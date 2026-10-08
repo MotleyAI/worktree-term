@@ -173,6 +173,7 @@ export class HubStore {
       case 'error':
       case 'detached':
       case 'reposDiscovered':
+      case 'worktreeAtRisk':
         return;
     }
   }

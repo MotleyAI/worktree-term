@@ -50,6 +50,8 @@ interface Entry {
   needsAttach: boolean;
   /** Output arrived out of order; waiting for the snapshot of a new attach. */
   resyncing: boolean;
+  /** The size last sent for the terminal since the page last gained the focus or connected; null for none. */
+  sent: string | null;
 }
 
 const SCROLLBACK = 10_000;
@@ -153,6 +155,13 @@ export class TerminalManager {
     window.addEventListener('pageshow', () => {
       this.unloaded = false;
       this.syncVisible();
+    });
+    // Another page may have sized the PTYs meanwhile: the page in focus sets them to its own sizes.
+    window.addEventListener('focus', () => {
+      this.claimSizes(() => true);
+    });
+    client.onHostConnected((host) => {
+      this.claimSizes((entry) => entry.host === host);
     });
     window.__wtdInspect = { screen: (host, termId) => this.screen(host, termId) };
   }
@@ -267,7 +276,7 @@ export class TerminalManager {
     const acks = new AckTracker((offset) => {
       this.client.notify(host, { t: 'ack', termId, offset });
     });
-    const entry: Entry = { host, termId, repo, term, container, fit, acks, shown: false, needsAttach: false, resyncing: false };
+    const entry: Entry = { host, termId, repo, term, container, fit, acks, shown: false, needsAttach: false, resyncing: false, sent: null };
     this.entries.set(key, entry);
     this.attach(host, termId);
   }
@@ -393,15 +402,34 @@ export class TerminalManager {
     this.fitAll([entry]);
   }
 
-  /** Fits `entries` to their containers: every size is read before any terminal resizes, so layout runs once. */
+  /**
+   * Fits `entries` to their containers, every size read before any terminal resizes so layout runs once,
+   * then, while the page has the focus, gives their PTYs those sizes.
+   */
   private fitAll(entries: readonly Entry[]): void {
     const sizes = entries.map((entry) => ({ entry, size: entry.fit.proposeDimensions() }));
     for (const { entry, size } of sizes) {
       const { cols, rows } = entry.term;
       if (size === undefined || !(size.cols > 0 && size.rows > 0) || (size.cols === cols && size.rows === rows)) continue;
       entry.term.resize(size.cols, size.rows);
-      this.client.notify(entry.host, { t: 'resize', termId: entry.termId, cols: size.cols, rows: size.rows });
     }
+    for (const entry of entries) this.sendSize(entry);
+  }
+
+  /** Forgets the sizes sent for the entries `which` selects, then sends those of the shown ones. */
+  private claimSizes(which: (entry: Entry) => boolean): void {
+    for (const entry of this.entries.values()) if (which(entry)) entry.sent = null;
+    for (const entry of this.shown) if (which(entry)) this.sendSize(entry);
+  }
+
+  /** Gives the PTY of `entry` the terminal's size, only from the page in focus and only when it differs from the last one sent. */
+  private sendSize(entry: Entry): void {
+    if (!document.hasFocus()) return;
+    const { cols, rows } = entry.term;
+    const size = `${String(cols)}x${String(rows)}`;
+    if (entry.sent === size) return;
+    entry.sent = size;
+    this.client.notify(entry.host, { t: 'resize', termId: entry.termId, cols, rows });
   }
 
   private createWebgl(key: string): WebglAddon {

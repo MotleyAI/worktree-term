@@ -9,4 +9,4 @@ export {
   type HubConfig,
   type RemoteHostConfig,
 } from './config.js';
-export { ConfigEditor, type EditorHooks, type RepoEdit } from './editor.js';
+export { ConfigEditor, type EditorHooks, type PresetEdit, type RepoEdit } from './editor.js';

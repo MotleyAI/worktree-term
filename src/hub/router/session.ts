@@ -9,8 +9,9 @@ import {
   type Frame,
   type HostEntry,
   type MessageOf,
+  type Preset,
 } from '../../protocol/index.js';
-import { ConfigError, type ConfigSnapshot, type RepoEdit } from '../config/index.js';
+import { ConfigError, type ConfigSnapshot, type PresetEdit, type RepoEdit } from '../config/index.js';
 import type { DaemonEndpoint, Link } from '../links/index.js';
 import type { HostCoordinator } from './coordinator.js';
 import { hostTransition, initialHostState, retryDelay, type HostEvent, type HostState } from './hosts.js';
@@ -52,6 +53,12 @@ export interface SessionContext {
   editRepos: (host: SessionHost, change: 'add' | 'remove', repo: string) => Promise<RepoEdit>;
   /** Shows the host's repos after an edit to every session listing it. */
   reposEdited: (host: SessionHost, repos: string[]) => void;
+  /** Adds or removes a preset in the configuration. */
+  editPresets: (
+    edit: { t: 'add'; preset: Preset } | { t: 'remove'; name: string } | { t: 'move'; name: string; to: number },
+  ) => Promise<PresetEdit>;
+  /** Shows the presets after an edit to every session. */
+  presetsEdited: (presets: Preset[]) => void;
 }
 
 /** Depth of hub-level repo discovery. */
@@ -255,7 +262,21 @@ export class Session {
       case 'removeRepo':
         this.removeRepo(message.req, message.host, message.repo);
         return;
+      case 'addPreset':
+        this.editPresets(message.req, { t: 'add', preset: message.preset });
+        return;
+      case 'removePreset':
+        this.editPresets(message.req, { t: 'remove', name: message.name });
+        return;
+      case 'movePreset':
+        this.editPresets(message.req, { t: 'move', name: message.name, to: message.to });
+        return;
     }
+  }
+
+  /** Sends presets changed by an edit. */
+  showPresets(presets: Preset[]): void {
+    if (!this.closed) this.message({ t: 'presets', presets });
   }
 
   /** Replaces the repos of the session's matching host after an edit and sends `hosts`. */
@@ -404,6 +425,20 @@ export class Session {
       }
       this.edited(req, host.host, await this.context.editRepos(host.host, 'remove', repo));
     });
+  }
+
+  /** Edits the presets, answering `done` and showing the result to every session, or `internal` naming the refusal. */
+  private editPresets(req: number, edit: Parameters<SessionContext['editPresets']>[0]): void {
+    this.context.editPresets(edit).then(
+      (result) => {
+        this.message({ t: 'done', req });
+        if (result.changed) this.context.presetsEdited(result.presets);
+      },
+      (error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error);
+        this.error(req, null, 'internal', error instanceof ConfigError ? `cannot edit the configuration: ${text}` : text);
+      },
+    );
   }
 
   /** Answers `done` for an edit, then shows its repos to every session listing the host. */

@@ -12,7 +12,8 @@ import {
   MAX_FRAME,
   MAX_INPUT,
   messageSchemas,
-  PROTOCOL_VERSION,
+  BROWSER_PROTOCOL_VERSION,
+  DAEMON_PROTOCOL_VERSION,
   ProtocolError,
   StreamDecoder,
   type Direction,
@@ -22,8 +23,18 @@ import { DIRECTIONS, featWorktree, hello, layout, liveTerminal, raw, REPO, sampl
 
 const directionSchema = z.enum(['clientToDaemon', 'daemonToClient', 'browserToHub', 'hubToBrowser']);
 
+type Link = 'daemon' | 'browser';
+const LINKS: readonly Link[] = ['daemon', 'browser'];
+/** The link, and so the version, each direction belongs to. */
+const LINK_OF: Readonly<Record<Direction, Link>> = {
+  clientToDaemon: 'daemon',
+  daemonToClient: 'daemon',
+  browserToHub: 'browser',
+  hubToBrowser: 'browser',
+};
+
 const snapshotSchema = z.object({
-  protocolVersion: z.number(),
+  protocolVersions: z.object({ daemon: z.number(), browser: z.number() }),
   constants: z.record(z.string(), z.number()),
   schemas: z.record(z.string(), z.unknown()),
   corpus: z.array(z.object({ dir: directionSchema, json: z.string(), valid: z.boolean() })),
@@ -36,19 +47,24 @@ type PreviousSnapshot = z.infer<typeof previousSchema>;
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 const key = (entry: { dir: string; json: string }): string => `${entry.dir} ${entry.json}`;
 
-/** Wire changes between two goldens that a missing PROTOCOL_VERSION bump makes illegal. */
+/**
+ * Wire changes between two goldens that missing version bumps make illegal: a direction's schema and corpus
+ * verdicts need its link's bump; the constants, which both links use, need both.
+ */
 const wireViolations = (previous: PreviousSnapshot, current: WireSnapshot): string[] => {
-  if (previous.protocolVersion === undefined) return [];
-  if (current.protocolVersion < previous.protocolVersion) return ['PROTOCOL_VERSION decreased'];
-  if (current.protocolVersion > previous.protocolVersion) return [];
-  const violations: string[] = [];
-  if (!same(previous.constants, current.constants)) violations.push('constants changed');
-  const schemaDirs = new Set([...Object.keys(previous.schemas ?? {}), ...Object.keys(current.schemas)]);
-  for (const dir of schemaDirs) {
-    if (!same(previous.schemas?.[dir], current.schemas[dir])) violations.push(`schema ${dir} changed`);
+  const before = previous.protocolVersions;
+  if (before === undefined) return [];
+  const violations = LINKS.filter((link) => current.protocolVersions[link] < before[link]).map(
+    (link) => `${link} protocol version decreased`,
+  );
+  const bumped = (link: Link): boolean => current.protocolVersions[link] > before[link];
+  if (!same(previous.constants, current.constants) && !LINKS.every(bumped)) violations.push('constants changed');
+  for (const dir of DIRECTIONS) {
+    if (!bumped(LINK_OF[dir]) && !same(previous.schemas?.[dir], current.schemas[dir])) violations.push(`schema ${dir} changed`);
   }
   const now = new Map(current.corpus.map((entry) => [key(entry), entry.valid]));
   for (const entry of previous.corpus ?? []) {
+    if (bumped(LINK_OF[entry.dir])) continue;
     const valid = now.get(key(entry));
     if (valid === undefined) violations.push(`corpus entry removed: ${key(entry)}`);
     else if (valid !== entry.valid) violations.push(`verdict changed: ${key(entry)}`);
@@ -132,6 +148,12 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'discoverRepos', req: 1, roots: ['~/'], depth: 3 },
   { t: 'watchRepo', req: 1, repo: '~/x' },
   { t: 'addRepo', req: 1, host: 0, repo: '~/x' },
+  { t: 'addPreset', req: 1, preset: { name: '  ', command: null } },
+  { t: 'addPreset', req: 1, preset: { name: 'p', command: '' } },
+  { t: 'removePreset', req: 1, name: '' },
+  { t: 'movePreset', req: 1, name: 'p', to: 64 },
+  { t: 'removeWorktree', req: 1, worktree: WT },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: -1, changes: 0, running: [] },
   {
     t: 'hosts',
     hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [] }],
@@ -147,7 +169,7 @@ const EDGE_CASES: readonly unknown[] = [
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
 
 const currentSnapshot = (): WireSnapshot => ({
-  protocolVersion: PROTOCOL_VERSION,
+  protocolVersions: { daemon: DAEMON_PROTOCOL_VERSION, browser: BROWSER_PROTOCOL_VERSION },
   constants: { MAX_FRAME, MAX_INPUT, FLOW_HIGH, FLOW_LOW, ACK_EVERY, LAG_EVICT_MS },
   schemas: Object.fromEntries(DIRECTIONS.map((dir) => [dir, z.toJSONSchema(messageSchemas[dir])])),
   corpus: DIRECTIONS.flatMap((dir) => allJson.map((json) => ({ dir, json, valid: decodes(dir, json) }))),
@@ -155,11 +177,15 @@ const currentSnapshot = (): WireSnapshot => ({
 
 describe('wire golden guard', () => {
   const base: WireSnapshot = {
-    protocolVersion: 3,
+    protocolVersions: { daemon: 3, browser: 3 },
     constants: { MAX_FRAME: 1 },
-    schemas: { clientToDaemon: { type: 'object' } },
-    corpus: [{ dir: 'clientToDaemon', json: '{"t":"shutdown"}', valid: true }],
+    schemas: { clientToDaemon: { type: 'object' }, browserToHub: { type: 'object' } },
+    corpus: [
+      { dir: 'clientToDaemon', json: '{"t":"shutdown"}', valid: true },
+      { dir: 'browserToHub', json: '{"t":"shutdown"}', valid: false },
+    ],
   };
+  const versions = (daemon: number, browser: number): WireSnapshot['protocolVersions'] => ({ daemon, browser });
 
   it('allows an identical golden', () => {
     expect(wireViolations(base, base)).toEqual([]);
@@ -170,25 +196,56 @@ describe('wire golden guard', () => {
   });
 
   it('flags a schema change without a version bump', () => {
-    expect(wireViolations(base, { ...base, schemas: { clientToDaemon: { type: 'array' } } })).toEqual(['schema clientToDaemon changed']);
+    const schemas = { ...base.schemas, clientToDaemon: { type: 'array' } };
+    expect(wireViolations(base, { ...base, schemas })).toEqual(['schema clientToDaemon changed']);
   });
 
   it('flags a new message union without a version bump', () => {
     expect(wireViolations(base, { ...base, schemas: { ...base.schemas, hubToBrowser: {} } })).toEqual(['schema hubToBrowser changed']);
   });
 
-  it('flags a constant change without a version bump', () => {
-    expect(wireViolations(base, { ...base, constants: { MAX_FRAME: 2 } })).toEqual(['constants changed']);
+  it('allows a browser schema change with only the browser version bumped', () => {
+    const schemas = { ...base.schemas, browserToHub: { type: 'array' }, hubToBrowser: {} };
+    expect(wireViolations(base, { ...base, protocolVersions: versions(3, 4), schemas })).toEqual([]);
   });
 
-  it('flags a flipped verdict without a version bump', () => {
-    expect(wireViolations(base, { ...base, corpus: [{ dir: 'clientToDaemon', json: '{"t":"shutdown"}', valid: false }] })).toEqual([
+  it('flags a daemon schema change with only the browser version bumped', () => {
+    const schemas = { ...base.schemas, clientToDaemon: { type: 'array' } };
+    expect(wireViolations(base, { ...base, protocolVersions: versions(3, 4), schemas })).toEqual(['schema clientToDaemon changed']);
+  });
+
+  it('flags a browser schema change with only the daemon version bumped', () => {
+    const schemas = { ...base.schemas, browserToHub: { type: 'array' } };
+    expect(wireViolations(base, { ...base, protocolVersions: versions(4, 3), schemas })).toEqual(['schema browserToHub changed']);
+  });
+
+  it('flags a constant change unless both versions are bumped', () => {
+    const constants = { MAX_FRAME: 2 };
+    expect(wireViolations(base, { ...base, constants })).toEqual(['constants changed']);
+    expect(wireViolations(base, { ...base, protocolVersions: versions(4, 3), constants })).toEqual(['constants changed']);
+    expect(wireViolations(base, { ...base, protocolVersions: versions(3, 4), constants })).toEqual(['constants changed']);
+    expect(wireViolations(base, { ...base, protocolVersions: versions(4, 4), constants })).toEqual([]);
+  });
+
+  it('flags a flipped verdict without its link bumped', () => {
+    const corpus = base.corpus.map((entry) => ({ ...entry, valid: !entry.valid }));
+    expect(wireViolations(base, { ...base, corpus })).toEqual([
+      'verdict changed: clientToDaemon {"t":"shutdown"}',
+      'verdict changed: browserToHub {"t":"shutdown"}',
+    ]);
+    expect(wireViolations(base, { ...base, protocolVersions: versions(3, 4), corpus })).toEqual([
       'verdict changed: clientToDaemon {"t":"shutdown"}',
     ]);
   });
 
-  it('flags a removed corpus entry', () => {
-    expect(wireViolations(base, { ...base, corpus: [] })).toEqual(['corpus entry removed: clientToDaemon {"t":"shutdown"}']);
+  it('flags a removed corpus entry without its link bumped', () => {
+    expect(wireViolations(base, { ...base, corpus: [] })).toEqual([
+      'corpus entry removed: clientToDaemon {"t":"shutdown"}',
+      'corpus entry removed: browserToHub {"t":"shutdown"}',
+    ]);
+    expect(wireViolations(base, { ...base, protocolVersions: versions(4, 3), corpus: [] })).toEqual([
+      'corpus entry removed: browserToHub {"t":"shutdown"}',
+    ]);
   });
 
   it('allows an added corpus entry', () => {
@@ -196,25 +253,26 @@ describe('wire golden guard', () => {
     expect(wireViolations(base, { ...base, corpus: [...base.corpus, added] })).toEqual([]);
   });
 
-  it('allows any change with a version bump', () => {
-    expect(wireViolations(base, { protocolVersion: 4, constants: {}, schemas: {}, corpus: [] })).toEqual([]);
+  it('allows any change with both versions bumped', () => {
+    expect(wireViolations(base, { protocolVersions: versions(4, 4), constants: {}, schemas: {}, corpus: [] })).toEqual([]);
   });
 
-  it('flags a version decrease', () => {
-    expect(wireViolations(base, { ...base, protocolVersion: 2 })).toEqual(['PROTOCOL_VERSION decreased']);
+  it('flags a decrease of either version', () => {
+    expect(wireViolations(base, { ...base, protocolVersions: versions(2, 3) })).toEqual(['daemon protocol version decreased']);
+    expect(wireViolations(base, { ...base, protocolVersions: versions(3, 2) })).toEqual(['browser protocol version decreased']);
   });
 });
 
 describe('wire golden', () => {
-  // Regenerate with `vitest run -u` only together with a PROTOCOL_VERSION bump.
-  it('matches src/protocol/wire.golden.json unless PROTOCOL_VERSION was bumped', async () => {
+  // Regenerate with `vitest run -u` only together with the bumps wireViolations asks for.
+  it('matches src/protocol/wire.golden.json unless the changed links were bumped', async () => {
     const current = currentSnapshot();
     expect(wireViolations(previousSchema.parse(wireJson), current)).toEqual([]);
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for protocol version 5', () => {
-    expect(previousSchema.parse(wireJson).protocolVersion).toBe(5);
+  it('is blessed for daemon protocol 6 and browser protocol 8', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 6, browser: 8 });
   });
 
   it('records every sample as valid in its own direction', () => {

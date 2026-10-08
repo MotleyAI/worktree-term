@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { DaemonClient } from '../support/daemon-client.js';
 import { DaemonHost, makeRepo, sessionOf, waitUntil, type WtdProcess } from '../support/daemon-host.js';
 
@@ -38,8 +38,8 @@ describe('wtd connect', () => {
     const { process: connect, client } = bridge();
     const hello = await client.waitFor('hello', () => true, { timeout: 10_000 });
     expect(client.received[0]).toEqual({ kind: 'message', message: hello });
-    expect(hello.protocol).toBe(PROTOCOL_VERSION);
-    expect(hello.protocol).toBe(5);
+    expect(hello.protocol).toBe(DAEMON_PROTOCOL_VERSION);
+    expect(hello.protocol).toBe(6);
     const [daemon, ...others] = host.daemonPids();
     if (daemon === undefined) throw new Error('no daemon is running');
     expect(others).toEqual([]);

@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { encodeWsData, MAX_FRAME, PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { encodeWsData, MAX_FRAME, BROWSER_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { sleep, type WtdProcess } from '../support/daemon-host.js';
 import { UpgradeRefused, type HubClient, type HubMessageOf } from '../support/hub-client.js';
 import { HubHost, type RawResponse } from '../support/hub-host.js';
@@ -563,7 +563,7 @@ describe('session handshake', () => {
     const client = await host.open(['wtd', `wtd.token.${token}`]);
     expect(await client.waitFor('hello')).toEqual({
       t: 'hello',
-      protocol: PROTOCOL_VERSION,
+      protocol: BROWSER_PROTOCOL_VERSION,
       version: packageVersion(),
       instance: host.record()?.instance,
     });
@@ -604,18 +604,30 @@ describe('session handshake', () => {
     expect(client.messages.slice(from, from + 2).map((m) => m.t)).toEqual(['presets', 'hosts']);
   });
 
-  it('sends the shell preset alone and no repos without a configuration file', async () => {
+  it('sends the default presets and no repos without a configuration file', async () => {
     rmSync(host.configPath);
     const client = await host.session();
-    expect(presetsOf(client)).toEqual([[{ name: 'shell', command: null }]]);
+    expect(presetsOf(client)).toEqual([
+      [
+        { name: 'shell', command: null },
+        { name: 'claude', command: 'claude' },
+        { name: 'codex', command: 'codex' },
+      ],
+    ]);
     expect(client.hosts()[0]?.repos).toEqual([]);
     expect(existsSync(host.configPath)).toBe(false);
   });
 
-  it('sends the shell preset alone when the configuration has no presets', async () => {
+  it('sends the shell, claude and codex presets when the configuration has no presets', async () => {
     host.writeConfig({ port: host.port });
     const client = await host.session();
-    expect(presetsOf(client)).toEqual([[{ name: 'shell', command: null }]]);
+    expect(presetsOf(client)).toEqual([
+      [
+        { name: 'shell', command: null },
+        { name: 'claude', command: 'claude' },
+        { name: 'codex', command: 'codex' },
+      ],
+    ]);
   });
 
   it('sends exactly the configured presets in their order', async () => {
@@ -646,7 +658,7 @@ describe('session handshake', () => {
   it('answers a hello of another protocol with version-mismatch and closes the session', async () => {
     const client = await host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
-    client.sendHello(PROTOCOL_VERSION + 1);
+    client.sendHello(BROWSER_PROTOCOL_VERSION + 1);
     expect(await client.waitFor('error')).toEqual({
       t: 'error',
       req: null,

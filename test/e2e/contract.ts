@@ -56,12 +56,20 @@ export const TID = {
   addRepoPath: 'add-repo-path',
   /** In the add-repo dialog after a failed `addRepo`; text holds the error code. */
   addRepoError: 'add-repo-error',
-  /** Sidebar entry; `title` = path, `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone. */
+  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; right-click opens the worktree menu. */
   worktree: 'worktree',
   /** The label inside a sidebar entry; clicking it selects the worktree. */
   worktreeLabel: 'worktree-label',
   /** Checkbox input: checked = show checked worktrees only, in the selected repo; each repo keeps its own, across reloads. */
   filterChecked: 'filter-checked',
+  /** Context menu of a worktree entry; Escape or a press outside closes it. */
+  worktreeMenu: 'worktree-menu',
+  /** Menu item: deletes the worktree, at once when nothing would be lost, else after the confirmation; `disabled` for the main worktree, a locked or gone one, or an unconnected host. */
+  deleteWorktree: 'delete-worktree',
+  /** One reason in the confirmation of a worktree deletion. */
+  confirmReason: 'confirm-reason',
+  /** In the confirmation of a worktree deletion: whether its branch is kept, or that a detached worktree's commits are left only in the reflog. */
+  confirmNote: 'confirm-note',
   /** Separator on the sidebar's right edge; dragging or ArrowLeft/ArrowRight resizes the sidebar; `aria-valuenow` = its width in px, kept across reloads. */
   sidebarResizer: 'sidebar-resizer',
   /** Terminal tab; `data-term` = its first live terminal's id, `aria-selected`, text contains "exited" once that terminal exited. */
@@ -76,7 +84,7 @@ export const TID = {
   splitDown: 'split-down',
   /** Pane frame of the shown tab, placed over its terminal; `data-term`, `data-focused="true"` on the focused pane. */
   pane: 'pane',
-  /** Close button inside a pane; closes its terminal, confirming first when it is running. */
+  /** Close button in the header of a pane of a split (a lone pane has no header); closes its terminal, confirming first when it is running. */
   paneClose: 'pane-close',
   /** Divider between the two sides of a split; `data-split` = right|down, `data-path` = path from the tab root, e.g. "", "b", "b.a". */
   divider: 'divider',
@@ -86,6 +94,22 @@ export const TID = {
   presetChoices: 'preset-choices',
   /** One preset in a picker or in the choices, in configured order; text = preset name; `aria-selected="true"` on the highlighted one. */
   presetOption: 'preset-option',
+  /** Button beside each preset while more than one exists; sends `removePreset` for it. */
+  presetRemove: 'preset-remove',
+  /** Row holding a preset option and its remove button; draggable while more than one preset exists, a drop sends `movePreset`. */
+  presetRow: 'preset-row',
+  /** Button under a preset list; opens the add-preset form. */
+  presetAdd: 'preset-add',
+  /** The add-preset form; Escape closes it without sending anything. */
+  presetForm: 'preset-form',
+  /** Name input of the add-preset form. */
+  presetName: 'preset-name',
+  /** Command input of the add-preset form; empty means the login shell. */
+  presetCommand: 'preset-command',
+  /** Submits the add-preset form; sends `addPreset` when the form is valid. */
+  presetSubmit: 'preset-submit',
+  /** In the add-preset form after a refused preset; text says why. */
+  presetError: 'preset-error',
   /** Dialog confirming the close of running terminals. */
   closeDialog: 'close-dialog',
   /** One running terminal listed in the close dialog; text holds its preset and its id. */
@@ -121,7 +145,7 @@ export const repoTab = (path: string): string => `${byTestId(TID.repoTab)}[title
 
 export const hostBanner = (host: number): string => `${byTestId(TID.hostBanner)}[data-host="${String(host)}"]`;
 
-export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[title="${path}"]`;
+export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[data-path="${path}"]`;
 
 export const termTab = (termId: number): string => `${byTestId(TID.termTab)}[data-term="${String(termId)}"]`;
 

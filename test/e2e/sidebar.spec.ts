@@ -1,4 +1,9 @@
+import { existsSync, writeFileSync } from 'node:fs';
+import type { Page } from '@playwright/test';
+import { join } from 'node:path';
+import type { HubHost } from '../support/hub-host.js';
 import { fakeWorktrees, git } from '../support/daemon-host.js';
+import { COMMANDS, runIn } from './attention-helpers.js';
 import { byTestId, termTab, TID, worktreeEntry } from './contract.js';
 import {
   confirmClose,
@@ -16,6 +21,7 @@ import {
   test,
   typeLine,
   waitScreen,
+  watcher,
 } from './fixture.js';
 
 const label = (path: string): string => `${worktreeEntry(path)} ${byTestId(TID.worktreeLabel)}`;
@@ -228,5 +234,118 @@ test.describe('sidebar width', () => {
     await page.reload();
     await expect(resizer).toHaveAttribute('aria-valuenow', '384');
     expect(await sidebarWidth()).toBe(384);
+  });
+});
+
+test.describe('worktree status and deletion', () => {
+  /** Gives `repo` a bare `origin` holding its `main`, with `origin/HEAD` pointing at it. */
+  const withOrigin = (hub: HubHost, repo: string): void => {
+    const origin = join(hub.dir, 'origin.git');
+    git(hub.dir, 'init', '-q', '--bare', '-b', 'main', origin);
+    git(repo, 'remote', 'add', 'origin', origin);
+    git(repo, 'push', '-q', 'origin', 'main');
+    git(repo, 'remote', 'set-head', 'origin', 'main');
+  };
+
+  const titleOf = async (page: Page, path: string): Promise<string> =>
+    (await page.locator(worktreeEntry(path)).getAttribute('title')) ?? '';
+
+  test('hovering a worktree shows its path and what each of its terminals is doing', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await expect.poll(() => titleOf(page, feat)).toBe(`${feat}\nno terminals`);
+
+    const client = await watcher(hub, repo);
+    const ticker = await runIn(client, feat, COMMANDS.ticker);
+    await expect.poll(() => titleOf(page, feat), { timeout: 10_000 }).toBe(`${feat}\nprobe ${String(ticker)}: running`);
+    const failing = await runIn(client, feat, COMMANDS.fail);
+    await expect
+      .poll(() => titleOf(page, feat), { timeout: 10_000 })
+      .toBe(`${feat}\nprobe ${String(ticker)}: running\nprobe ${String(failing)}: exited with code 1`);
+  });
+
+  test('deleting a merged, clean worktree without running terminals asks nothing', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    withOrigin(hub, repo);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+    await page.locator(byTestId(TID.worktreeMenu)).locator(byTestId(TID.deleteWorktree)).click();
+    await expect(page.locator(worktreeEntry(feat))).toHaveCount(0);
+    expect(existsSync(feat)).toBe(false);
+    await expect(page.locator(byTestId(TID.confirmDialog))).toHaveCount(0);
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
+    expect(git(repo, 'branch', '--list', 'feat')).toContain('feat');
+  });
+
+  test('deleting a worktree at risk names every reason, keeps it on cancel and deletes it on confirm', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    withOrigin(hub, repo);
+    writeFileSync(join(feat, 'a'), 'a');
+    git(feat, 'add', 'a');
+    git(feat, 'commit', '-q', '-m', 'a');
+    writeFileSync(join(feat, 'untracked'), 'new');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const ticker = await runIn(client, feat, COMMANDS.ticker);
+    await expect.poll(() => titleOf(page, feat), { timeout: 10_000 }).toContain(`probe ${String(ticker)}`);
+    const dialog = page.locator(byTestId(TID.confirmDialog));
+    const remove = async (): Promise<void> => {
+      await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+      await page.locator(byTestId(TID.deleteWorktree)).click();
+      await expect(dialog).toBeVisible();
+    };
+
+    await remove();
+    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText([
+      'It has 1 commit not in origin/main.',
+      'It has 1 uncommitted change, untracked files included.',
+      `Running terminals will be closed: probe ${String(ticker)}.`,
+    ]);
+    await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText('Its branch is kept.');
+    await dialog.locator(byTestId(TID.confirmCancel)).click();
+    await expect(dialog).toHaveCount(0);
+    expect(existsSync(feat)).toBe(true);
+
+    await remove();
+    const from = client.mark();
+    await dialog.locator(byTestId(TID.confirmOk)).click();
+    await expect(page.locator(worktreeEntry(feat))).toHaveCount(0);
+    expect(existsSync(feat)).toBe(false);
+    await client.waitFor('termClosed', (m) => m.termId === ticker, { from });
+    expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test('deleting a detached worktree with commits says they are left only in the reflog', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    withOrigin(hub, repo);
+    const detached = detachedWorktree(repo, 'loose');
+    writeFileSync(join(detached.path, 'a'), 'a');
+    git(detached.path, 'add', 'a');
+    git(detached.path, 'commit', '-q', '-m', 'a');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.locator(worktreeEntry(detached.path)).click({ button: 'right' });
+    await page.locator(byTestId(TID.deleteWorktree)).click();
+    const dialog = page.locator(byTestId(TID.confirmDialog));
+    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText(['It has 1 commit not in origin/main.']);
+    await expect(dialog.locator(byTestId(TID.confirmNote))).toContainText('reachable only through the reflog');
+  });
+
+  test('the main worktree cannot be deleted, and Escape closes the menu', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.locator(worktreeEntry(repo)).click({ button: 'right' });
+    const item = page.locator(byTestId(TID.deleteWorktree));
+    await expect(item).toBeDisabled();
+    await expect(item).toHaveAttribute('title', 'The main worktree cannot be deleted');
+    await page.locator(byTestId(TID.worktreeMenu)).press('Escape');
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
   });
 });

@@ -21,7 +21,7 @@ With `--systemd` it also writes `~/.config/systemd/user/worktree-term-daemon.ser
 
 ## Configuration
 
-The hub reads `$XDG_CONFIG_HOME/worktree-term/config.json` (by default `~/.config/worktree-term/config.json`); every key is optional, and a new browser session picks up edits. `presets` lists the terminals a new tab or split can start, in order: `command` runs as `$SHELL -l -i -c <command>`, and `null` starts the plain login shell. Without `presets`, the only preset is a plain `shell`.
+The hub reads `$XDG_CONFIG_HOME/worktree-term/config.json` (by default `~/.config/worktree-term/config.json`); every key is optional, and a new browser session picks up edits. `presets` lists the terminals a new tab or split can start, in order: `command` runs as `$SHELL -l -i -c <command>`, and `null` starts the plain login shell. Without `presets`, they are `shell` (the login shell), `claude` and `codex`. "+ Add preset" and the × beside each preset in the picker edit `presets` here, starting from those defaults; every open page shows the change.
 
 `repos` and `roots` belong to this machine: `repos` are the repo tabs (absolute or `~/…`), `roots` are where "Add repo" looks for repositories, 3 levels deep (default `["~"]`). `hosts` lists remote hosts, each shown after this machine's repos: `name` labels its tabs (`name:repo`), `ssh` is the SSH alias, `repos` must be absolute paths on that host, and its `roots` (`~` meaning the remote home) default to `["~"]`. "Add repo" and "Remove repo" on the page edit `repos` here, keeping everything else as written.
 
@@ -49,7 +49,7 @@ wtd install-remote devbox --node /opt/node22/bin/node
 
 or with "Install" on the page while the host is down. The remote gets the same layout as `wtd install-local`, without launcher or unit. Its shim runs the Node found at install time, so `"$HOME/.local/bin/wtd" connect` works over plain `ssh` with no dotfile changes.
 
-Each browser session holds one `ssh <alias> "$HOME/.local/bin/wtd" connect` per remote host, multiplexed over one SSH control master per host (`ControlPersist=10m`); a lost link reconnects to the same daemon and keeps its terminals. A host that keeps failing shows as down with SSH's last error line. sshd's `MaxSessions` (default 10) caps the sessions of one master: each open page uses one per host, plus a brief one for each "Add repo" or "Remove repo". When a host's daemon speaks an older protocol, the page offers "Restart daemon" (this machine) or "Reinstall & restart" (a remote host), naming the terminals that will be killed. `WTD_SSH` replaces the `ssh` program.
+Each browser session holds one `ssh <alias> "$HOME/.local/bin/wtd" connect` per remote host, multiplexed over one SSH control master per host (`ControlPersist=10m`); a lost link reconnects to the same daemon and keeps its terminals. A host that keeps failing shows as down with SSH's last error line. sshd's `MaxSessions` (default 10) caps the sessions of one master: each open page uses one per host, plus a brief one for each "Add repo" or "Remove repo". When a host's daemon speaks an older daemon protocol (`wtd --version` prints it), the page offers "Restart daemon" (this machine) or "Reinstall & restart" (a remote host), naming the terminals that will be killed. `WTD_SSH` replaces the `ssh` program.
 
 ## Keyboard
 
@@ -80,6 +80,7 @@ Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (
 ```sh
 pnpm install
 pnpm build              # dist/wtd.mjs and dist/web
+pnpm dev                # the page through Vite with hot reload, at http://127.0.0.1:5173/login; needs a running hub
 pnpm test               # unit, process, architecture and e2e tiers
 pnpm test:integration   # opt-in real-SSH tests
 pnpm lint               # tsc -b and ESLint

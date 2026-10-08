@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { encodeStreamData, FrameKind, PROTOCOL_VERSION, StreamDecoder, type Frame } from '../../protocol/index.js';
+import { encodeStreamData, FrameKind, DAEMON_PROTOCOL_VERSION, StreamDecoder, type Frame } from '../../protocol/index.js';
 import { ConnectionGate } from './connection.js';
 
 const text = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -34,7 +34,7 @@ beforeEach(() => {
 
 describe('before hello', () => {
   it('accepts a hello of this protocol version', () => {
-    expect(gate.receive(hello(PROTOCOL_VERSION))).toEqual({ kind: 'hello' });
+    expect(gate.receive(hello(DAEMON_PROTOCOL_VERSION))).toEqual({ kind: 'hello' });
     expect(gate.state).toBe('ready');
   });
 
@@ -55,7 +55,7 @@ describe('before hello', () => {
 
 describe('after a matching hello', () => {
   beforeEach(() => {
-    gate.receive(hello(PROTOCOL_VERSION));
+    gate.receive(hello(DAEMON_PROTOCOL_VERSION));
   });
 
   it('delivers requests decoded', () => {
@@ -71,7 +71,7 @@ describe('after a matching hello', () => {
   });
 
   it.each([
-    ['a second hello', hello(PROTOCOL_VERSION)],
+    ['a second hello', hello(DAEMON_PROTOCOL_VERSION)],
     ['a control message with an extra field', extraField],
     ['invalid JSON', badJson],
     ['a daemon-to-client message', control({ t: 'done', req: 1 })],
@@ -88,7 +88,7 @@ describe('after a matching hello', () => {
 });
 
 describe('after a mismatched hello', () => {
-  it.each([1, PROTOCOL_VERSION + 5])('enters mismatched mode for protocol %i', (protocol) => {
+  it.each([1, DAEMON_PROTOCOL_VERSION + 5])('enters mismatched mode for protocol %i', (protocol) => {
     expect(gate.receive(hello(protocol))).toEqual({ kind: 'hello' });
     expect(gate.state).toBe('mismatched');
   });
@@ -105,7 +105,7 @@ describe('after a mismatched hello', () => {
     it.each([
       ['a request', watch],
       ['a second hello', hello(1)],
-      ['a matching hello', hello(PROTOCOL_VERSION)],
+      ['a matching hello', hello(DAEMON_PROTOCOL_VERSION)],
       ['invalid JSON', badJson],
       ['a control message with an extra field', extraField],
       ['an input frame', input],

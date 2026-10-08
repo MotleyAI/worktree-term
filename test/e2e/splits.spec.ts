@@ -1,4 +1,5 @@
 import { chmodSync } from 'node:fs';
+import type { Page } from '@playwright/test';
 import type { DaemonClient } from '../support/daemon-client.js';
 import { byTestId, pane, terminalBox, termTab, TID } from './contract.js';
 import {
@@ -527,5 +528,42 @@ test.describe('pane focus', () => {
     await client.ok({ t: 'closeTerm', termId: left });
     await expect.poll(() => paneIds(page)).toEqual([top, bottom]);
     await expect.poll(() => focusedPane(page)).toBe(top);
+  });
+});
+
+test.describe('pane headers', () => {
+  /** The top edges of the pane `termId` and of its terminal box. */
+  const tops = async (page: Page, termId: number): Promise<[number, number]> => [
+    (await page.locator(pane(termId)).boundingBox())?.y ?? Number.NaN,
+    (await page.locator(terminalBox(LOCAL, termId)).boundingBox())?.y ?? Number.NaN,
+  ];
+
+  test('a lone pane has no header and its terminal fills it; split panes each have one', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const left = await newTerminal(page);
+    await ready(page, left);
+    await expect(page.locator(byTestId(TID.paneClose))).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const [paneTop, boxTop] = await tops(page, left);
+        return boxTop - paneTop;
+      })
+      .toBe(0);
+
+    const right = await splitPane(page, 'right');
+    for (const term of [left, right]) await expect(page.locator(pane(term)).locator(byTestId(TID.paneClose))).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const [paneTop, boxTop] = await tops(page, right);
+        return boxTop - paneTop;
+      })
+      .toBe(20);
+
+    await page.locator(pane(right)).locator(byTestId(TID.paneClose)).click();
+    await confirmClose(page);
+    await expect(page.locator(pane(right))).toHaveCount(0);
+    await expect(page.locator(byTestId(TID.paneClose))).toHaveCount(0);
   });
 });

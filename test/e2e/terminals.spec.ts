@@ -151,8 +151,9 @@ test.describe('terminal tabs', () => {
     await ready(page, term);
     await typeLine(page, term, "echo BYE''-MARK; exit");
     await expect(page.locator(termTab(term))).toContainText('exited');
-    await expect.poll(() => markOf(page, pane(term))).toBe('exited');
     await expect.poll(() => markOf(page, termTab(term))).toBe('exited');
+    // A lone pane has no header: its tab carries the mark.
+    expect(await markOf(page, pane(term))).toBeNull();
     await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
     expect(await screenOf(page, term)).toContain('BYE-MARK');
   });
@@ -525,5 +526,79 @@ test.describe('terminal settings', () => {
     const opened = await popup;
     await expect.poll(() => opened.url()).toContain('/link-target');
     expect(await opened.evaluate(() => window.opener === null)).toBe(true);
+  });
+});
+
+declare global {
+  interface Window {
+    /** Set by `stubFocus`: makes the page report and announce gaining or losing the focus. */
+    __wtdFocus?: (focused: boolean) => void;
+  }
+}
+
+test.describe('terminal size with several pages', () => {
+  /** Makes `page` report the focus only when told to, as a browser window does; Playwright reports every page as focused. */
+  const stubFocus = async (page: Page, focused: boolean): Promise<void> => {
+    await page.addInitScript((initial) => {
+      let current = initial;
+      document.hasFocus = () => current;
+      window.__wtdFocus = (next) => {
+        current = next;
+        window.dispatchEvent(new Event(next ? 'focus' : 'blur'));
+      };
+    }, focused);
+  };
+
+  const setFocus = (page: Page, focused: boolean): Promise<void> =>
+    page.evaluate((next) => {
+      window.__wtdFocus?.(next);
+    }, focused);
+
+  let probes = 0;
+
+  /** The PTY's size as `stty size` reports it in the terminal, typed through `page`. */
+  const ptySize = async (page: Page, termId: number): Promise<string> => {
+    const probe = ++probes;
+    await typeLine(page, termId, `echo SZ${String(probe)}-$(stty size)-END`);
+    const pattern = new RegExp(`SZ${String(probe)}-(\\d+ \\d+)-END`);
+    let size = '';
+    await expect
+      .poll(async () => {
+        size = pattern.exec((await screenOf(page, termId)) ?? '')?.[1] ?? '';
+        return size;
+      })
+      .not.toBe('');
+    return size;
+  };
+
+  test('the PTY takes the size of the page in focus, whatever unfocused pages do', async ({ hub, page, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await stubFocus(page, true);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    const focusedSize = await ptySize(page, term);
+
+    const other = await context.newPage();
+    await stubFocus(other, false);
+    await other.setViewportSize({ width: 700, height: 450 });
+    await other.goto(await hub.pageUrl());
+    await expect(other.locator(terminalBox(LOCAL, term))).toBeVisible();
+    expect(await ptySize(page, term)).toBe(focusedSize);
+
+    await setFocus(page, false);
+    await setFocus(other, true);
+    const otherSize = await ptySize(page, term);
+    expect(otherSize).not.toBe(focusedSize);
+
+    await page.setViewportSize({ width: 1100, height: 650 });
+    expect(await ptySize(page, term)).toBe(otherSize);
+
+    await setFocus(other, false);
+    await setFocus(page, true);
+    const resized = await ptySize(page, term);
+    expect(resized).not.toBe(otherSize);
+    expect(resized).not.toBe(focusedSize);
   });
 });

@@ -1,4 +1,4 @@
-import type { HostEntry, Layout } from '../../protocol/index.js';
+import type { HostEntry, Layout, Preset } from '../../protocol/index.js';
 import { canAddTab, canSplit, type SplitDir } from '../layout/index.js';
 
 export type PickerOp = { t: 'newTab' } | { t: 'split'; dir: SplitDir; target: number };
@@ -52,3 +52,20 @@ export const pickerKey = (key: string, index: number, count: number): PickerKey 
       return null;
   }
 };
+
+const MAX_PRESET_NAME = 64;
+const MAX_PRESET_COMMAND = 4096;
+
+/** The preset the add form describes, trimmed, an empty command meaning the login shell; or why it cannot be added. */
+export const presetFromForm = (name: string, command: string, presets: readonly Preset[]): { preset: Preset } | { error: string } => {
+  const trimmedName = name.trim();
+  const trimmedCommand = command.trim();
+  if (trimmedName === '') return { error: 'Give the preset a name' };
+  if (trimmedName.length > MAX_PRESET_NAME) return { error: `Names are at most ${String(MAX_PRESET_NAME)} characters` };
+  if (presets.some((p) => p.name === trimmedName)) return { error: `A preset named ${trimmedName} exists` };
+  if (trimmedCommand.length > MAX_PRESET_COMMAND) return { error: `Commands are at most ${String(MAX_PRESET_COMMAND)} characters` };
+  return { preset: { name: trimmedName, command: trimmedCommand === '' ? null : trimmedCommand } };
+};
+
+/** The position a preset dragged from `from` takes when dropped into gap `slot` (0 = before the first preset). */
+export const dropPosition = (from: number, slot: number): number => (slot > from ? slot - 1 : slot);

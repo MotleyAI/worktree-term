@@ -4,12 +4,13 @@ import {
   decodeWsData,
   encodeMessage,
   encodeWsData,
+  BROWSER_PROTOCOL_VERSION,
   MAX_INPUT,
-  PROTOCOL_VERSION,
   ProtocolError,
   type DataFrame,
   type HostEntry,
   type MessageOf,
+  type Preset,
 } from '../../protocol/index.js';
 import { reconnectDelay } from './backoff.js';
 import { hostKey, TerminalMemory, type TerminalStorage } from './memory.js';
@@ -28,7 +29,7 @@ export type DaemonRequestBody = Unnumbered<Extract<DaemonMessage, { req: number 
 /** A daemon message sent without a reply. */
 export type DaemonNotice = Exclude<DaemonMessage, { req: number }>;
 /** A successful reply to a daemon request. */
-export type DaemonReply = Extract<DaemonEvent, { t: 'done' | 'termCreated' | 'reposDiscovered' }>;
+export type DaemonReply = Extract<DaemonEvent, { t: 'done' | 'termCreated' | 'reposDiscovered' | 'worktreeAtRisk' }>;
 
 type Reply =
   { ok: true; m: DaemonReply | Extract<HubMessage, { t: 'done' | 'reposDiscovered' }> } | { ok: false; code: ErrorCode; message: string };
@@ -165,6 +166,21 @@ export class HubClient {
   /** Asks the hub to remove `repo` from `host`'s configured repos. */
   async removeRepo(host: number, repo: string): Promise<void> {
     await this.exchange(null, (req) => ({ t: 'removeRepo', req, host, repo }));
+  }
+
+  /** Asks the hub to add `preset` to the configured presets; every page then receives them. */
+  async addPreset(preset: Preset): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'addPreset', req, preset }));
+  }
+
+  /** Asks the hub to move the preset named `name` to position `to`; every page then receives the presets. */
+  async movePreset(name: string, to: number): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'movePreset', req, name, to }));
+  }
+
+  /** Asks the hub to remove the preset named `name`; every page then receives the presets. */
+  async removePreset(name: string): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'removePreset', req, name }));
   }
 
   private async exchange(host: number | null, message: (req: number) => BrowserMessage): Promise<Extract<Reply, { ok: true }>['m']> {
@@ -308,7 +324,7 @@ export class HubClient {
   }
 
   private hello(m: Extract<HubMessage, { t: 'hello' }>): void {
-    const check = checkBundle({ protocol: PROTOCOL_VERSION, version: this.version }, m, sessionStorage.getItem(RELOADED_KEY));
+    const check = checkBundle({ protocol: BROWSER_PROTOCOL_VERSION, version: this.version }, m, sessionStorage.getItem(RELOADED_KEY));
     if (check === 'reload') {
       sessionStorage.setItem(RELOADED_KEY, m.instance);
       // A code session's token follows `hello`; the reloaded page needs it.
@@ -320,7 +336,7 @@ export class HubClient {
       this.stop('outdated');
       return;
     }
-    this.sendMessage({ t: 'hello', protocol: PROTOCOL_VERSION, version: this.version, instance: this.instance });
+    this.sendMessage({ t: 'hello', protocol: BROWSER_PROTOCOL_VERSION, version: this.version, instance: this.instance });
     this.store.status.value = 'open';
   }
 
@@ -393,6 +409,7 @@ export class HubClient {
     switch (m.t) {
       case 'done':
       case 'reposDiscovered':
+      case 'worktreeAtRisk':
         this.pending.resolve(m.req, { ok: true, m });
         break;
       case 'termCreated':

@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostPaths } from '../../src/platform/files/index.js';
 import { installRemote, type InstalledRemote } from '../../src/platform/install/index.js';
-import { PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { DaemonClient } from '../support/daemon-client.js';
 import { alive, BUNDLE, DaemonHost, waitUntil } from '../support/daemon-host.js';
 import { REPO_ROOT } from '../support/exec.js';
@@ -73,7 +73,7 @@ const expectRemoteLayout = (remote: FakeRemote): void => {
 /** Asserts `alias` bridges to a daemon of this version run by the Node at `node`. */
 const expectBridged = async (alias: string, remote: FakeRemote, node: string): Promise<void> => {
   const hello = await remoteConnect(alias).waitFor('hello', () => true, { timeout: 15_000 });
-  expect(hello.protocol).toBe(PROTOCOL_VERSION);
+  expect(hello.protocol).toBe(DAEMON_PROTOCOL_VERSION);
   expect(hello.version).toBe(packageVersion());
   const [pid, ...others] = await waitUntil(() => {
     const pids = remote.daemonPids();

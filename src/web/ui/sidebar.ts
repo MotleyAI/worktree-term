@@ -65,3 +65,31 @@ export const visibleWorktrees = (entries: readonly SidebarEntry[], filter: Workt
 /** The worktree selected without a stored selection: the first the filter shows, else the first entry. */
 export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
   (visibleWorktrees(entries, filter, null)[0] ?? entries[0])?.path ?? null;
+
+/** What the daemon reported deleting a worktree would lose. */
+export interface RemovalRisks {
+  base: string | null;
+  ahead: number | null;
+  changes: number;
+  /** Labels of the running terminals that would be closed. */
+  running: readonly string[];
+}
+
+const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
+
+/** Every reason to confirm deleting a worktree, one sentence each. */
+export const removalReasons = (risks: RemovalRisks): string[] => {
+  const reasons: string[] = [];
+  if (risks.ahead === null) reasons.push('There is no origin/main to check that its commits are merged.');
+  else if (risks.ahead > 0) reasons.push(`It has ${plural(risks.ahead, 'commit', 'commits')} not in ${risks.base ?? 'origin/main'}.`);
+  if (risks.changes > 0)
+    reasons.push(`It has ${plural(risks.changes, 'uncommitted change', 'uncommitted changes')}, untracked files included.`);
+  if (risks.running.length > 0) reasons.push(`Running terminals will be closed: ${risks.running.join(', ')}.`);
+  return reasons;
+};
+
+/** What happens to a deleted worktree's commits: kept on its branch, or, detached, left only in the reflog. */
+export const keptNote = (detached: boolean): string =>
+  detached
+    ? 'It has no branch: once it is deleted, its commits not in origin/main are reachable only through the reflog.'
+    : 'Its branch is kept.';

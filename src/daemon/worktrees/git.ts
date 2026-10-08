@@ -83,11 +83,10 @@ const gitOrNull = async (cwd: string, args: readonly string[]): Promise<string |
   }
 };
 
-/** The full name of the remote-tracking ref heads are compared with: `origin/HEAD`'s target, else origin's main or master. */
+/** The full name of the existing remote-tracking ref heads are compared with: `origin/HEAD`'s target, else origin's main or master. */
 const baseRef = async (repo: string): Promise<string | null> => {
   const head = await gitOrNull(repo, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']);
-  if (head !== null && head !== '') return head;
-  for (const candidate of BASE_CANDIDATES) {
+  for (const candidate of head === null || head === '' ? BASE_CANDIDATES : [head, ...BASE_CANDIDATES]) {
     if ((await gitOrNull(repo, ['rev-parse', '--verify', '--quiet', candidate])) !== null) return candidate;
   }
   return null;
@@ -127,20 +126,21 @@ const isDirectory = async (path: string): Promise<boolean> => {
 
 /** What deleting `worktree` of `repo` would lose: commits not in the base ref and uncommitted changes. */
 export const worktreeRisks = async (repo: string, worktree: Worktree): Promise<WorktreeRisks> => {
+  // `worktree` may predate its latest commit.
+  const head = (await listWorktrees(repo)).find((w) => w.path === worktree.path)?.head ?? worktree.head;
   const ref = await baseRef(repo);
   if (ref !== null) await fetchBase(repo, ref);
-  const base = ref === null ? null : ref.slice(ref.startsWith(REMOTES_PREFIX) ? REMOTES_PREFIX.length : 0);
+  let base: string | null = null;
   let ahead: number | null = null;
-  if (ref !== null) ahead = worktree.head === null ? 0 : Number(await git(repo, ['rev-list', '--count', `${ref}..${worktree.head}`]));
+  if (ref !== null) {
+    base = ref.startsWith(REMOTES_PREFIX) ? ref.slice(REMOTES_PREFIX.length) : ref;
+    ahead = head === null ? 0 : Number(await git(repo, ['rev-list', '--count', `${ref}..${head}`]));
+  }
   const status = (await isDirectory(worktree.path)) ? await git(worktree.path, ['status', '--porcelain', '--untracked-files=normal']) : '';
   return { base, ahead, changes: status.split('\n').filter((line) => line !== '').length };
 };
 
-/** Removes `worktree` of `repo`, `force` also discarding its changes; a worktree whose directory is gone is pruned. */
+/** Removes `worktree` of `repo`, also when its directory is gone, `force` also discarding its changes. */
 export const removeWorktree = async (repo: string, worktree: Worktree, force: boolean): Promise<void> => {
-  if (worktree.prunable && !(await isDirectory(worktree.path))) {
-    await git(repo, ['worktree', 'prune']);
-    return;
-  }
   await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), worktree.path]);
 };

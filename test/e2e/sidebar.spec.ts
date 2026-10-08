@@ -384,7 +384,7 @@ test.describe('worktree status and deletion', () => {
     expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test('deleting a detached worktree with commits says they are left only in the reflog', async ({ hub, page }) => {
+  test('deleting a detached worktree with commits says they become unreachable and names its head', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     withOrigin(hub, repo);
     const detached = detachedWorktree(repo, 'loose');
@@ -397,7 +397,10 @@ test.describe('worktree status and deletion', () => {
     await page.locator(byTestId(TID.deleteWorktree)).click();
     const dialog = page.locator(byTestId(TID.confirmDialog));
     await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText(['It has 1 commit not in origin/main.']);
-    await expect(dialog.locator(byTestId(TID.confirmNote))).toContainText('reachable only through the reflog');
+    const head = git(detached.path, 'rev-parse', '--short=7', 'HEAD');
+    await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText(
+      `It has no branch: once it is deleted, its commits not in origin/main become unreachable; its head is ${head}.`,
+    );
   });
 
   test('the main worktree cannot be deleted, and Escape closes the menu', async ({ hub, page }) => {

@@ -297,8 +297,16 @@ describe('removalReasons', () => {
 });
 
 describe('keptNote', () => {
-  it('says the branch is kept, or that a detached worktree leaves its commits only in the reflog', () => {
-    expect(keptNote(false)).toBe('Its branch is kept.');
-    expect(keptNote(true)).toContain('reachable only through the reflog');
+  const HEAD = '0123456789abcdef0123456789abcdef01234567';
+
+  it('says the branch is kept, or that a detached worktree leaves its commits unreachable, naming its head', () => {
+    expect(keptNote({ detached: false, head: HEAD }, 'origin/main')).toBe('Its branch is kept.');
+    expect(keptNote({ detached: true, head: HEAD }, 'origin/main')).toBe(
+      'It has no branch: once it is deleted, its commits not in origin/main become unreachable; its head is 0123456.',
+    );
+  });
+
+  it('names the base the daemon compared with', () => {
+    expect(keptNote({ detached: true, head: HEAD }, 'origin/master')).toContain('its commits not in origin/master become');
   });
 });

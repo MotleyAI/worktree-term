@@ -596,14 +596,14 @@ export class View {
           const term = terminals.find((t) => t.termId === id);
           return term === undefined ? `terminal ${String(id)}` : `${term.preset} ${String(id)}`;
         });
-        const detached = repo.worktrees.find((w) => w.path === worktree)?.detached === true;
+        const listed = repo.worktrees.find((w) => w.path === worktree) ?? { detached: false, head: null };
         this.confirmation.value = {
           t: 'removeWorktree',
           host,
           worktree,
           label,
           reasons: removalReasons({ ...reply, running }),
-          note: keptNote(detached),
+          note: keptNote(listed, reply.base),
         };
       })
       .catch((error: unknown) => {

@@ -6,11 +6,11 @@ The `wtd` command line surface: how a user discovers its commands and version, a
 ## Requirements
 
 ### Requirement: Version output
-`wtd --version` SHALL print `wtd <package version> (protocol <PROTOCOL_VERSION>)` and a newline to stdout and exit 0.
+`wtd --version` SHALL print `wtd <package version> (daemon protocol <DAEMON_PROTOCOL_VERSION>, browser protocol <BROWSER_PROTOCOL_VERSION>)` and a newline to stdout and exit 0.
 
 #### Scenario: Version
 - **WHEN** the user runs `wtd --version`
-- **THEN** stdout is `wtd <package version> (protocol 5)` followed by a newline, stderr is empty, and the exit code is 0
+- **THEN** stdout is `wtd <package version> (daemon protocol 6, browser protocol 7)` followed by a newline, stderr is empty, and the exit code is 0
 
 ### Requirement: Help output
 `wtd --help` SHALL print usage to stdout and exit 0. Usage SHALL list the commands `ui`, `hub`, `daemon`, `connect`, `install-local [--systemd]` and `install-remote <alias> [--node <path>]`, and the options `--help` and `--version`.

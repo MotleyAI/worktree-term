@@ -704,7 +704,7 @@ const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[]
     );
   }
   return (
-    <form
+    <form // NOSONAR(S6847) — handles Escape bubbling from its fields; the form itself takes no focus
       class="preset-form"
       data-testid="preset-form"
       onSubmit={(event) => {
@@ -717,8 +717,8 @@ const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[]
         setSending(true);
         view
           .addPreset(result.preset)
-          .then(close, (failure: unknown) => {
-            setError(failure instanceof Error ? failure.message : String(failure));
+          .then(close, (error_: unknown) => {
+            setError(error_ instanceof Error ? error_.message : String(error_));
           })
           .finally(() => {
             setSending(false);
@@ -933,10 +933,10 @@ const SIDEBAR_KEY_STEPS: Readonly<Record<string, number>> = { ArrowLeft: -16, Ar
 const SidebarResizer = ({ view }: { view: View }) => {
   const width = view.sidebarWidth.value;
   return (
-    <div
+    <div // NOSONAR(S6819) NOSONAR(S6847) — WAI-ARIA window splitter: a focusable separator is interactive
       class="sidebar-resizer"
       role="separator"
-      tabIndex={0}
+      tabIndex={0} // NOSONAR(S6845) — WAI-ARIA window splitter: a focusable separator is interactive
       aria-orientation="vertical"
       aria-label="Resize the worktree list"
       aria-valuemin={SIDEBAR_WIDTH.min}

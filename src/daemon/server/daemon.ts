@@ -459,7 +459,7 @@ export class Daemon {
     this.removing.add(m.worktree);
     try {
       // Terminals still starting there count as running, and are closed with the rest.
-      await Promise.allSettled([...(this.spawnsIn.get(m.worktree) ?? [])]);
+      await Promise.allSettled([...(this.spawnsIn.get(m.worktree) ?? [])]); // NOSONAR(S7747) — await-thenable only recognises promise arrays
       return await this.removeWorktreeNow(peer, m);
     } finally {
       this.removing.delete(m.worktree);

@@ -207,7 +207,7 @@ export const selectWorktree = async (page: Page, path: string): Promise<void> =>
 
 /** Paths of the listed sidebar entries, in order. */
 export const listedWorktrees = (page: Page): Promise<string[]> =>
-  page.locator(byTestId(TID.worktree)).evaluateAll((entries) => entries.map((e) => e.getAttribute('data-path') ?? ''));
+  page.locator(byTestId(TID.worktree)).evaluateAll((entries: HTMLElement[]) => entries.map((e) => e.dataset['path'] ?? ''));
 
 /** The terminal id of the selected terminal tab. */
 export const activeTerm = async (page: Page): Promise<number> => {

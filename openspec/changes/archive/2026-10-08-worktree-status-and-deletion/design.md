@@ -24,7 +24,7 @@ At risk: commits of the worktree's head not in the base ref (`git rev-list --cou
 Before counting, the daemon fetches the base ref's branch from its remote (`git fetch --quiet --no-tags <remote> <branch>`, no prompts, 20 s at most). A branch merged since the last fetch would otherwise count as unmerged and be asked about. When the fetch fails (offline, no access) the local ref is used; it can only be behind, so the result can only err towards asking.
 
 ### D3 Removal
-`git worktree remove [--force] <path>`; a worktree whose directory is gone cannot be removed that way and is pruned (`git worktree prune`), which also drops other entries whose directories are gone. After removal every terminal of the worktree is closed, broadcasting `termClosed`; the worktree watch reports the new list and state for it is pruned. The main worktree and locked ones are refused with `busy`.
+`git worktree remove [--force] <path>`, which also removes a worktree whose directory is gone, leaving other worktrees' registrations alone. After removal every terminal of the worktree is closed, broadcasting `termClosed`; the worktree watch reports the new list and state for it is pruned. The main worktree and locked ones are refused with `busy`.
 
 ### D4 Versions
 Both lists change, so both versions rise: the daemon link to 6 (new request and reply), the browser link to 7 (its envelopes embed the daemon messages). This is the one restart the earlier split could not avoid: the daemon must learn a new request.

@@ -1,5 +1,5 @@
 import type { Terminal, Worktree } from '../../protocol/index.js';
-import { worktreeLabel } from '../client/index.js';
+import { SHORT_HEAD, worktreeLabel } from '../client/index.js';
 
 export { worktreeLabel };
 
@@ -109,8 +109,9 @@ export const removalReasons = (risks: RemovalRisks): string[] => {
   return reasons;
 };
 
-/** What happens to a deleted worktree's commits: kept on its branch, or, detached, left only in the reflog. */
-export const keptNote = (detached: boolean): string =>
-  detached
-    ? 'It has no branch: once it is deleted, its commits not in origin/main are reachable only through the reflog.'
-    : 'Its branch is kept.';
+/** What happens to a deleted worktree's commits: kept on its branch, or, detached, unreachable. */
+export const keptNote = (worktree: Pick<Worktree, 'detached' | 'head'>, base: string | null): string => {
+  if (!worktree.detached) return 'Its branch is kept.';
+  const lost = `It has no branch: once it is deleted, its commits not in ${base ?? 'origin/main'} become unreachable`;
+  return worktree.head === null ? `${lost}.` : `${lost}; its head is ${worktree.head.slice(0, SHORT_HEAD)}.`;
+};

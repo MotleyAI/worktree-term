@@ -72,7 +72,7 @@ export const TID = {
   deleteWorktree: 'delete-worktree',
   /** One reason in the confirmation of a worktree deletion. */
   confirmReason: 'confirm-reason',
-  /** In the confirmation of a worktree deletion: whether its branch is kept, or that a detached worktree's commits are left only in the reflog. */
+  /** In the confirmation of a worktree deletion: whether its branch is kept, or that a detached worktree's commits become unreachable. */
   confirmNote: 'confirm-note',
   /** Separator on the sidebar's right edge; dragging or ArrowLeft/ArrowRight resizes the sidebar; `aria-valuenow` = its width in px, kept across reloads. */
   sidebarResizer: 'sidebar-resizer',

@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type DataFrame, type MessageOf } from '../../protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION, type DataFrame, type MessageOf } from '../../protocol/index.js';
 import { ConfigEditor, ConfigSource, type ConfigSnapshot, type HubConfig } from '../config/index.js';
 import { installOnRemote, LocalDaemon, RemoteDaemon, type DaemonEndpoint, type DaemonPaths } from '../links/index.js';
 import { HostCoordinator } from './coordinator.js';
@@ -56,7 +56,7 @@ export class Router {
   private readonly coordinators = new Map<string, HostCoordinator>();
 
   constructor(private readonly options: RouterOptions) {
-    this.hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: options.version, instance: options.instance };
+    this.hello = { t: 'hello', protocol: DAEMON_PROTOCOL_VERSION, version: options.version, instance: options.instance };
     this.local = new LocalDaemon(options.paths, options.daemonCommand);
     this.config = new ConfigSource(options.configPath, options.home, options.config);
     this.editor = new ConfigEditor(options.configPath, options.home);
@@ -71,6 +71,13 @@ export class Router {
       },
       reposEdited: (host, repos) => {
         for (const session of this.sessions) session.showRepos(host, repos);
+      },
+      editPresets: (edit) => {
+        if (edit.t === 'add') return this.editor.addPreset(edit.preset);
+        return edit.t === 'remove' ? this.editor.removePreset(edit.name) : this.editor.movePreset(edit.name, edit.to);
+      },
+      presetsEdited: (presets) => {
+        for (const session of this.sessions) session.showPresets(presets);
       },
     };
   }

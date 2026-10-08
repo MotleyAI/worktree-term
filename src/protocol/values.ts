@@ -4,6 +4,7 @@ const U32_MAX = 2 ** 32 - 1;
 
 export const req = z.int().min(1).max(U32_MAX);
 export const termId = z.int().min(1).max(U32_MAX);
+export const count = z.int().min(0).max(U32_MAX);
 export const offset = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 export const size = z.int().min(1).max(1000);
 export const hostIdx = z.int().min(0).max(65535);

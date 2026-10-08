@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ProtocolError } from './errors.js';
 import { layout } from './layout.js';
 import {
+  count,
   depth,
   errorCode,
   errorMessage,
@@ -78,6 +79,7 @@ const daemonRequests = [
   message('setVisible', { termIds: z.array(termId).max(MAX_VISIBLE) }),
   message('setChecked', { req, worktree: path, checked: z.boolean() }),
   message('setLayout', { req, worktree: path, layout }),
+  message('removeWorktree', { req, worktree: path, force: z.boolean() }),
 ] as const;
 
 const daemonEvents = [
@@ -99,6 +101,14 @@ const daemonEvents = [
   message('checkedChanged', { worktree: path, checked: z.boolean() }),
   message('layoutChanged', { worktree: path, layout }),
   message('reposDiscovered', { req, repos }),
+  message('worktreeAtRisk', {
+    req,
+    worktree: path,
+    base: longText,
+    ahead: count.nullable(),
+    changes: count,
+    running: z.array(termId).max(MAX_ENTRIES),
+  }),
 ] as const;
 
 const hostEntry = z.strictObject({
@@ -123,6 +133,16 @@ export const messageSchemas = {
     message('discoverRepos', { req, host: hostIdx }),
     message('restartDaemon', { req, host: hostIdx }),
     message('reinstallDaemon', { req, host: hostIdx }),
+    message('addPreset', { req, preset }),
+    message('removePreset', { req, name: presetName }),
+    message('movePreset', {
+      req,
+      name: presetName,
+      to: z
+        .int()
+        .min(0)
+        .max(MAX_PRESETS - 1),
+    }),
   ]),
   hubToBrowser: z.discriminatedUnion('t', [
     hello,

@@ -2,7 +2,7 @@ import {
   decodeMessage,
   decodeStreamData,
   FrameKind,
-  PROTOCOL_VERSION,
+  DAEMON_PROTOCOL_VERSION,
   ProtocolError,
   type DataFrame,
   type Frame,
@@ -65,7 +65,7 @@ export class ConnectionGate {
   private awaitingHello(frame: Frame): GateOutcome {
     const message = frame.kind === FrameKind.control ? decodeControl(frame) : null;
     if (message?.t !== 'hello') return BAD_MESSAGE;
-    this.current = message.protocol === PROTOCOL_VERSION ? 'ready' : 'mismatched';
+    this.current = message.protocol === DAEMON_PROTOCOL_VERSION ? 'ready' : 'mismatched';
     return { kind: 'hello' };
   }
 

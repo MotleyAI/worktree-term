@@ -8,7 +8,7 @@ import { HubAlreadyRunningError, openUi, runHub } from '../hub/main/index.js';
 import { dial } from '../platform/dialer/index.js';
 import { currentHostPaths } from '../platform/files/index.js';
 import { installLocal, installRemote } from '../platform/install/index.js';
-import { PROTOCOL_VERSION } from '../protocol/index.js';
+import { BROWSER_PROTOCOL_VERSION, DAEMON_PROTOCOL_VERSION } from '../protocol/index.js';
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -219,7 +219,9 @@ const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => 
     return 0;
   }
   if (version) {
-    io.stdout(`wtd ${pkg.version} (protocol ${String(PROTOCOL_VERSION)})\n`);
+    io.stdout(
+      `wtd ${pkg.version} (daemon protocol ${String(DAEMON_PROTOCOL_VERSION)}, browser protocol ${String(BROWSER_PROTOCOL_VERSION)})\n`,
+    );
     return 0;
   }
   const [verb, ...args] = positionals;

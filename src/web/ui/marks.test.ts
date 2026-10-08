@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal } from '../../protocol/index.js';
-import { aggregate, mark, MARK_ORDER, markTitle, type Mark } from './marks.js';
+import { aggregate, mark, MARK_ORDER, markTitle, terminalStatus, worktreeTitle, type Mark } from './marks.js';
 
 let nextId = 1;
 
@@ -86,5 +86,32 @@ describe('markTitle', () => {
   it('gives one line per mark present, in rank order', () => {
     expect(markTitle({ output: 2, input: 1, done: 3 })).toBe('input: 1\ndone: 3\noutput: 2');
     expect(markTitle({})).toBe('');
+  });
+});
+
+describe('terminalStatus', () => {
+  it.each([
+    ['waiting for input', { state: 'input' }],
+    ['running', { state: 'working' }],
+    ['running', { state: 'working', unseen: true }],
+    ['done', { state: 'idle', unseen: true }],
+    ['idle', { state: 'idle', unseen: false }],
+    ['exited', { exit: clean }],
+    ['exited with code 1', { exit: failedCode }],
+    ['killed by SIGKILL', { exit: failedSignal }],
+  ] as const)('says %s', (status, fields) => {
+    expect(terminalStatus(terminal(fields))).toBe(status);
+  });
+});
+
+describe('worktreeTitle', () => {
+  it('lists each terminal with its preset, id and status under the path', () => {
+    const agent = terminal({ termId: 3, preset: 'claude', state: 'input' });
+    const shell = terminal({ termId: 4, preset: 'shell', state: 'working' });
+    expect(worktreeTitle('/r/wt', [agent, shell])).toBe('/r/wt\nclaude 3: waiting for input\nshell 4: running');
+  });
+
+  it('says so when the worktree has no terminals', () => {
+    expect(worktreeTitle('/r/wt', [])).toBe('/r/wt\nno terminals');
   });
 });

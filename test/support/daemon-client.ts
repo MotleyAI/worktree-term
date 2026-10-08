@@ -10,7 +10,7 @@ import {
   encodeMessage,
   encodeStreamData,
   FrameKind,
-  PROTOCOL_VERSION,
+  DAEMON_PROTOCOL_VERSION,
   StreamDecoder,
   type MessageOf,
   type Terminal,
@@ -199,7 +199,7 @@ export class DaemonClient {
   }
 
   /** Waits for the daemon's hello, then sends ours. */
-  async handshake(protocol = PROTOCOL_VERSION): Promise<EventOf<'hello'>> {
+  async handshake(protocol = DAEMON_PROTOCOL_VERSION): Promise<EventOf<'hello'>> {
     const hello = await this.waitFor('hello');
     this.send({ t: 'hello', protocol, version: '0.0.0-test', instance: 'test_client' });
     return hello;
@@ -234,12 +234,15 @@ export class DaemonClient {
   }
 
   /** Sends a request with the next req and resolves with its correlated reply. */
-  async request(body: RequestBody, timeout = DEFAULT_TIMEOUT): Promise<EventOf<'done' | 'error' | 'termCreated' | 'reposDiscovered'>> {
+  async request(
+    body: RequestBody,
+    timeout = DEFAULT_TIMEOUT,
+  ): Promise<EventOf<'done' | 'error' | 'termCreated' | 'reposDiscovered' | 'worktreeAtRisk'>> {
     const req = this.nextReq++;
     const from = this.messages.length;
     const message: unknown = { ...body, req };
     this.sendJson(message);
-    return this.waitFor(['done', 'error', 'termCreated', 'reposDiscovered'], (m) => m.req === req, { from, timeout });
+    return this.waitFor(['done', 'error', 'termCreated', 'reposDiscovered', 'worktreeAtRisk'], (m) => m.req === req, { from, timeout });
   }
 
   /** A request expected to succeed with `done`. */

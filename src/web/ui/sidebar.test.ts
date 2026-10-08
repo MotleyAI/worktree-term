@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal, Worktree } from '../../protocol/index.js';
-import { defaultWorktree, sidebarEntries, visibleWorktrees, worktreeLabel, type SidebarEntry } from './sidebar.js';
+import {
+  clampSidebarWidth,
+  defaultWorktree,
+  filterOf,
+  keptNote,
+  parseSidebarWidth,
+  removalReasons,
+  SIDEBAR_WIDTH,
+  sidebarEntries,
+  visibleWorktrees,
+  withFilter,
+  worktreeLabel,
+  type SidebarEntry,
+} from './sidebar.js';
 
 const REPO = '/home/u/repo';
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
@@ -138,5 +151,92 @@ describe('defaultWorktree', () => {
 
   it('selects nothing without entries', () => {
     expect(defaultWorktree([], 'checked')).toBeNull();
+  });
+});
+
+describe('clampSidebarWidth', () => {
+  it.each([
+    ['keeps a width within bounds', 300, 300],
+    ['rounds to a whole pixel', 300.6, 301],
+    ['raises a width below the minimum', 20, SIDEBAR_WIDTH.min],
+    ['lowers a width above the maximum', 5000, SIDEBAR_WIDTH.max],
+    ['raises a negative width', -50, SIDEBAR_WIDTH.min],
+  ])('%s', (_name, width, expected) => {
+    expect(clampSidebarWidth(width)).toBe(expected);
+  });
+});
+
+describe('parseSidebarWidth', () => {
+  it.each([
+    ['a stored width', '320', 320],
+    ['the default when nothing is stored', null, SIDEBAR_WIDTH.initial],
+    ['the default for an empty value', '', SIDEBAR_WIDTH.initial],
+    ['the default for a non-number', 'wide', SIDEBAR_WIDTH.initial],
+    ['the default for a fraction', '300.5', SIDEBAR_WIDTH.initial],
+    ['the default for a negative number', '-300', SIDEBAR_WIDTH.initial],
+    ['the default for an overlong number', '1e999', SIDEBAR_WIDTH.initial],
+    ['a stored width held within bounds', '9999', SIDEBAR_WIDTH.max],
+  ])('reads %s', (_name, stored, expected) => {
+    expect(parseSidebarWidth(stored)).toBe(expected);
+  });
+});
+
+describe('repo filters', () => {
+  it('shows all in a repo without an entry or with an unknown value', () => {
+    expect(filterOf({}, '0:/a')).toBe('all');
+    expect(filterOf({ '0:/a': 'odd' }, '0:/a')).toBe('all');
+  });
+
+  it('sets one repo to checked without touching the others', () => {
+    const filters = withFilter({ '0:/b': 'checked' }, '0:/a', 'checked');
+    expect(filters).toEqual({ '0:/a': 'checked', '0:/b': 'checked' });
+    expect(filterOf(filters, '0:/a')).toBe('checked');
+    expect(filterOf(filters, '1:/a')).toBe('all');
+  });
+
+  it('drops the entry of a repo set back to all', () => {
+    expect(withFilter({ '0:/a': 'checked', '0:/b': 'checked' }, '0:/a', 'all')).toEqual({ '0:/b': 'checked' });
+  });
+});
+
+describe('removalReasons', () => {
+  const safe = { base: 'origin/main', ahead: 0, changes: 0, running: [] };
+
+  it('gives no reason for a merged, clean worktree without running terminals', () => {
+    expect(removalReasons(safe)).toEqual([]);
+  });
+
+  it('names every reason that applies, in order', () => {
+    expect(removalReasons({ base: 'origin/main', ahead: 3, changes: 2, running: ['claude 3', 'shell 4'] })).toEqual([
+      'It has 3 commits not in origin/main.',
+      'It has 2 uncommitted changes, untracked files included.',
+      'Running terminals will be closed: claude 3, shell 4.',
+    ]);
+  });
+
+  it('uses the singular for one commit or change', () => {
+    expect(removalReasons({ ...safe, ahead: 1, changes: 1 })).toEqual([
+      'It has 1 commit not in origin/main.',
+      'It has 1 uncommitted change, untracked files included.',
+    ]);
+  });
+
+  it('says when there is no origin/main to compare with', () => {
+    expect(removalReasons({ ...safe, base: null, ahead: null })).toEqual(['There is no origin/main to check that its commits are merged.']);
+  });
+});
+
+describe('keptNote', () => {
+  const HEAD = '0123456789abcdef0123456789abcdef01234567';
+
+  it('says the branch is kept, or that a detached worktree leaves its commits unreachable, naming its head', () => {
+    expect(keptNote({ detached: false, head: HEAD }, 'origin/main')).toBe('Its branch is kept.');
+    expect(keptNote({ detached: true, head: HEAD }, 'origin/main')).toBe(
+      'It has no branch: once it is deleted, its commits not in origin/main become unreachable; its head is 0123456.',
+    );
+  });
+
+  it('names the base the daemon compared with', () => {
+    expect(keptNote({ detached: true, head: HEAD }, 'origin/master')).toContain('its commits not in origin/master become');
   });
 });

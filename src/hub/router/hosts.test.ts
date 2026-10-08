@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PROTOCOL_VERSION } from '../../protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION } from '../../protocol/index.js';
 import { hostTransition, initialHostState, localHostName, retryDelay, type HostEvent, type HostState } from './hosts.js';
 
 const hello = (protocol: number, instance = 'd_1'): HostEvent => ({ kind: 'hello', protocol, version: '9.9.9', instance });
@@ -14,7 +14,7 @@ describe('host status', () => {
   });
 
   it('is connected to a daemon speaking our protocol', () => {
-    expect(run(hello(PROTOCOL_VERSION))).toEqual({
+    expect(run(hello(DAEMON_PROTOCOL_VERSION))).toEqual({
       status: 'connected',
       reason: null,
       daemonVersion: '9.9.9',
@@ -24,7 +24,7 @@ describe('host status', () => {
   });
 
   it('is outdated for a daemon speaking another protocol, keeping its instance', () => {
-    expect(run(hello(PROTOCOL_VERSION + 1))).toEqual({
+    expect(run(hello(DAEMON_PROTOCOL_VERSION + 1))).toEqual({
       status: 'outdated',
       reason: null,
       daemonVersion: '9.9.9',
@@ -44,7 +44,7 @@ describe('host status', () => {
   });
 
   it('clears the reason on a hello', () => {
-    expect(run(failed, hello(PROTOCOL_VERSION)).reason).toBeNull();
+    expect(run(failed, hello(DAEMON_PROTOCOL_VERSION)).reason).toBeNull();
     expect(run(failed, hello(1)).reason).toBeNull();
   });
 
@@ -64,8 +64,8 @@ describe('host status', () => {
   });
 
   it.each([
-    ['connected', hello(PROTOCOL_VERSION)],
-    ['outdated', hello(PROTOCOL_VERSION + 1)],
+    ['connected', hello(DAEMON_PROTOCOL_VERSION)],
+    ['outdated', hello(DAEMON_PROTOCOL_VERSION + 1)],
   ])('drops the instance when a %s link is lost', (_name, event) => {
     const lost = run(event, failed);
     expect(lost.status).toBe('reconnecting');
@@ -73,7 +73,7 @@ describe('host status', () => {
   });
 
   it('resets the failure count on a hello', () => {
-    const recovered = run(failed, failed, failed, hello(PROTOCOL_VERSION, 'd_2'));
+    const recovered = run(failed, failed, failed, hello(DAEMON_PROTOCOL_VERSION, 'd_2'));
     expect(recovered).toEqual({ status: 'connected', reason: null, daemonVersion: '9.9.9', instance: 'd_2', failures: 0 });
     expect(hostTransition(recovered, failed)).toMatchObject({ status: 'reconnecting', failures: 1 });
   });

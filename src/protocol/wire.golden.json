@@ -1,5 +1,8 @@
 {
-  "protocolVersion": 5,
+  "protocolVersions": {
+    "daemon": 6,
+    "browser": 8
+  },
   "constants": {
     "MAX_FRAME": 16777216,
     "MAX_INPUT": 65536,
@@ -439,6 +442,35 @@
             "req",
             "worktree",
             "layout"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "removeWorktree"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "worktree": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^\\/[^\\u0000]*$"
+            },
+            "force": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "worktree",
+            "force"
           ],
           "additionalProperties": false
         }
@@ -1247,6 +1279,72 @@
             "repos"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "worktreeAtRisk"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "worktree": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^\\/[^\\u0000]*$"
+            },
+            "base": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ahead": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "changes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "running": {
+              "maxItems": 1024,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              }
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "worktree",
+            "base",
+            "ahead",
+            "changes",
+            "running"
+          ],
+          "additionalProperties": false
         }
       ],
       "$defs": {
@@ -1733,6 +1831,35 @@
                     "layout"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "t": {
+                      "type": "string",
+                      "const": "removeWorktree"
+                    },
+                    "req": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4294967295
+                    },
+                    "worktree": {
+                      "type": "string",
+                      "maxLength": 4096,
+                      "pattern": "^\\/[^\\u0000]*$"
+                    },
+                    "force": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "t",
+                    "req",
+                    "worktree",
+                    "force"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             }
@@ -1878,6 +2005,112 @@
             "t",
             "req",
             "host"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "addPreset"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "preset": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "\\S"
+                },
+                "command": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "command"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "preset"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "removePreset"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "\\S"
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "movePreset"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "\\S"
+            },
+            "to": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 63
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "name",
+            "to"
           ],
           "additionalProperties": false
         }
@@ -2718,6 +2951,72 @@
                     "repos"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "t": {
+                      "type": "string",
+                      "const": "worktreeAtRisk"
+                    },
+                    "req": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4294967295
+                    },
+                    "worktree": {
+                      "type": "string",
+                      "maxLength": 4096,
+                      "pattern": "^\\/[^\\u0000]*$"
+                    },
+                    "base": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ahead": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 4294967295
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    },
+                    "running": {
+                      "maxItems": 1024,
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4294967295
+                      }
+                    }
+                  },
+                  "required": [
+                    "t",
+                    "req",
+                    "worktree",
+                    "base",
+                    "ahead",
+                    "changes",
+                    "running"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             }
@@ -3131,6 +3430,16 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}",
+      "valid": true
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}",
+      "valid": true
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"done\",\"req\":1}",
       "valid": false
     },
@@ -3226,6 +3535,16 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"/home/u/repo\"}}",
       "valid": false
     },
@@ -3301,6 +3620,16 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"/home/u/repo\"}",
       "valid": false
     },
@@ -3322,6 +3651,26 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"reinstallDaemon\",\"req\":5,\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"addPreset\",\"req\":6,\"preset\":{\"name\":\"codex\",\"command\":\"codex\"}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"addPreset\",\"req\":7,\"preset\":{\"name\":\"login shell\",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"movePreset\",\"req\":9,\"name\":\"codex\",\"to\":0}",
       "valid": false
     },
     {
@@ -3422,6 +3771,16 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
       "valid": false
     },
     {
@@ -3692,6 +4051,36 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"  \",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"p\",\"command\":\"\"}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removePreset\",\"req\":1,\"name\":\"\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"movePreset\",\"req\":1,\"name\":\"p\",\"to\":64}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeWorktree\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -3791,6 +4180,16 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"done\",\"req\":1}",
       "valid": true
     },
@@ -3886,6 +4285,16 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"/home/u/repo\"}}",
       "valid": false
     },
@@ -3961,6 +4370,16 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"/home/u/repo\"}",
       "valid": false
     },
@@ -3982,6 +4401,26 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"reinstallDaemon\",\"req\":5,\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"addPreset\",\"req\":6,\"preset\":{\"name\":\"codex\",\"command\":\"codex\"}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"addPreset\",\"req\":7,\"preset\":{\"name\":\"login shell\",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"movePreset\",\"req\":9,\"name\":\"codex\",\"to\":0}",
       "valid": false
     },
     {
@@ -4082,6 +4521,16 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
       "valid": false
     },
     {
@@ -4352,6 +4801,36 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"  \",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"p\",\"command\":\"\"}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removePreset\",\"req\":1,\"name\":\"\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"movePreset\",\"req\":1,\"name\":\"p\",\"to\":64}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeWorktree\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -4451,6 +4930,16 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"done\",\"req\":1}",
       "valid": false
     },
@@ -4546,6 +5035,16 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"/home/u/repo\"}}",
       "valid": true
     },
@@ -4621,6 +5120,16 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"/home/u/repo\"}",
       "valid": true
     },
@@ -4642,6 +5151,26 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"reinstallDaemon\",\"req\":5,\"host\":1}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"addPreset\",\"req\":6,\"preset\":{\"name\":\"codex\",\"command\":\"codex\"}}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"addPreset\",\"req\":7,\"preset\":{\"name\":\"login shell\",\"command\":null}}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"movePreset\",\"req\":9,\"name\":\"codex\",\"to\":0}",
       "valid": true
     },
     {
@@ -4742,6 +5271,16 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
       "valid": false
     },
     {
@@ -5012,6 +5551,36 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"  \",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"p\",\"command\":\"\"}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removePreset\",\"req\":1,\"name\":\"\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"movePreset\",\"req\":1,\"name\":\"p\",\"to\":64}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeWorktree\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -5111,6 +5680,16 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"done\",\"req\":1}",
       "valid": true
     },
@@ -5206,6 +5785,16 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"watchRepo\",\"req\":1,\"repo\":\"/home/u/repo\"}}",
       "valid": false
     },
@@ -5281,6 +5870,16 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":false}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"removeWorktree\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"force\":true}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"/home/u/repo\"}",
       "valid": false
     },
@@ -5302,6 +5901,26 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"reinstallDaemon\",\"req\":5,\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"addPreset\",\"req\":6,\"preset\":{\"name\":\"codex\",\"command\":\"codex\"}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"addPreset\",\"req\":7,\"preset\":{\"name\":\"login shell\",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"movePreset\",\"req\":9,\"name\":\"codex\",\"to\":0}",
       "valid": false
     },
     {
@@ -5402,6 +6021,16 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
       "valid": true
     },
     {
@@ -5672,6 +6301,36 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"addRepo\",\"req\":1,\"host\":0,\"repo\":\"~/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"  \",\"command\":null}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"addPreset\",\"req\":1,\"preset\":{\"name\":\"p\",\"command\":\"\"}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removePreset\",\"req\":1,\"name\":\"\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"movePreset\",\"req\":1,\"name\":\"p\",\"to\":64}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeWorktree\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {

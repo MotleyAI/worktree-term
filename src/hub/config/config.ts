@@ -7,10 +7,14 @@ export const DEFAULT_PORT = 7417;
 
 export const MAX_REPOS = 256;
 const MAX_PATH = 4096;
-const MAX_PRESETS = 64;
+export const MAX_PRESETS = 64;
 const MAX_ROOTS = 32;
 const MAX_REMOTE_HOSTS = 63;
-const DEFAULT_PRESETS: readonly Preset[] = [{ name: 'shell', command: null }];
+export const DEFAULT_PRESETS: readonly Preset[] = [
+  { name: 'shell', command: null },
+  { name: 'claude', command: 'claude' },
+  { name: 'codex', command: 'codex' },
+];
 const DEFAULT_ROOTS: readonly string[] = ['~'];
 
 /** A configured remote host. */

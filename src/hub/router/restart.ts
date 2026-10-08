@@ -3,7 +3,7 @@ import {
   encodeFrame,
   encodeMessage,
   FrameKind,
-  PROTOCOL_VERSION,
+  DAEMON_PROTOCOL_VERSION,
   ProtocolError,
   type Frame,
   type MessageOf,
@@ -63,7 +63,7 @@ export class DaemonRestarter {
     }
     for (;;) {
       const fresh = await this.probe({ start: true, shutdown: never }, deadline); // NOSONAR(S9382) — polls until a new daemon serves
-      if (fresh !== null && fresh.instance !== old?.instance && fresh.protocol === PROTOCOL_VERSION) return;
+      if (fresh !== null && fresh.instance !== old?.instance && fresh.protocol === DAEMON_PROTOCOL_VERSION) return;
       if (Date.now() >= deadline) throw new Error('no new daemon served within 10 s');
       await sleep(POLL_MS); // NOSONAR(S9382) — polling loop
     }
@@ -72,7 +72,7 @@ export class DaemonRestarter {
   /** Dials until a daemon of `version` and our protocol answers, shutting down any other; rejects after 10 s. */
   async replaceOther(version: string): Promise<void> {
     const deadline = Date.now() + RESTART_MS;
-    const other: ShutdownIf = (hello) => hello.version !== version || hello.protocol !== PROTOCOL_VERSION;
+    const other: ShutdownIf = (hello) => hello.version !== version || hello.protocol !== DAEMON_PROTOCOL_VERSION;
     for (;;) {
       const hello = await this.probe({ start: true, shutdown: other }, deadline); // NOSONAR(S9382) — polls until the new daemon serves
       if (hello !== null && !other(hello)) return;

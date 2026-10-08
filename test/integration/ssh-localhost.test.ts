@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { alive, makeRepo, waitUntil } from '../support/daemon-host.js';
 import { exec, REPO_ROOT } from '../support/exec.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
@@ -153,7 +153,11 @@ describe('remote host over real ssh', () => {
 
   it('reinstalls and restarts an outdated remote daemon', async () => {
     await install();
-    const fake = await FakeDaemon.listen(remote.socket, { protocol: PROTOCOL_VERSION - 1, version: '0.0.1-old', instance: 'old_remote' });
+    const fake = await FakeDaemon.listen(remote.socket, {
+      protocol: DAEMON_PROTOCOL_VERSION - 1,
+      version: '0.0.1-old',
+      instance: 'old_remote',
+    });
     await startHub();
     const client = await host.session();
     expect(await client.waitHost(REMOTE, (h) => h.status === 'outdated', { timeout: 30_000 })).toMatchObject({ instance: 'old_remote' });

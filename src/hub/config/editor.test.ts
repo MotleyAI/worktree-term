@@ -145,6 +145,101 @@ describe('ConfigEditor removing repos', () => {
   });
 });
 
+const SHELL = { name: 'shell', command: null };
+const CLAUDE = { name: 'claude', command: 'claude' };
+const CODEX = { name: 'codex', command: 'codex' };
+const presetList = (n: number): { name: string; command: string | null }[] =>
+  Array.from({ length: n }, (_, i) => ({ name: `p${String(i)}`, command: null }));
+
+describe('ConfigEditor editing presets', () => {
+  it('appends to the defaults when the file has no presets, creating it owner-only', async () => {
+    const added = { name: 'htop', command: 'htop' };
+    expect(await editor().addPreset(added)).toEqual({ changed: true, presets: [SHELL, CLAUDE, CODEX, added] });
+    expect(read()).toEqual({ presets: [SHELL, CLAUDE, CODEX, added] });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('appends to the listed presets, keeping every other value as written', async () => {
+    write(OTHERS);
+    const added = { name: 'plain', command: null };
+    expect(await editor().addPreset(added)).toEqual({ changed: true, presets: [CLAUDE, added] });
+    const expected = { ...OTHERS, presets: [CLAUDE, added] };
+    expect(read()).toEqual(expected);
+    expect(keysOf(read())).toEqual(Object.keys(expected));
+  });
+
+  it('refuses a name that is taken, leaving the file unchanged', async () => {
+    write({ presets: [CLAUDE] });
+    const before = text();
+    const edit = editor();
+    await expect(edit.addPreset({ name: 'claude', command: 'other' })).rejects.toThrow('a preset named claude exists');
+    expect(text()).toBe(before);
+  });
+
+  it('refuses a 65th preset', async () => {
+    write({ presets: presetList(64) });
+    const edit = editor();
+    await expect(edit.addPreset({ name: 'one more', command: null })).rejects.toBeInstanceOf(ConfigError);
+    expect(z.object({ presets: z.array(z.unknown()) }).parse(read()).presets).toHaveLength(64);
+  });
+
+  it('removes a preset by name, from the defaults when the file has none', async () => {
+    write({ repos: ['/r/a'] });
+    expect(await editor().removePreset('claude')).toEqual({ changed: true, presets: [SHELL, CODEX] });
+    expect(read()).toEqual({ repos: ['/r/a'], presets: [SHELL, CODEX] });
+  });
+
+  it('leaves the file unchanged for a name it does not list', async () => {
+    write({ presets: [CLAUDE, SHELL] });
+    const before = text();
+    expect(await editor().removePreset('nope')).toEqual({ changed: false, presets: [CLAUDE, SHELL] });
+    expect(text()).toBe(before);
+  });
+
+  it('creates no file when removing an unknown name from an absent one', async () => {
+    expect(await editor().removePreset('nope')).toEqual({ changed: false, presets: [SHELL, CLAUDE, CODEX] });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('refuses to remove the last preset', async () => {
+    write({ presets: [CLAUDE] });
+    const edit = editor();
+    await expect(edit.removePreset('claude')).rejects.toThrow('the last preset cannot be removed');
+    expect(read()).toEqual({ presets: [CLAUDE] });
+  });
+
+  it('refuses to edit an invalid file', async () => {
+    write({ presets: [] });
+    const edit = editor();
+    await expect(edit.addPreset(SHELL)).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it.each([
+    ['to the front', 'codex', 0, [CODEX, SHELL, CLAUDE]],
+    ['to the end', 'shell', 2, [CLAUDE, CODEX, SHELL]],
+    ['to the end from beyond it', 'shell', 63, [CLAUDE, CODEX, SHELL]],
+    ['one down', 'shell', 1, [CLAUDE, SHELL, CODEX]],
+  ])('moves a preset %s, starting from the defaults', async (_name, preset, to, expected) => {
+    expect(await editor().movePreset(preset, to)).toEqual({ changed: true, presets: expected });
+    expect(read()).toEqual({ presets: expected });
+  });
+
+  it('leaves the file unchanged for a move in place or an unknown name', async () => {
+    write({ presets: [CLAUDE, SHELL] });
+    const before = text();
+    expect(await editor().movePreset('claude', 0)).toEqual({ changed: false, presets: [CLAUDE, SHELL] });
+    expect(await editor().movePreset('shell', 5)).toEqual({ changed: false, presets: [CLAUDE, SHELL] });
+    expect(await editor().movePreset('nope', 0)).toEqual({ changed: false, presets: [CLAUDE, SHELL] });
+    expect(text()).toBe(before);
+  });
+
+  it('applies concurrent preset and repo edits one at a time, losing none', async () => {
+    const shared = editor();
+    await Promise.all([shared.addPreset({ name: 'a', command: null }), shared.addRepo(null, '/r/1'), shared.removePreset('codex')]);
+    expect(read()).toEqual({ presets: [SHELL, CLAUDE, { name: 'a', command: null }], repos: ['/r/1'] });
+  });
+});
+
 describe('ConfigEditor with other writers', () => {
   it('starts over from a file changed between its read and its replacement, keeping both changes', async () => {
     write({ repos: ['/r/a'] });

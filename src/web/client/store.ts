@@ -16,7 +16,7 @@ export interface RepoState {
   error: { code: string; message: string } | null;
 }
 
-const SHORT_HEAD = 7;
+export const SHORT_HEAD = 7;
 
 const directoryName = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
 
@@ -173,6 +173,7 @@ export class HubStore {
       case 'error':
       case 'detached':
       case 'reposDiscovered':
+      case 'worktreeAtRisk':
         return;
     }
   }

@@ -114,6 +114,22 @@ test.describe('add repo', () => {
     await expect(page.locator(worktreeEntry(other.worktrees[0] ?? ''))).toBeVisible();
   });
 
+  test('adding a repo that already has a tab selects that tab instead of adding another', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    const other = makeRepoWith(hub, 'other', []);
+    writeHubConfig(hub, { repos: [repo, other.repo], roots: [join(hub.dir, 'nothing-here')] });
+    await openUi(hub, page);
+    await selectRepo(page, other.repo);
+    const dialog = await openAddRepo(page);
+    await hostConnected(dialog, LOCAL);
+    await dialog.locator(byTestId(TID.addRepoPath)).fill(repo);
+    await dialog.locator(byTestId(TID.addRepoPath)).press('Enter');
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(repoTab(repo))).toHaveCount(1);
+    await expect(page.locator(repoTab(repo))).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(byTestId(TID.repoTab))).toHaveCount(2);
+  });
+
   test('Escape closes the dialog without sending anything', async ({ hub, page, wire }) => {
     const root = join(hub.dir, 'r');
     const b = makeRepo(join(root, 'b'));

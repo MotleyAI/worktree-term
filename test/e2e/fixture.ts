@@ -105,7 +105,15 @@ export const confirmAction = async (page: Page): Promise<void> => {
 
 /** Hub-level requests (not `host` envelopes or `hello`) the page sent since `from`, without their `req`. */
 export const hubRequests = (wire: WireRecorder, from = 0): { t: string; host: number }[] =>
-  wire.sentMessages(from).flatMap((m) => (m.t === 'hello' || m.t === 'host' ? [] : [{ t: m.t, host: m.host }]));
+  wire.sentMessages(from).flatMap((m) => ('host' in m && m.t !== 'host' ? [{ t: m.t, host: m.host }] : []));
+
+/** Preset edits the page sent since `from`, without their `req`. */
+export const presetRequests = (wire: WireRecorder, from = 0): unknown[] =>
+  wire.sentMessages(from).flatMap((m): unknown[] => {
+    if (m.t === 'addPreset') return [{ t: m.t, preset: m.preset }];
+    if (m.t === 'movePreset') return [{ t: m.t, name: m.name, to: m.to }];
+    return m.t === 'removePreset' ? [{ t: m.t, name: m.name }] : [];
+  });
 
 /** Every entry of `host` in the `hosts` messages the page received since `from`. */
 export const hostEntries = (wire: WireRecorder, host: number, from = 0): HostEntry[] =>
@@ -199,7 +207,7 @@ export const selectWorktree = async (page: Page, path: string): Promise<void> =>
 
 /** Paths of the listed sidebar entries, in order. */
 export const listedWorktrees = (page: Page): Promise<string[]> =>
-  page.locator(byTestId(TID.worktree)).evaluateAll((entries) => entries.map((e) => e.getAttribute('title') ?? ''));
+  page.locator(byTestId(TID.worktree)).evaluateAll((entries: HTMLElement[]) => entries.map((e) => e.dataset['path'] ?? ''));
 
 /** The terminal id of the selected terminal tab. */
 export const activeTerm = async (page: Page): Promise<number> => {

@@ -253,11 +253,15 @@ describe('request correlation', () => {
     ['clientToDaemon', { t: 'closeTerm', req: 1, termId: 1 }],
     ['clientToDaemon', { t: 'setChecked', req: 1, worktree: WT, checked: true }],
     ['clientToDaemon', { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [], active: 0 } }],
+    ['clientToDaemon', { t: 'removeWorktree', req: 1, worktree: WT, force: false }],
     ['browserToHub', { t: 'addRepo', req: 1, host: 0, repo: REPO }],
     ['browserToHub', { t: 'removeRepo', req: 1, host: 0, repo: REPO }],
     ['browserToHub', { t: 'discoverRepos', req: 1, host: 0 }],
     ['browserToHub', { t: 'restartDaemon', req: 1, host: 0 }],
     ['browserToHub', { t: 'reinstallDaemon', req: 1, host: 0 }],
+    ['browserToHub', { t: 'addPreset', req: 1, preset: { name: 'p', command: null } }],
+    ['browserToHub', { t: 'removePreset', req: 1, name: 'p' }],
+    ['browserToHub', { t: 'movePreset', req: 1, name: 'p', to: 0 }],
   ];
 
   const fireAndForget: readonly (readonly [Direction, Record<string, unknown>])[] = [
@@ -507,12 +511,58 @@ describe('value limits', () => {
     expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 0, code: 'host-unavailable', message: 'x' })).toBe(true);
   });
 
+  it.each([
+    ['without force', 'clientToDaemon', { t: 'removeWorktree', req: 1, worktree: WT }],
+    ['for a relative path', 'clientToDaemon', { t: 'removeWorktree', req: 1, worktree: 'wt', force: false }],
+    ['from the daemon', 'daemonToClient', { t: 'removeWorktree', req: 1, worktree: WT, force: false }],
+    [
+      'with negative commits',
+      'daemonToClient',
+      { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: -1, changes: 0, running: [] },
+    ],
+    [
+      'with fractional changes',
+      'daemonToClient',
+      { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: 0, changes: 0.5, running: [] },
+    ],
+    ['with terminal id 0', 'daemonToClient', { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: 0, changes: 0, running: [0] }],
+    ['without req', 'daemonToClient', { t: 'worktreeAtRisk', worktree: WT, base: null, ahead: 0, changes: 0, running: [] }],
+  ] as const)('rejects a worktree removal message %s', (_name, dir, message) => {
+    expectRejected(dir, raw(message));
+  });
+
+  it('carries worktree removal through the browser envelopes', () => {
+    expect(decodes('browserToHub', { t: 'host', host: 0, m: { t: 'removeWorktree', req: 1, worktree: WT, force: true } })).toBe(true);
+    const risk = { t: 'worktreeAtRisk', req: 1, worktree: WT, base: 'origin/main', ahead: 1, changes: 0, running: [2] };
+    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: risk })).toBe(true);
+  });
+
   it('rejects a blank preset name', () => {
     expectRejected('hubToBrowser', raw({ t: 'presets', presets: [{ name: '   ', command: null }] }));
   });
 
   it('rejects an empty preset command', () => {
     expectRejected('hubToBrowser', raw({ t: 'presets', presets: [{ name: 'p', command: '' }] }));
+  });
+
+  it.each([
+    ['a blank name', { t: 'addPreset', req: 1, preset: { name: '  ', command: null } }],
+    ['an empty command', { t: 'addPreset', req: 1, preset: { name: 'p', command: '' } }],
+    ['an extra preset field', { t: 'addPreset', req: 1, preset: { name: 'p', command: null, x: 1 } }],
+    ['a missing preset', { t: 'addPreset', req: 1 }],
+    ['an empty name to remove', { t: 'removePreset', req: 1, name: '' }],
+    ['a 65-char name to remove', { t: 'removePreset', req: 1, name: 'p'.repeat(65) }],
+    ['a negative position', { t: 'movePreset', req: 1, name: 'p', to: -1 }],
+    ['a position past the last preset', { t: 'movePreset', req: 1, name: 'p', to: 64 }],
+    ['a fractional position', { t: 'movePreset', req: 1, name: 'p', to: 0.5 }],
+    ['a blank name to move', { t: 'movePreset', req: 1, name: ' ', to: 0 }],
+  ])('rejects a preset edit with %s', (_name, message) => {
+    expectRejected('browserToHub', raw(message));
+  });
+
+  it('accepts preset edits only from the browser', () => {
+    expectRejected('hubToBrowser', raw({ t: 'removePreset', req: 1, name: 'p' }));
+    expectRejected('clientToDaemon', raw({ t: 'addPreset', req: 1, preset: { name: 'p', command: null } }));
   });
 });
 

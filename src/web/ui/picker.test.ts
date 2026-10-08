@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Layout } from '../../protocol/index.js';
-import { pickerKey, pickerValid, type PickerContext, type PickerWorld } from './picker.js';
+import { dropPosition, pickerKey, pickerValid, presetFromForm, type PickerContext, type PickerWorld } from './picker.js';
 
 type Pane = Layout['tabs'][number]['root'];
 
@@ -106,5 +106,48 @@ describe('pickerKey', () => {
 
   it.each(['a', 'Tab', ' ', 'ArrowLeft', 'ArrowRight', 'Shift'])('ignores %j', (key) => {
     expect(pickerKey(key, 0, 3)).toBeNull();
+  });
+});
+
+describe('presetFromForm', () => {
+  const presets = [
+    { name: 'shell', command: null },
+    { name: 'claude', command: 'claude' },
+  ];
+
+  it('trims the name and the command', () => {
+    expect(presetFromForm('  htop ', ' htop -d 5 ', presets)).toEqual({ preset: { name: 'htop', command: 'htop -d 5' } });
+  });
+
+  it('makes an empty or blank command the login shell', () => {
+    expect(presetFromForm('zsh', '', presets)).toEqual({ preset: { name: 'zsh', command: null } });
+    expect(presetFromForm('zsh', '   ', presets)).toEqual({ preset: { name: 'zsh', command: null } });
+  });
+
+  it.each([
+    ['an empty name', '', 'x', 'Give the preset a name'],
+    ['a blank name', '  \t', 'x', 'Give the preset a name'],
+    ['a taken name', ' claude ', 'x', 'A preset named claude exists'],
+    ['a 65-character name', 'n'.repeat(65), 'x', 'Names are at most 64 characters'],
+    ['a 4097-character command', 'n', 'c'.repeat(4097), 'Commands are at most 4096 characters'],
+  ])('refuses %s', (_case, name, command, error) => {
+    expect(presetFromForm(name, command, presets)).toEqual({ error });
+  });
+
+  it('accepts a name differing from a taken one by case', () => {
+    expect(presetFromForm('Claude', 'claude', presets)).toEqual({ preset: { name: 'Claude', command: 'claude' } });
+  });
+});
+
+describe('dropPosition', () => {
+  it.each([
+    ['before the first preset', 2, 0, 0],
+    ['into its own gap above', 2, 2, 2],
+    ['into its own gap below', 2, 3, 2],
+    ['after the last of four', 0, 4, 3],
+    ['between two later presets', 0, 2, 1],
+    ['between two earlier presets', 3, 1, 1],
+  ])('places a preset dropped %s', (_case, from, slot, position) => {
+    expect(dropPosition(from, slot)).toBe(position);
   });
 });

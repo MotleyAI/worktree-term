@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FLOW_HIGH, FrameKind, PROTOCOL_VERSION, type Terminal } from '../../src/protocol/index.js';
+import { FLOW_HIGH, FrameKind, DAEMON_PROTOCOL_VERSION, type Terminal } from '../../src/protocol/index.js';
 import { addWorktree, alive, DaemonHost, makeRepo, residentBytes, sleep, waitUntil, type WtdProcess } from '../support/daemon-host.js';
 import { FakeDaemon, SocketProxy } from '../support/fake-daemon.js';
 import { currentNodeDir, FakeSsh, installRemote, type FakeRemote } from '../support/fake-ssh.js';
@@ -20,6 +20,8 @@ const MiB = 1024 * KiB;
 
 const SHELL = { name: 'shell', command: null };
 const CLAUDE = { name: 'claude', command: 'claude' };
+/** The presets of a configuration without `presets`. */
+const DEFAULT_PRESETS = [SHELL, CLAUDE, { name: 'codex', command: 'codex' }];
 
 let host: HubHost;
 let hub: WtdProcess;
@@ -113,7 +115,7 @@ describe('configuration snapshots', () => {
 
   it('gives a new session an edited configuration, leaving an open session unchanged', async () => {
     const open = await host.session();
-    expect(presetsOf(open)).toEqual([[SHELL]]);
+    expect(presetsOf(open)).toEqual([DEFAULT_PRESETS]);
     const other = makeRepo(join(host.dir, 'other'));
     host.presets = [SHELL, CLAUDE];
     host.writeRepos([repo, other]);
@@ -122,7 +124,7 @@ describe('configuration snapshots', () => {
     expect(presetsOf(fresh)).toEqual([[SHELL, CLAUDE]]);
     await open.expectNone('hosts', (m) => m.hosts.some((h) => h.repos.includes(other)), 1000);
     expect(open.hosts()[0]?.repos).toEqual([repo]);
-    expect(presetsOf(open)).toEqual([[SHELL]]);
+    expect(presetsOf(open)).toEqual([DEFAULT_PRESETS]);
   });
 
   it.each([
@@ -199,7 +201,7 @@ describe('daemon links and host status', () => {
   });
 
   it('reports reconnecting, then down after 3 failures, and keeps retrying', async () => {
-    const fake = await FakeDaemon.listen(host.socket, { protocol: PROTOCOL_VERSION, accept: 'close' });
+    const fake = await FakeDaemon.listen(host.socket, { protocol: DAEMON_PROTOCOL_VERSION, accept: 'close' });
     const client = await host.session();
     await client.waitHost(0, (h) => h.status === 'reconnecting');
     await client.waitHost(0, (h) => h.status === 'down', { timeout: 10_000 });
@@ -269,7 +271,7 @@ describe('routing', () => {
   });
 
   it('answers a request to a reconnecting host with host-unavailable and drops its fire-and-forget messages', async () => {
-    await FakeDaemon.listen(host.socket, { protocol: PROTOCOL_VERSION, accept: 'close' });
+    await FakeDaemon.listen(host.socket, { protocol: DAEMON_PROTOCOL_VERSION, accept: 'close' });
     const client = await host.session();
     await client.waitHost(0, (h) => h.status === 'reconnecting' || h.status === 'down');
     const reply = await client.request(0, { t: 'watchRepo', repo });
@@ -393,12 +395,12 @@ describe('daemon restart', () => {
     // A daemon the session's reconnect started alongside the restart refuses to start and exits.
     await waitUntil(() => host.daemonPids().length === 1, 'one daemon');
     const direct = await host.client();
-    expect((await direct.handshake()).protocol).toBe(PROTOCOL_VERSION);
+    expect((await direct.handshake()).protocol).toBe(DAEMON_PROTOCOL_VERSION);
   });
 
   it('restarts a newer daemon whose messages after hello are not valid for the hub’s protocol', async () => {
     const fake = await FakeDaemon.listen(host.socket, {
-      protocol: PROTOCOL_VERSION + 1,
+      protocol: DAEMON_PROTOCOL_VERSION + 1,
       instance: 'newer_1',
       afterHello: ['{"t":"frobnicated","widgets":[1,2,3]}', '{"t":"repoState","repo":7}'],
     });
@@ -454,7 +456,7 @@ describe('daemon restart', () => {
   });
 
   it('answers host-unavailable for a host that is not connected or outdated', async () => {
-    const fake = await FakeDaemon.listen(host.socket, { protocol: PROTOCOL_VERSION, accept: 'close' });
+    const fake = await FakeDaemon.listen(host.socket, { protocol: DAEMON_PROTOCOL_VERSION, accept: 'close' });
     const client = await host.session();
     await client.waitHost(0, (h) => h.status === 'reconnecting' || h.status === 'down');
     const reply = await client.hubRequest({ t: 'restartDaemon', host: 0 });
@@ -997,6 +999,74 @@ describe('removing repos', () => {
   });
 });
 
+describe('editing presets', () => {
+  const HTOP = { name: 'htop', command: 'htop' };
+
+  it('adds a preset to config.json, answers done, then sends the presets to every open session', async () => {
+    host.presets = [SHELL];
+    host.writeRepos([repo]);
+    const a = await host.session();
+    const b = await host.session();
+    const [fromA, fromB] = [a.mark(), b.mark()];
+    expect(await a.hubRequest({ t: 'addPreset', preset: HTOP })).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+    for (const [client, from] of [
+      [a, fromA],
+      [b, fromB],
+    ] as const) {
+      expect((await client.waitFor('presets', () => true, { from })).presets).toEqual([SHELL, HTOP]);
+    }
+    const doneAt = a.messages.findIndex((m, i) => i >= fromA && m.t === 'done');
+    const presetsAt = a.messages.findIndex((m, i) => i >= fromA && m.t === 'presets');
+    expect(doneAt).toBeLessThan(presetsAt);
+    expect(configFile()).toEqual({ port: host.port, repos: [repo], presets: [SHELL, HTOP] });
+  });
+
+  it('removes a preset, writing the defaults without it when config.json had none', async () => {
+    host.writeConfig({ port: host.port, repos: [repo] });
+    const client = await host.session();
+    const from = client.mark();
+    expect((await client.hubRequest({ t: 'removePreset', name: 'claude' })).m).toEqual({ t: 'done', req: 1 });
+    const expected = [SHELL, { name: 'codex', command: 'codex' }];
+    expect((await client.waitFor('presets', () => true, { from })).presets).toEqual(expected);
+    expect(configFile()).toEqual({ port: host.port, repos: [repo], presets: expected });
+  });
+
+  it('moves a preset in config.json, answers done, then sends the new order to every open session', async () => {
+    host.presets = [SHELL, CLAUDE, HTOP];
+    host.writeRepos([repo]);
+    const a = await host.session();
+    const b = await host.session();
+    const fromB = b.mark();
+    expect((await a.hubRequest({ t: 'movePreset', name: 'htop', to: 0 })).m).toEqual({ t: 'done', req: 1 });
+    expect((await b.waitFor('presets', () => true, { from: fromB })).presets).toEqual([HTOP, SHELL, CLAUDE]);
+    expect(configFile()).toEqual({ port: host.port, repos: [repo], presets: [HTOP, SHELL, CLAUDE] });
+  });
+
+  it('answers done without sending presets for a name it does not list', async () => {
+    host.presets = [SHELL];
+    host.writeRepos([repo]);
+    const before = readFileSync(host.configPath, 'utf8');
+    const client = await host.session();
+    expect((await client.hubRequest({ t: 'removePreset', name: 'nope' })).m).toEqual({ t: 'done', req: 1 });
+    await client.expectNone('presets', () => true, 300);
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+
+  it.each([
+    ['adding a taken name', { t: 'addPreset', preset: { name: 'shell', command: 'zsh' } }, 'a preset named shell exists'],
+    ['removing the last preset', { t: 'removePreset', name: 'shell' }, 'the last preset cannot be removed'],
+  ] as const)('refuses %s with internal, leaving config.json unchanged', async (_name, body, text) => {
+    host.presets = [SHELL];
+    host.writeRepos([repo]);
+    const before = readFileSync(host.configPath, 'utf8');
+    const client = await host.session();
+    const reply = await client.hubRequest(body);
+    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: null, code: 'internal' } });
+    expect(reply.m.t === 'error' ? reply.m.message : '').toContain(text);
+    expect(readFileSync(host.configPath, 'utf8')).toBe(before);
+  });
+});
+
 describe('configuration edits', () => {
   it('refuses to edit an invalid config.json, naming the problem and leaving it unchanged', async () => {
     const added = makeRepo(join(host.dir, 'added'));
@@ -1038,6 +1108,6 @@ describe('configuration edits', () => {
     const from = client.mark();
     expect((await client.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toEqual({ t: 'done', req: 1 });
     await client.waitHost(0, (h) => h.repos.includes(added), { from });
-    expect(presetsOf(client)).toEqual([[SHELL]]);
+    expect(presetsOf(client)).toEqual([DEFAULT_PRESETS]);
   });
 });

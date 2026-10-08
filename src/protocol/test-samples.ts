@@ -135,6 +135,8 @@ export const clientToDaemonSamples: MessageOf<'clientToDaemon'>[] = [
   { t: 'setVisible', termIds: [] },
   { t: 'setChecked', req: 9, worktree: WT, checked: true },
   { t: 'setLayout', req: 10, worktree: WT, layout },
+  { t: 'removeWorktree', req: 11, worktree: WT, force: false },
+  { t: 'removeWorktree', req: 12, worktree: WT, force: true },
 ];
 
 export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
@@ -165,6 +167,8 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   { t: 'layoutChanged', worktree: WT, layout: { tabs: [], active: 0 } },
   { t: 'layoutChanged', worktree: WT, layout: fullTabLayout },
   { t: 'reposDiscovered', req: 4, repos: [REPO, WT] },
+  { t: 'worktreeAtRisk', req: 11, worktree: WT, base: 'origin/main', ahead: 3, changes: 2, running: [1, 7] },
+  { t: 'worktreeAtRisk', req: 12, worktree: WT, base: null, ahead: null, changes: 0, running: [] },
 ];
 
 type DaemonRequest = Exclude<MessageOf<'clientToDaemon'>, { t: 'hello' | 'shutdown' }>;
@@ -181,6 +185,10 @@ export const browserToHubSamples: MessageOf<'browserToHub'>[] = [
   { t: 'discoverRepos', req: 3, host: 65535 },
   { t: 'restartDaemon', req: 4, host: 1 },
   { t: 'reinstallDaemon', req: 5, host: 1 },
+  { t: 'addPreset', req: 6, preset: { name: 'codex', command: 'codex' } },
+  { t: 'addPreset', req: 7, preset: { name: 'login shell', command: null } },
+  { t: 'removePreset', req: 8, name: 'codex' },
+  { t: 'movePreset', req: 9, name: 'codex', to: 0 },
 ];
 
 export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
@@ -228,6 +236,7 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'setVisible',
     'setChecked',
     'setLayout',
+    'removeWorktree',
   ],
   daemonToClient: [
     'hello',
@@ -243,8 +252,20 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'checkedChanged',
     'layoutChanged',
     'reposDiscovered',
+    'worktreeAtRisk',
   ],
-  browserToHub: ['hello', 'host', 'addRepo', 'removeRepo', 'discoverRepos', 'restartDaemon', 'reinstallDaemon'],
+  browserToHub: [
+    'hello',
+    'host',
+    'addRepo',
+    'removeRepo',
+    'discoverRepos',
+    'restartDaemon',
+    'reinstallDaemon',
+    'addPreset',
+    'removePreset',
+    'movePreset',
+  ],
   hubToBrowser: ['hello', 'token', 'host', 'hosts', 'presets', 'done', 'error', 'reposDiscovered'],
 };
 

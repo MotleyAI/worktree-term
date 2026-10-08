@@ -8,7 +8,7 @@ import {
   encodeCodeResponse,
   encodeMessage,
   MAX_FRAME,
-  PROTOCOL_VERSION,
+  BROWSER_PROTOCOL_VERSION,
   ProtocolError,
   type MessageOf,
 } from '../../protocol/index.js';
@@ -323,7 +323,7 @@ export class Listener {
       send(hubError(null, null, code, message));
       ws.close(POLICY_VIOLATION, code);
     };
-    send({ t: 'hello', protocol: PROTOCOL_VERSION, version: this.options.version, instance: this.options.instance });
+    send({ t: 'hello', protocol: BROWSER_PROTOCOL_VERSION, version: this.options.version, instance: this.options.instance });
     if (kind === 'code') send({ t: 'token', token: this.options.token });
     /** Routes one browser message; returns the failure that ends the session, if any. */
     const handle = (bytes: Uint8Array, isBinary: boolean): { code: ErrorCode; message: string } | null => {
@@ -339,8 +339,8 @@ export class Listener {
         routed.receive(message);
         return null;
       }
-      if (message.protocol !== PROTOCOL_VERSION) {
-        return { code: 'version-mismatch', message: `the hub speaks protocol ${String(PROTOCOL_VERSION)}` };
+      if (message.protocol !== BROWSER_PROTOCOL_VERSION) {
+        return { code: 'version-mismatch', message: `the hub speaks protocol ${String(BROWSER_PROTOCOL_VERSION)}` };
       }
       greeted = true;
       routed.hello();

@@ -1,8 +1,16 @@
 import type { Socket } from 'node:net';
-import { FLOW_HIGH, PROTOCOL_VERSION, type Layout, type Terminal, type Worktree } from '../../protocol/index.js';
+import { FLOW_HIGH, DAEMON_PROTOCOL_VERSION, type Layout, type Terminal, type Worktree } from '../../protocol/index.js';
 import { pruneLayout, type StateStore } from '../state/index.js';
 import { SpawnError, type OutputSink, type TerminalEvents, type TerminalProcess, type TerminalSpec } from '../terminals/index.js';
-import { NotARepoError, type discoverRepos, type listWorktrees, type watchWorktrees, type WorktreeWatch } from '../worktrees/index.js';
+import {
+  NotARepoError,
+  type discoverRepos,
+  type listWorktrees,
+  type removeWorktree,
+  type watchWorktrees,
+  type worktreeRisks,
+  type WorktreeWatch,
+} from '../worktrees/index.js';
 import type { GateOutcome, Request } from './connection.js';
 import { Peer, type Event } from './peer.js';
 
@@ -42,6 +50,8 @@ export interface DaemonServices {
   watchWorktrees: typeof watchWorktrees;
   listWorktrees: typeof listWorktrees;
   discoverRepos: typeof discoverRepos;
+  worktreeRisks: typeof worktreeRisks;
+  removeWorktree: typeof removeWorktree;
   spawnTerminal: (spec: TerminalSpec, events: TerminalEvents) => Promise<TerminalProcess>;
 }
 
@@ -69,6 +79,10 @@ export class Daemon {
   /** Terminals being started per repo; they count against MAX_TERMINALS. */
   private readonly spawning = new Map<string, number>();
   private readonly spawns = new Set<Promise<TerminalProcess>>();
+  /** Terminal starts in flight per worktree, which a removal of the worktree waits for. */
+  private readonly spawnsIn = new Map<string, Set<Promise<TerminalProcess>>>();
+  /** Worktrees being removed; no terminal starts in them meanwhile. */
+  private readonly removing = new Set<string>();
   /** Terminals closed but not yet reaped. */
   private readonly reaping = new Set<Promise<void>>();
   private stopping = false;
@@ -87,7 +101,7 @@ export class Daemon {
       },
     });
     this.peers.add(peer);
-    peer.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: this.options.version, instance: this.options.instance });
+    peer.send({ t: 'hello', protocol: DAEMON_PROTOCOL_VERSION, version: this.options.version, instance: this.options.instance });
   }
 
   /**
@@ -148,6 +162,7 @@ export class Daemon {
       case 'closeTerm':
       case 'setChecked':
       case 'setLayout':
+      case 'removeWorktree':
         void this.correlated(peer, message);
     }
   }
@@ -205,6 +220,9 @@ export class Daemon {
         break;
       case 'setLayout':
         await this.setLayout(peer, m.worktree, m.layout);
+        break;
+      case 'removeWorktree':
+        if (!(await this.removeWorktree(peer, m))) return;
         break;
     }
     peer.send({ t: 'done', req: m.req });
@@ -337,6 +355,7 @@ export class Daemon {
 
   private async createTerm(peer: Peer, m: Extract<Correlated, { t: 'createTerm' }>): Promise<void> {
     const repo = this.repoOfWorktree(peer, m.worktree);
+    if (this.removing.has(m.worktree)) throw new RequestError('busy', `${m.worktree} is being deleted`);
     if (this.terminalsOf(repo).length + (this.spawning.get(repo) ?? 0) >= MAX_TERMINALS) {
       throw new RequestError('busy', `${repo} has ${String(MAX_TERMINALS)} terminals`);
     }
@@ -354,6 +373,8 @@ export class Daemon {
     );
     increment(this.spawning, repo);
     this.spawns.add(spawn);
+    const inWorktree = this.spawnsIn.get(m.worktree) ?? new Set();
+    this.spawnsIn.set(m.worktree, inWorktree.add(spawn));
     let spawned: TerminalProcess;
     try {
       spawned = await spawn;
@@ -363,6 +384,8 @@ export class Daemon {
     } finally {
       decrement(this.spawning, repo);
       this.spawns.delete(spawn);
+      inWorktree.delete(spawn);
+      if (inWorktree.size === 0) this.spawnsIn.delete(m.worktree);
     }
     termId = this.nextTermId++;
     const term: TermEntry = { termId, repo, worktree: m.worktree, preset: m.preset, process: spawned };
@@ -425,6 +448,47 @@ export class Daemon {
     this.broadcast(repo, { t: 'termClosed', termId });
     void this.prune(repo);
     if (failure !== null) throw new RequestError('internal', `terminal closed, but its layout could not be saved: ${failure.message}`);
+  }
+
+  /**
+   * Removes a worktree and closes its terminals; without `force`, first answers `worktreeAtRisk` and keeps it
+   * when that would lose commits not in the base ref, uncommitted changes or running terminals. True when removed.
+   */
+  private async removeWorktree(peer: Peer, m: Extract<Correlated, { t: 'removeWorktree' }>): Promise<boolean> {
+    if (this.removing.has(m.worktree)) throw new RequestError('busy', `${m.worktree} is being deleted`);
+    this.removing.add(m.worktree);
+    try {
+      // Terminals still starting there count as running, and are closed with the rest.
+      await Promise.allSettled([...(this.spawnsIn.get(m.worktree) ?? [])]); // NOSONAR(S7747) — await-thenable only recognises promise arrays
+      return await this.removeWorktreeNow(peer, m);
+    } finally {
+      this.removing.delete(m.worktree);
+    }
+  }
+
+  private async removeWorktreeNow(peer: Peer, m: Extract<Correlated, { t: 'removeWorktree' }>): Promise<boolean> {
+    const repo = this.repoOfWorktree(peer, m.worktree);
+    const worktree = this.repos.get(repo)?.watch.worktrees.find((w) => w.path === m.worktree);
+    if (worktree === undefined) throw new RequestError('unknown-worktree', `${m.worktree} is not a worktree of a watched repo`);
+    if (worktree.main) throw new RequestError('busy', 'the main worktree cannot be deleted');
+    if (worktree.locked) throw new RequestError('busy', `${m.worktree} is locked`);
+    if (!m.force) {
+      const risks = await this.options.services.worktreeRisks(repo, worktree);
+      const running = this.terminalsOf(repo)
+        .filter((t) => t.worktree === m.worktree && t.process.exit === null)
+        .map((t) => t.termId);
+      if (risks.ahead !== 0 || risks.changes > 0 || running.length > 0) {
+        peer.send({ t: 'worktreeAtRisk', req: m.req, worktree: m.worktree, ...risks, running });
+        return false;
+      }
+    }
+    await this.options.services.removeWorktree(repo, worktree, m.force);
+    for (const term of this.terminalsOf(repo).filter((t) => t.worktree === m.worktree)) {
+      this.closeTerminal(term);
+      this.broadcast(repo, { t: 'termClosed', termId: term.termId });
+    }
+    void this.prune(repo);
+    return true;
   }
 
   /** Removes `term` and ends its process. */

@@ -45,8 +45,12 @@ const expectUsageError = async (result: Result, mentions: RegExp): Promise<void>
 };
 
 describe('wtd --version', () => {
-  it('prints the package and protocol versions', async () => {
-    expect(await wtd('--version')).toEqual({ code: 0, stdout: `wtd ${packageVersion()} (protocol 5)\n`, stderr: '' });
+  it('prints the package and both protocol versions', async () => {
+    expect(await wtd('--version')).toEqual({
+      code: 0,
+      stdout: `wtd ${packageVersion()} (daemon protocol 6, browser protocol 8)\n`,
+      stderr: '',
+    });
   });
 });
 

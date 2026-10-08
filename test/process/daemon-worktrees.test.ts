@@ -476,6 +476,7 @@ describe('removeWorktree', () => {
     expect(await client.fails({ t: 'removeWorktree', worktree: repo, force: true })).toBe('busy');
     expect(await client.fails({ t: 'removeWorktree', worktree: wt, force: true })).toBe('busy');
     expect(await client.fails({ t: 'removeWorktree', worktree: join(host.dir, 'nope'), force: true })).toBe('unknown-worktree');
-    expect(existsSync(repo) && existsSync(wt)).toBe(true);
+    expect(existsSync(repo)).toBe(true);
+    expect(existsSync(wt)).toBe(true);
   });
 });

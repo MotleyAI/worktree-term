@@ -64,6 +64,14 @@ describe('worktreeRisks', () => {
     expect((await worktreeRisks(repo, await listed(wt))).ahead).toBe(1);
   });
 
+  it('falls back to origin/main when origin/HEAD names a missing ref', async () => {
+    withOrigin();
+    git(repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/gone');
+    const wt = addWorktree(repo, join(root, 'wt'), 'feat');
+    commit(wt, 'a');
+    expect(await worktreeRisks(repo, await listed(wt))).toEqual({ base: 'origin/main', ahead: 1, changes: 0 });
+  });
+
   it('finds nothing ahead once the branch is merged into origin/main', async () => {
     withOrigin();
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
@@ -105,6 +113,14 @@ describe('worktreeRisks', () => {
     expect((await worktreeRisks(repo, await listed(wt))).changes).toBe(2);
   });
 
+  it('counts commits made after the worktree was listed', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(root, 'wt'), 'feat');
+    const cached = await listed(wt);
+    commit(wt, 'a');
+    expect((await worktreeRisks(repo, cached)).ahead).toBe(1);
+  });
+
   it('reports no changes for a worktree whose directory is gone', async () => {
     withOrigin();
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
@@ -125,7 +141,8 @@ describe('removeWorktree', () => {
   it('refuses a worktree with changes unless forced', async () => {
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
     writeFileSync(join(wt, 'untracked'), 'new');
-    await expect(removeWorktree(repo, await listed(wt), false)).rejects.toThrow();
+    const changed = await listed(wt);
+    await expect(removeWorktree(repo, changed, false)).rejects.toThrow();
     expect(existsSync(wt)).toBe(true);
     await removeWorktree(repo, await listed(wt), true);
     expect(existsSync(wt)).toBe(false);
@@ -137,6 +154,15 @@ describe('removeWorktree', () => {
     const gone = await listed(wt);
     expect(gone.prunable).toBe(true);
     await removeWorktree(repo, gone, false);
+    expect((await listWorktrees(repo)).map((w) => w.path)).toEqual([repo]);
+  });
+
+  it('prunes a worktree whose directory went after it was listed', async () => {
+    const wt = addWorktree(repo, join(root, 'wt'), 'feat');
+    const cached = await listed(wt);
+    rmSync(wt, { recursive: true });
+    expect(cached.prunable).toBe(false);
+    await removeWorktree(repo, cached, false);
     expect((await listWorktrees(repo)).map((w) => w.path)).toEqual([repo]);
   });
 });

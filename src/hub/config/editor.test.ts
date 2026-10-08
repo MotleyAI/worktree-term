@@ -171,13 +171,15 @@ describe('ConfigEditor editing presets', () => {
   it('refuses a name that is taken, leaving the file unchanged', async () => {
     write({ presets: [CLAUDE] });
     const before = text();
-    await expect(editor().addPreset({ name: 'claude', command: 'other' })).rejects.toThrow('a preset named claude exists');
+    const edit = editor();
+    await expect(edit.addPreset({ name: 'claude', command: 'other' })).rejects.toThrow('a preset named claude exists');
     expect(text()).toBe(before);
   });
 
   it('refuses a 65th preset', async () => {
     write({ presets: presetList(64) });
-    await expect(editor().addPreset({ name: 'one more', command: null })).rejects.toBeInstanceOf(ConfigError);
+    const edit = editor();
+    await expect(edit.addPreset({ name: 'one more', command: null })).rejects.toBeInstanceOf(ConfigError);
     expect(z.object({ presets: z.array(z.unknown()) }).parse(read()).presets).toHaveLength(64);
   });
 
@@ -201,13 +203,15 @@ describe('ConfigEditor editing presets', () => {
 
   it('refuses to remove the last preset', async () => {
     write({ presets: [CLAUDE] });
-    await expect(editor().removePreset('claude')).rejects.toThrow('the last preset cannot be removed');
+    const edit = editor();
+    await expect(edit.removePreset('claude')).rejects.toThrow('the last preset cannot be removed');
     expect(read()).toEqual({ presets: [CLAUDE] });
   });
 
   it('refuses to edit an invalid file', async () => {
     write({ presets: [] });
-    await expect(editor().addPreset(SHELL)).rejects.toBeInstanceOf(ConfigError);
+    const edit = editor();
+    await expect(edit.addPreset(SHELL)).rejects.toBeInstanceOf(ConfigError);
   });
 
   it.each([

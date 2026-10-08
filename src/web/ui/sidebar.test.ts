@@ -228,7 +228,13 @@ describe('removalReasons', () => {
 
 describe('keptNote', () => {
   it('says the branch is kept, or that a detached worktree leaves its commits only in the reflog', () => {
-    expect(keptNote(false)).toBe('Its branch is kept.');
-    expect(keptNote(true)).toContain('reachable only through the reflog');
+    expect(keptNote(false, 'origin/main')).toBe('Its branch is kept.');
+    expect(keptNote(true, 'origin/main')).toBe(
+      'It has no branch: once it is deleted, its commits not in origin/main are reachable only through the reflog.',
+    );
+  });
+
+  it('names the base the daemon compared with', () => {
+    expect(keptNote(true, 'origin/master')).toContain('its commits not in origin/master are');
   });
 });

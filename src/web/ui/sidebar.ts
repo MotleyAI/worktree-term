@@ -89,7 +89,7 @@ export const removalReasons = (risks: RemovalRisks): string[] => {
 };
 
 /** What happens to a deleted worktree's commits: kept on its branch, or, detached, left only in the reflog. */
-export const keptNote = (detached: boolean): string =>
+export const keptNote = (detached: boolean, base: string | null): string =>
   detached
-    ? 'It has no branch: once it is deleted, its commits not in origin/main are reachable only through the reflog.'
+    ? `It has no branch: once it is deleted, its commits not in ${base ?? 'origin/main'} are reachable only through the reflog.`
     : 'Its branch is kept.';

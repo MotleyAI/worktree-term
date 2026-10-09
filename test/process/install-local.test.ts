@@ -324,8 +324,21 @@ describe('reinstalling', () => {
     const newest = readlinkSync(paths.current).split('/').pop() ?? '';
     const child = spawn(paths.shim, ['daemon'], { env: host.env(), stdio: 'ignore', detached: true });
     child.unref();
-    const pid = await waitUntil(() => daemonPidsOf(host.stateHome)[0], 'the shim daemon', 10_000);
-    const script = readFileSync(`/proc/${String(pid)}/cmdline`, 'utf8').split('\0')[1] ?? '';
+    const script = await waitUntil(
+      () => {
+        const pid = daemonPidsOf(host.stateHome)[0];
+        if (pid === undefined) return undefined;
+        try {
+          // Until its `exec`, the process is the shell running the shim, with the shim as its script.
+          const arg = readFileSync(`/proc/${String(pid)}/cmdline`, 'utf8').split('\0')[1];
+          return arg?.endsWith('/wtd.mjs') === true ? arg : undefined;
+        } catch {
+          return undefined; // The process exited while we looked.
+        }
+      },
+      'the shim to exec the daemon',
+      10_000,
+    );
     expect(script === join(paths.current, 'wtd.mjs') || script.includes(`/versions/${newest}/`)).toBe(true);
   });
 });

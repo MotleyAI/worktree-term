@@ -154,6 +154,12 @@ describe('visibleWorktrees', () => {
       expect(paths('all', '@ 0123')).toEqual(['/h']);
     });
 
+    it('searches the directory labels of detached and gone worktrees', () => {
+      const built = sidebarEntries({ worktrees: [main, detached], terminals: [terminal(1, '/gone/wt3')], checked: [] });
+      expect(visibleWorktrees(built, 'all', 'WT2 @', null).map((e) => e.path)).toEqual([detached.path]);
+      expect(visibleWorktrees(built, 'all', 'wt3', null).map((e) => e.path)).toEqual(['/gone/wt3']);
+    });
+
     it('ignores surrounding whitespace, and a blank search lists every entry', () => {
       expect(paths('all', '  fix ')).toEqual(['/g']);
       expect(paths('all', '   ')).toEqual(['/m', '/f', '/g', '/h']);

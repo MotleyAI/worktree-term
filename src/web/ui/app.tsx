@@ -966,6 +966,43 @@ const SidebarResizer = ({ view }: { view: View }) => {
   );
 };
 
+/** The selected repo's worktree name search, with a button clearing it. */
+const WorktreeSearch = ({ view }: { view: View }) => {
+  const input = useRef<HTMLInputElement>(null);
+  const search = view.search.value;
+  return (
+    <span class="worktree-search">
+      <input
+        ref={input}
+        type="text"
+        spellcheck={false}
+        autocomplete="off"
+        placeholder="Filter"
+        aria-label="Filter worktrees by name"
+        data-testid="worktree-search"
+        value={search}
+        onInput={(event) => {
+          view.setSearch(event.currentTarget.value);
+        }}
+      />
+      {search !== '' && (
+        <button
+          type="button"
+          aria-label="Clear the worktree filter"
+          title="Clear the worktree filter"
+          data-testid="worktree-search-clear"
+          onClick={() => {
+            view.setSearch('');
+            input.current?.focus();
+          }}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+};
+
 const Workspace = ({ client, manager, view }: AppProps) => {
   const tab = view.tab.value;
   const repo = view.repo.value;
@@ -977,6 +1014,7 @@ const Workspace = ({ client, manager, view }: AppProps) => {
       <nav class="sidebar" style={{ width: px(view.sidebarWidth.value) }}>
         <div class="sidebar-header">
           <span class="sidebar-title">Worktrees</span>
+          <WorktreeSearch view={view} />
           <label class="star-filter" title="Show starred worktrees only">
             <span>Starred</span>
             {/* Keyed by repo: switching repos mounts it in place, so only a click animates it. */}

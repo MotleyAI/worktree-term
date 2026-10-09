@@ -62,6 +62,10 @@ export const TID = {
   worktreeLabel: 'worktree-label',
   /** Checkbox input: checked = show checked worktrees only, in the selected repo; each repo keeps its own, across reloads. */
   filterChecked: 'filter-checked',
+  /** Text input between the sidebar title and `filterChecked`: lists only worktrees whose label contains its trimmed text, ignoring case, plus the selected one; each repo keeps its own, across reloads. */
+  worktreeSearch: 'worktree-search',
+  /** Button beside `worktreeSearch`, present only while it holds text; empties it. */
+  worktreeSearchClear: 'worktree-search-clear',
   /** Context menu of a worktree entry; Escape or a press outside closes it. */
   worktreeMenu: 'worktree-menu',
   /** Menu item: deletes the worktree, at once when nothing would be lost, else after the confirmation; `disabled` for the main worktree, a locked or gone one, or an unconnected host. */

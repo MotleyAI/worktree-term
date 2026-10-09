@@ -18,14 +18,31 @@ export type WorktreeFilter = 'all' | 'checked';
 /** Each repo's filter by repo key; a repo without an entry shows all. */
 export type RepoFilters = Readonly<Record<string, string>>;
 
+/** Each repo's name search by repo key; a repo without an entry searches nothing. */
+export type RepoSearches = Readonly<Record<string, string>>;
+
+/** `record` with the repo `key` set to `value`; null drops its entry. */
+const withEntry = (record: Readonly<Record<string, string>>, key: string, value: string | null): Readonly<Record<string, string>> => {
+  const rest = Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
+  return value === null ? rest : { ...rest, [key]: value };
+};
+
 /** The filter of the repo `key`. */
 export const filterOf = (filters: RepoFilters, key: string): WorktreeFilter => (filters[key] === 'checked' ? 'checked' : 'all');
 
 /** `filters` with the repo `key` set to `filter`; showing all drops its entry. */
-export const withFilter = (filters: RepoFilters, key: string, filter: WorktreeFilter): RepoFilters => {
-  const rest = Object.fromEntries(Object.entries(filters).filter(([k]) => k !== key));
-  return filter === 'all' ? rest : { ...rest, [key]: filter };
-};
+export const withFilter = (filters: RepoFilters, key: string, filter: WorktreeFilter): RepoFilters =>
+  withEntry(filters, key, filter === 'all' ? null : filter);
+
+/** The name search of the repo `key`. */
+export const searchOf = (searches: RepoSearches, key: string): string => searches[key] ?? '';
+
+/** `searches` with the repo `key` set to `search`; an empty search drops its entry. */
+export const withSearch = (searches: RepoSearches, key: string, search: string): RepoSearches =>
+  withEntry(searches, key, search === '' ? null : search);
+
+/** Whether `label` contains `search`, trimmed, ignoring case; a blank search matches every label. */
+export const matchesSearch = (label: string, search: string): boolean => label.toLowerCase().includes(search.trim().toLowerCase());
 
 /** Sidebar width bounds and default, in pixels. */
 export const SIDEBAR_WIDTH = { min: 160, max: 640, initial: 260 } as const;
@@ -58,13 +75,17 @@ export const sidebarEntries = (state: {
   return entries;
 };
 
-/** The entries the filter shows; the selected entry is always shown. */
-export const visibleWorktrees = (entries: readonly SidebarEntry[], filter: WorktreeFilter, selected: string | null): SidebarEntry[] =>
-  filter === 'all' ? [...entries] : entries.filter((e) => e.checked || e.path === selected);
+/** The entries the filter and the name search show; the selected entry is always shown. */
+export const visibleWorktrees = (
+  entries: readonly SidebarEntry[],
+  filter: WorktreeFilter,
+  search: string,
+  selected: string | null,
+): SidebarEntry[] => entries.filter((e) => e.path === selected || ((filter === 'all' || e.checked) && matchesSearch(e.label, search)));
 
-/** The worktree selected without a stored selection: the first the filter shows, else the first entry. */
+/** The worktree selected without a stored selection: the first the filter shows, else the first entry; the search plays no part. */
 export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
-  (visibleWorktrees(entries, filter, null)[0] ?? entries[0])?.path ?? null;
+  (visibleWorktrees(entries, filter, '', null)[0] ?? entries[0])?.path ?? null;
 
 /** What the daemon reported deleting a worktree would lose. */
 export interface RemovalRisks {

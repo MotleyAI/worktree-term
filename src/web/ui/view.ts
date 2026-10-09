@@ -35,10 +35,13 @@ import {
   keptNote,
   parseSidebarWidth,
   removalReasons,
+  searchOf,
   sidebarEntries,
   visibleWorktrees,
   withFilter,
+  withSearch,
   type RepoFilters,
+  type RepoSearches,
   type SidebarEntry,
   type WorktreeFilter,
 } from './sidebar.js';
@@ -56,6 +59,7 @@ export const PANE_HEADER = 20;
 const REPO_KEY = 'wtd.repo';
 const WORKTREES_KEY = 'wtd.worktrees';
 const FILTERS_KEY = 'wtd.filters';
+const SEARCHES_KEY = 'wtd.searches';
 const SIDEBAR_WIDTH_KEY = 'wtd.sidebarWidth';
 
 const load = (key: string): string | null => localStorage.getItem(key);
@@ -185,6 +189,7 @@ export class View {
   readonly selectedRepo = signal<string | null>(load(REPO_KEY));
   readonly selections = signal<Readonly<Record<string, string>>>(loadRecord(WORKTREES_KEY));
   readonly filters = signal<RepoFilters>(loadRecord(FILTERS_KEY));
+  readonly searches = signal<RepoSearches>(loadRecord(SEARCHES_KEY));
   readonly sidebarWidth = signal<number>(parseSidebarWidth(load(SIDEBAR_WIDTH_KEY)));
   /** The terminal area in client coordinates. */
   readonly area = signal<Rect>({ left: 0, top: 0, width: 0, height: 0 });
@@ -234,6 +239,11 @@ export class View {
     const tab = this.tab.value;
     return tab === null ? 'all' : filterOf(this.filters.value, repoKey(tab.host, tab.repo));
   });
+  /** The selected repo's name search. */
+  readonly search = computed<string>(() => {
+    const tab = this.tab.value;
+    return tab === null ? '' : searchOf(this.searches.value, repoKey(tab.host, tab.repo));
+  });
   readonly entries = computed<SidebarEntry[]>(() => {
     const repo = this.repo.value;
     return repo === null ? [] : sidebarEntries(repo);
@@ -246,7 +256,9 @@ export class View {
     if (stored !== undefined && entries.some((e) => e.path === stored)) return stored;
     return defaultWorktree(entries, this.filter.value);
   });
-  readonly listed = computed<SidebarEntry[]>(() => visibleWorktrees(this.entries.value, this.filter.value, this.worktree.value));
+  readonly listed = computed<SidebarEntry[]>(() =>
+    visibleWorktrees(this.entries.value, this.filter.value, this.search.value, this.worktree.value),
+  );
   readonly terminals = computed<Terminal[]>(() => {
     const worktree = this.worktree.value;
     return (this.repo.value?.terminals ?? []).filter((t) => t.worktree === worktree);
@@ -370,7 +382,7 @@ export class View {
   selectRepo(tab: RepoTab): void {
     const key = repoKey(tab.host, tab.repo);
     this.selectedRepo.value = key;
-    localStorage.setItem(REPO_KEY, key);
+    this.store(REPO_KEY, key);
   }
 
   /** Selects `path` in the current repo, timing the switch. */
@@ -380,7 +392,7 @@ export class View {
     if (tab === null) return;
     const selections = { ...this.selections.value, [repoKey(tab.host, tab.repo)]: path };
     this.selections.value = selections;
-    localStorage.setItem(WORKTREES_KEY, JSON.stringify(selections));
+    this.store(WORKTREES_KEY, JSON.stringify(selections));
     markAfterPaint(SWITCH_END);
   }
 
@@ -390,7 +402,26 @@ export class View {
     if (tab === null) return;
     const filters = withFilter(this.filters.value, repoKey(tab.host, tab.repo), filter);
     this.filters.value = filters;
-    localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+    this.store(FILTERS_KEY, JSON.stringify(filters));
+  }
+
+  /** Sets the selected repo's name search; empty shows every worktree. */
+  setSearch(search: string): void {
+    const tab = this.tab.value;
+    if (tab === null) return;
+    const searches = withSearch(this.searches.value, repoKey(tab.host, tab.repo), search);
+    this.searches.value = searches;
+    this.store(SEARCHES_KEY, JSON.stringify(searches));
+  }
+
+  /** Stores `value` at `key`, reporting a refused write (storage full or blocked) on the page. */
+  private store(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch (error) {
+      if (!(error instanceof DOMException)) throw error;
+      this.notice.value = `Saving the page's settings failed: ${error.message}`;
+    }
   }
 
   /** Sets the sidebar width, within its bounds, without storing it. */
@@ -400,7 +431,7 @@ export class View {
 
   /** Stores the sidebar width for later sessions. */
   storeSidebarWidth(): void {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth.value));
+    this.store(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth.value));
   }
 
   /** Shows the tab of `termId` at once, then stores it as the worktree's active tab. */
@@ -653,7 +684,7 @@ export class View {
       .then(() => {
         if (this.addRepo.peek()?.host === host) this.addRepo.value = null;
         this.selectedRepo.value = repoKey(host, repo);
-        localStorage.setItem(REPO_KEY, repoKey(host, repo));
+        this.store(REPO_KEY, repoKey(host, repo));
       })
       .catch((error: unknown) => {
         this.updateAddRepo(host, { error: describe(error) });

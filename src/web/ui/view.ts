@@ -382,7 +382,7 @@ export class View {
   selectRepo(tab: RepoTab): void {
     const key = repoKey(tab.host, tab.repo);
     this.selectedRepo.value = key;
-    localStorage.setItem(REPO_KEY, key);
+    this.store(REPO_KEY, key);
   }
 
   /** Selects `path` in the current repo, timing the switch. */
@@ -392,7 +392,7 @@ export class View {
     if (tab === null) return;
     const selections = { ...this.selections.value, [repoKey(tab.host, tab.repo)]: path };
     this.selections.value = selections;
-    localStorage.setItem(WORKTREES_KEY, JSON.stringify(selections));
+    this.store(WORKTREES_KEY, JSON.stringify(selections));
     markAfterPaint(SWITCH_END);
   }
 
@@ -402,7 +402,7 @@ export class View {
     if (tab === null) return;
     const filters = withFilter(this.filters.value, repoKey(tab.host, tab.repo), filter);
     this.filters.value = filters;
-    localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+    this.store(FILTERS_KEY, JSON.stringify(filters));
   }
 
   /** Sets the selected repo's name search; empty shows every worktree. */
@@ -411,7 +411,17 @@ export class View {
     if (tab === null) return;
     const searches = withSearch(this.searches.value, repoKey(tab.host, tab.repo), search);
     this.searches.value = searches;
-    localStorage.setItem(SEARCHES_KEY, JSON.stringify(searches));
+    this.store(SEARCHES_KEY, JSON.stringify(searches));
+  }
+
+  /** Stores `value` at `key`, reporting a refused write (storage full or blocked) on the page. */
+  private store(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch (error) {
+      if (!(error instanceof DOMException)) throw error;
+      this.notice.value = `Saving the page's settings failed: ${error.message}`;
+    }
   }
 
   /** Sets the sidebar width, within its bounds, without storing it. */
@@ -421,7 +431,7 @@ export class View {
 
   /** Stores the sidebar width for later sessions. */
   storeSidebarWidth(): void {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth.value));
+    this.store(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth.value));
   }
 
   /** Shows the tab of `termId` at once, then stores it as the worktree's active tab. */
@@ -674,7 +684,7 @@ export class View {
       .then(() => {
         if (this.addRepo.peek()?.host === host) this.addRepo.value = null;
         this.selectedRepo.value = repoKey(host, repo);
-        localStorage.setItem(REPO_KEY, repoKey(host, repo));
+        this.store(REPO_KEY, repoKey(host, repo));
       })
       .catch((error: unknown) => {
         this.updateAddRepo(host, { error: describe(error) });

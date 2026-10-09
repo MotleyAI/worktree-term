@@ -238,6 +238,25 @@ test.describe('name search', () => {
     await expect(search).toHaveValue('book');
   });
 
+  test('a refused storage write still narrows the list and is reported on the page', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat', 'docs']);
+    const [feat = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await page.addInitScript(() => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- called below with each storage as `this`
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (this: Storage, key: string, value: string): void {
+        if (key === 'wtd.searches') throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        setItem.call(this, key, value);
+      };
+    });
+    await openUi(hub, page);
+    await selectWorktree(page, feat);
+    await page.locator(byTestId(TID.worktreeSearch)).fill('fea');
+    await expect.poll(() => listedWorktrees(page)).toEqual([feat]);
+    await expect(page.locator(byTestId(TID.notice))).toContainText("Saving the page's settings failed: The quota has been exceeded.");
+  });
+
   test('applies together with "checked only"', async ({ hub, page }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat-a', 'feat-b', 'other']);
     const [a = '', b = '', other = ''] = worktrees;

@@ -16,4 +16,4 @@
 
 ## 4. Final gates
 
-- [ ] 4.1 `pnpm test` green (incl. Playwright); `pnpm lint` exits 0; `tsc -b` clean; `openspec validate dev-2080-worktree-term-clicking-anywhere-on-a-sidebar-worktree-row --strict` passes
+- [x] 4.1 `pnpm test` green (incl. Playwright); `pnpm lint` exits 0; `tsc -b` clean; `openspec validate dev-2080-worktree-term-clicking-anywhere-on-a-sidebar-worktree-row --strict` passes

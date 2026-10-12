@@ -277,6 +277,7 @@ input:focus-visible,
   padding: 1px 7px;
   border-radius: 5px;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .worktree:hover {
@@ -305,7 +306,6 @@ input:focus-visible,
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: pointer;
 }
 
 .worktree-star {

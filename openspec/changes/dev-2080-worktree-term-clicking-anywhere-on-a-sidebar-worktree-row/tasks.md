@@ -11,8 +11,8 @@
 
 ## 3. Implementation
 
-- [ ] 3.1 `WorktreeEntry` in `src/web/ui/app.tsx`: row `onClick` selects (with the `NOSONAR(S6848)` comment from design.md), the label button has no `onClick`, the star's `onClick` stops propagation; tests 2.1–2.4 pass
-- [ ] 3.2 `src/web/main/styles.css`: `cursor: pointer` on `.worktree`, removed from `.worktree .label`
+- [x] 3.1 `WorktreeEntry` in `src/web/ui/app.tsx`: row `onClick` selects (with the `NOSONAR(S6848)` comment from design.md), the label button has no `onClick`, the star's `onClick` stops propagation; tests 2.1–2.4 pass
+- [x] 3.2 `src/web/main/styles.css`: `cursor: pointer` on `.worktree`, removed from `.worktree .label`
 
 ## 4. Final gates
 

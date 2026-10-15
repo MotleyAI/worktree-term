@@ -285,6 +285,11 @@ export interface StartLock {
   release: () => Promise<void>;
 }
 
+/** A live process held the start lock for the whole wait. */
+export class StartLockHeldError extends Error {
+  override readonly name = 'StartLockHeldError';
+}
+
 interface Holder {
   pid: number;
   nonce: string;
@@ -376,7 +381,7 @@ export const acquireStartLock = async (path: string): Promise<StartLock> => {
     }
     if (Date.now() >= deadline) {
       const by = current === null ? '' : ` by process ${String(current.pid)}`;
-      throw new Error(`start lock ${path} is held${by}`);
+      throw new StartLockHeldError(`start lock ${path} is held${by}`);
     }
     await sleep(LOCK_RETRY_MS); // NOSONAR(S9382) — retry loop
   }

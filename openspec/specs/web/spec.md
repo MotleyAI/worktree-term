@@ -58,7 +58,7 @@ The page SHALL show one tab per repo of each host, in the order the hub lists th
 - **THEN** the tab labelled `box:app` shows the status `reconnecting`
 
 ### Requirement: Worktree sidebar
-The sidebar SHALL list the selected repo's worktrees in the daemon's order without bare entries, each labelled with its branch, or `<directory name> @ <first 7 digits of head>` when detached, or the directory name when it has no head. On hover a worktree SHALL show its path followed by one line `<preset> <id>: <status>` per terminal, or "no terminals", where the status is `waiting for input` (`state` `input`), `running` (`state` `working`), `done` (`state` `idle` and `unseen`), `idle` (`state` `idle`), `exited`, `exited with code <code>` or `killed by <signal>`, the exit taking precedence. A prunable worktree SHALL be shown greyed and SHALL offer no new terminal. A worktree no longer listed that still has live terminals SHALL be listed after the others, marked as gone, without a checkbox, until its last terminal closes. Each listed worktree SHALL have a checkbox reflecting the daemon's checked state, and toggling it SHALL send `setChecked`. Worktree list changes SHALL show without user action.
+The sidebar SHALL list the selected repo's worktrees in the daemon's order without bare entries, each labelled with its branch, or `<directory name> @ <first 7 digits of head>` when detached, or the directory name when it has no head. On hover a worktree SHALL show its path followed by one line `<preset> <id>: <status>` per terminal, or "no terminals", where the status is `waiting for input` (`state` `input`), `running` (`state` `working`), `done` (`state` `idle` and `unseen`), `idle` (`state` `idle`), `exited`, `exited with code <code>` or `killed by <signal>`, the exit taking precedence. A prunable worktree SHALL be shown greyed and SHALL offer no new terminal. A worktree no longer listed that still has live terminals SHALL be listed after the others, marked as gone, without a checkbox, until its last terminal closes. Each listed worktree SHALL have a checkbox reflecting the daemon's checked state, and toggling it SHALL send `setChecked`. A primary click anywhere in a worktree's row SHALL select it, except on its checkbox, which only toggles it; a right-click SHALL open the worktree menu without selecting. Enter or Space on a worktree's label SHALL select it. Worktree list changes SHALL show without user action.
 
 #### Scenario: Labels
 - **WHEN** worktrees are on branch `feature/x`, detached at `0123456789…` in directory `wt2`, and bare
@@ -75,6 +75,22 @@ The sidebar SHALL list the selected repo's worktrees in the daemon's order witho
 #### Scenario: Checkbox shared
 - **WHEN** a worktree is checked in one page
 - **THEN** it shows as checked in another page connected to the same hub
+
+#### Scenario: The whole row selects
+- **WHEN** the user clicks an unselected worktree's row at its top edge, at its bottom edge, in the space right of its label, or just above its checkbox
+- **THEN** that worktree is selected
+
+#### Scenario: The checkbox only toggles
+- **WHEN** the user clicks an unselected worktree's checkbox
+- **THEN** the checkbox toggles and the selected worktree does not change
+
+#### Scenario: Right-click does not select
+- **WHEN** the user right-clicks an unselected worktree's row
+- **THEN** the worktree menu opens and the selected worktree does not change
+
+#### Scenario: Keyboard selects
+- **WHEN** the user focuses an unselected worktree's label and presses Enter, or another's and presses Space
+- **THEN** that worktree is selected
 
 ### Requirement: Checked filter
 The page SHALL offer, for the selected repo, a toggle between showing all worktrees and only checked ones; each repo SHALL keep its own setting, stored per browser across reloads, and a repo without one SHALL show all. With "checked only", the sidebar SHALL list the checked worktrees and the selected worktree. Selecting another repo SHALL show that repo's setting without animating the toggle; only the user's toggling SHALL animate it.

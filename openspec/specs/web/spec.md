@@ -58,7 +58,7 @@ The page SHALL show one tab per repo of each host, in the order the hub lists th
 - **THEN** the tab labelled `box:app` shows the status `reconnecting`
 
 ### Requirement: Worktree sidebar
-The sidebar SHALL list the selected repo's worktrees in the daemon's order without bare entries, each labelled with its branch, or `<directory name> @ <first 7 digits of head>` when detached, or the directory name when it has no head. On hover a worktree SHALL show its path followed by one line `<preset> <id>: <status>` per terminal, or "no terminals", where the status is `waiting for input` (`state` `input`), `running` (`state` `working`), `done` (`state` `idle` and `unseen`), `idle` (`state` `idle`), `exited`, `exited with code <code>` or `killed by <signal>`, the exit taking precedence. A prunable worktree SHALL be shown greyed and SHALL offer no new terminal. A worktree no longer listed that still has live terminals SHALL be listed after the others, marked as gone, without a checkbox, until its last terminal closes. Each listed worktree SHALL have a checkbox reflecting the daemon's checked state, and toggling it SHALL send `setChecked`. Worktree list changes SHALL show without user action.
+The sidebar SHALL list the selected repo's worktrees in the daemon's order without bare entries, each labelled with its branch, or `<directory name> @ <first 7 digits of head>` when detached, or the directory name when it has no head. On hover a worktree SHALL show its path followed by one line `<preset> <id>: <status>` per terminal, or "no terminals", where the status is `waiting for input` (`state` `input`), `running` (`state` `working`), `done` (`state` `idle` and `unseen`), `idle` (`state` `idle`), `exited`, `exited with code <code>` or `killed by <signal>`, the exit taking precedence. A prunable worktree SHALL be shown greyed and SHALL offer no new terminal. A worktree no longer listed that still has live terminals SHALL be listed after the others, marked as gone, without a checkbox, until its last terminal closes. Each listed worktree SHALL have a checkbox reflecting the daemon's checked state, and toggling it SHALL send `setChecked`. A primary click anywhere in a worktree's row SHALL select it, except on its checkbox, which only toggles it; a right-click SHALL open the worktree menu without selecting. Enter or Space on a worktree's label SHALL select it. Worktree list changes SHALL show without user action.
 
 #### Scenario: Labels
 - **WHEN** worktrees are on branch `feature/x`, detached at `0123456789…` in directory `wt2`, and bare
@@ -75,6 +75,22 @@ The sidebar SHALL list the selected repo's worktrees in the daemon's order witho
 #### Scenario: Checkbox shared
 - **WHEN** a worktree is checked in one page
 - **THEN** it shows as checked in another page connected to the same hub
+
+#### Scenario: The whole row selects
+- **WHEN** the user clicks an unselected worktree's row at its top edge, at its bottom edge, in the space right of its label, or just above its checkbox
+- **THEN** that worktree is selected
+
+#### Scenario: The checkbox only toggles
+- **WHEN** the user clicks an unselected worktree's checkbox
+- **THEN** the checkbox toggles and the selected worktree does not change
+
+#### Scenario: Right-click does not select
+- **WHEN** the user right-clicks an unselected worktree's row
+- **THEN** the worktree menu opens and the selected worktree does not change
+
+#### Scenario: Keyboard selects
+- **WHEN** the user focuses an unselected worktree's label and presses Enter, or another's and presses Space
+- **THEN** that worktree is selected
 
 ### Requirement: Checked filter
 The page SHALL offer, for the selected repo, a toggle between showing all worktrees and only checked ones; each repo SHALL keep its own setting, stored per browser across reloads, and a repo without one SHALL show all. With "checked only", the sidebar SHALL list the checked worktrees and the selected worktree. Selecting another repo SHALL show that repo's setting without animating the toggle; only the user's toggling SHALL animate it.
@@ -486,3 +502,30 @@ Only a page that has the focus SHALL send `resize`. A page that gains the focus 
 #### Scenario: Refocus takes it back
 - **WHEN** the first page gains the focus again
 - **THEN** the PTY takes the first page's current size
+
+### Requirement: Worktree name search
+The sidebar header SHALL hold, between its title and the checked filter's toggle, a text box for the selected repo: while it holds text, the sidebar SHALL list only the worktrees whose label contains that text, trimmed and ignoring case, that the checked filter also lists, and the selected worktree. While it holds text, a control beside it SHALL empty it. Each repo SHALL keep its own text, stored per browser across reloads; a repo without one SHALL list every worktree the checked filter lists. The text SHALL play no part in which worktree is selected without a stored selection. When the browser refuses to store a setting of the page, the change SHALL still apply and the page SHALL show that saving failed.
+
+#### Scenario: Search narrows the list
+- **WHEN** a repo has worktrees on `feature/login`, `fix/Logout` and `docs`, `feature/login` is selected and the user types `LOG`
+- **THEN** the sidebar lists `feature/login` and `fix/Logout` only
+
+#### Scenario: Selected worktree stays listed
+- **WHEN** the selected worktree's label does not contain the typed text
+- **THEN** it stays listed and selected
+
+#### Scenario: Search belongs to its repo and persists
+- **WHEN** text is typed in one repo, another repo is selected and the page is reloaded
+- **THEN** the other repo shows an empty box and every worktree its checked filter lists, and the first repo shows its text and lists only the matching worktrees and the selected one
+
+#### Scenario: Clear control empties the search
+- **WHEN** the user activates the clear control
+- **THEN** the box is empty and focused, the clear control is gone, and every worktree the checked filter lists is listed, with the selected one, also after a reload
+
+#### Scenario: Search with "checked only"
+- **WHEN** the search is `feat` and the checked filter is "checked only"
+- **THEN** only checked worktrees whose label contains `feat`, and the selected worktree, are listed
+
+#### Scenario: Refused storage write
+- **WHEN** the browser refuses to store the search and the user types text
+- **THEN** the list is narrowed by the text and the page shows that saving its settings failed

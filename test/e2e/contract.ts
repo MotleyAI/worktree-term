@@ -56,9 +56,9 @@ export const TID = {
   addRepoPath: 'add-repo-path',
   /** In the add-repo dialog after a failed `addRepo`; text holds the error code. */
   addRepoError: 'add-repo-error',
-  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; right-click opens the worktree menu. */
+  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting. */
   worktree: 'worktree',
-  /** The label inside a sidebar entry; clicking it selects the worktree. */
+  /** The label inside a sidebar entry; Enter or Space on it selects the worktree. */
   worktreeLabel: 'worktree-label',
   /** Checkbox input: checked = show checked worktrees only, in the selected repo; each repo keeps its own, across reloads. */
   filterChecked: 'filter-checked',

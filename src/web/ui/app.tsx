@@ -313,7 +313,7 @@ const WorktreeEntry = ({
   terminals: Terminal[];
   view: View;
 }) => (
-  <div
+  <div // NOSONAR(S6848) — a pointer shortcut; the label button is the keyboard control
     class={`worktree${entry.prunable ? ' prunable' : ''}${entry.gone ? ' gone' : ''}`}
     data-testid="worktree"
     data-path={entry.path}
@@ -321,6 +321,9 @@ const WorktreeEntry = ({
     aria-selected={selected ? 'true' : 'false'}
     data-prunable={entry.prunable ? 'true' : undefined}
     data-gone={entry.gone ? 'true' : undefined}
+    onClick={() => {
+      view.selectWorktree(entry.path);
+    }}
     onContextMenu={(event) => {
       event.preventDefault();
       view.openWorktreeMenu(entry.path, event.clientX, event.clientY);
@@ -333,6 +336,9 @@ const WorktreeEntry = ({
         aria-label={`${entry.checked ? 'Unstar' : 'Star'} ${entry.label}`}
         title={entry.checked ? 'Remove from starred' : 'Add to starred'}
         checked={entry.checked}
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
         onChange={(event) => {
           view.setChecked(entry.path, event.currentTarget.checked).catch(report('checking a worktree'));
         }}
@@ -342,9 +348,6 @@ const WorktreeEntry = ({
       type="button"
       class="label"
       data-testid="worktree-label"
-      onClick={() => {
-        view.selectWorktree(entry.path);
-      }}
     >
       {entry.label}
       {entry.gone ? ' (gone)' : ''}

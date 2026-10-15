@@ -1,10 +1,10 @@
+
 specification {
   element root
   element node
   element component
   tag legacy
 }
-
 model {
   typescript = root 'worktree-term' {
 

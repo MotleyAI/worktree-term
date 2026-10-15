@@ -36,6 +36,7 @@ import {
   removeFile,
   renameFile,
   sshControlPath,
+  StartLockHeldError,
   writeFileAtomic,
 } from './index.js';
 
@@ -574,7 +575,7 @@ describe('start lock', () => {
     const path = lockFile();
     const started = Date.now();
     const acquiring = acquireStartLock(path);
-    await expect(acquiring).rejects.toThrow();
+    await expect(acquiring).rejects.toThrow(StartLockHeldError);
     const waited = Date.now() - started;
     expect(waited).toBeGreaterThanOrEqual(4900);
     expect(waited).toBeLessThan(7000);

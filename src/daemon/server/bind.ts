@@ -8,7 +8,9 @@ import {
   preparePrivateDirs,
   removeFile,
   renameFile,
+  StartLockHeldError,
   type HostPaths,
+  type StartLock,
 } from '../../platform/files/index.js';
 
 /** A daemon already serves this host's socket. */
@@ -20,7 +22,7 @@ export class AlreadyRunningError extends Error {
 export interface Listener {
   /** Hands connections, including any that arrived before, to `accept`. */
   serve: (accept: (socket: Socket) => void) => void;
-  /** Stops listening and removes the socket file if it is still the one bound. */
+  /** Stops listening and removes the socket file if it is still the one bound and the start lock is free. */
   close: () => Promise<void>;
 }
 
@@ -73,8 +75,9 @@ export const bindSocket = async (paths: HostPaths): Promise<Listener> => {
     await listen(server, bound);
     try {
       await makeOwnerOnly(bound);
+      // Taken before the rename, which keeps it, as the socket can be replaced once it is in place.
+      identity = await fileIdentity(bound);
       await renameFile(bound, paths.socket);
-      identity = await fileIdentity(paths.socket);
     } catch (error) {
       server.close();
       for (const socket of early.splice(0)) socket.destroy();
@@ -91,7 +94,20 @@ export const bindSocket = async (paths: HostPaths): Promise<Listener> => {
     },
     close: async () => {
       server.close();
-      if (identity !== null && (await fileIdentity(paths.socket)) === identity) await removeFile(paths.socket);
+      if (identity === null) return;
+      // Under the start lock, so a starting daemon cannot put its socket in place between check and removal.
+      let lock: StartLock;
+      try {
+        lock = await acquireStartLock(paths.lock);
+      } catch (error) {
+        if (error instanceof StartLockHeldError) return; // the next start replaces the socket left behind
+        throw error;
+      }
+      try {
+        if ((await fileIdentity(paths.socket)) === identity) await removeFile(paths.socket);
+      } finally {
+        await lock.release();
+      }
     },
   };
 };

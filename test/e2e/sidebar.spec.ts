@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from 'node:fs';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { join } from 'node:path';
 import type { HubHost } from '../support/hub-host.js';
 import { fakeWorktrees, git } from '../support/daemon-host.js';
@@ -26,6 +26,11 @@ import {
 
 const label = (path: string): string => `${worktreeEntry(path)} ${byTestId(TID.worktreeLabel)}`;
 const checkbox = (path: string): string => `${worktreeEntry(path)} input[type="checkbox"]`;
+const boxOf = async (locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> => {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error('the element is not shown');
+  return box;
+};
 
 test.describe('worktree sidebar', () => {
   test('labels show the branch, or the directory and short head when detached, with the path on hover', async ({ hub, page }) => {
@@ -89,13 +94,74 @@ test.describe('worktree sidebar', () => {
   });
 
   test('a worktree is selected from the keyboard', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat', 'other']);
+    const [feat = '', other = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, repo);
+    await page.locator(label(feat)).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'true');
+    await page.locator(label(other)).focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator(worktreeEntry(other))).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'false');
+  });
+
+  test('a click anywhere in a worktree row selects it: top and bottom edges, right of the label, above the checkbox', async ({
+    hub,
+    page,
+  }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
     const feat = worktrees[0] ?? '';
     hub.writeRepos([repo]);
     await openUi(hub, page);
-    await page.locator(label(feat)).focus();
-    await page.keyboard.press('Enter');
-    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'true');
+    const row = page.locator(worktreeEntry(feat));
+    const rowBox = await boxOf(row);
+    const starBox = await boxOf(page.locator(checkbox(feat)));
+    const points = [
+      { x: rowBox.width / 2, y: 1 },
+      { x: rowBox.width / 2, y: rowBox.height - 2 },
+      { x: rowBox.width - 3, y: rowBox.height / 2 },
+      { x: starBox.x - rowBox.x + starBox.width / 2, y: (starBox.y - rowBox.y) / 2 },
+    ];
+    for (const position of points) {
+      await selectWorktree(page, repo);
+      // The point must miss the label and the checkbox, or the test proves nothing.
+      expect(
+        await row.evaluate(
+          (el, p) => document.elementFromPoint(el.getBoundingClientRect().x + p.x, el.getBoundingClientRect().y + p.y) === el,
+          position,
+        ),
+      ).toBe(true);
+      await row.click({ position });
+      await expect(row, `click at ${JSON.stringify(position)}`).toHaveAttribute('aria-selected', 'true');
+    }
+    await expect(page.locator(checkbox(feat))).not.toBeChecked();
+  });
+
+  test("clicking a worktree's checkbox toggles it without selecting the worktree", async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, repo);
+    await page.locator(checkbox(feat)).click();
+    await expect(page.locator(checkbox(feat))).toBeChecked();
+    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'false');
+    await expect(page.locator(worktreeEntry(repo))).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('right-clicking a worktree row opens its menu without selecting it', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, repo);
+    await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toBeVisible();
+    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'false');
+    await expect(page.locator(worktreeEntry(repo))).toHaveAttribute('aria-selected', 'true');
   });
 
   test('worktree list changes show without user action', async ({ hub, page }) => {

@@ -23,11 +23,11 @@ jobs:
           cache: pnpm
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       # la-arch-check (run by the architecture tests) and its TypeScript twin, which is not on npm.
-      - run: uv tool install --no-build living-architecture==0.2.3
+      - run: uv tool install --no-build living-architecture==0.3.1
       - run: |
           twin="$RUNNER_TEMP/living-architecture"
           git init -q "$twin"
-          git -C "$twin" fetch -q --depth 1 https://github.com/MotleyAI/living-architecture.git 8b5cdc1e31d113435183a6459a252a843f5d7487 # v0.2.3
+          git -C "$twin" fetch -q --depth 1 https://github.com/MotleyAI/living-architecture.git 15ed4263ccce08513535aae077c8e7ba7363571d # v0.3.1
           git -C "$twin" checkout -q FETCH_HEAD
           cd "$twin/node"
           npm ci --ignore-scripts

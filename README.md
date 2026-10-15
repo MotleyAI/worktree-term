@@ -75,7 +75,7 @@ Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of t
 
 ## Development
 
-Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`uv tool install living-architecture==0.2.3`), which `pnpm test` runs.
+Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`uv tool install living-architecture==0.3.1`), which `pnpm test` runs.
 
 ```sh
 pnpm install

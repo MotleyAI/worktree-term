@@ -1,7 +1,7 @@
 {
   "protocolVersions": {
     "daemon": 6,
-    "browser": 8
+    "browser": 9
   },
   "constants": {
     "MAX_FRAME": 16777216,
@@ -3061,7 +3061,8 @@
                       "connected",
                       "reconnecting",
                       "down",
-                      "outdated"
+                      "outdated",
+                      "needs-login"
                     ]
                   },
                   "reason": {
@@ -3098,6 +3099,19 @@
                       }
                     ]
                   },
+                  "login": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "format": "starts_with",
+                        "pattern": "^https:\\/\\/login\\.tailscale\\.com\\/.*"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "repos": {
                     "maxItems": 256,
                     "type": "array",
@@ -3116,6 +3130,7 @@
                   "reason",
                   "daemonVersion",
                   "instance",
+                  "login",
                   "repos"
                 ],
                 "additionalProperties": false
@@ -3785,7 +3800,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -3816,6 +3831,11 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4091,6 +4111,16 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com.evil/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4535,7 +4565,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4566,6 +4596,11 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -4841,6 +4876,16 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com.evil/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -5285,7 +5330,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -5316,6 +5361,11 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -5591,6 +5641,16 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com.evil/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
       "valid": false
     },
     {
@@ -6035,7 +6095,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": true
     },
     {
@@ -6067,6 +6127,11 @@
       "dir": "hubToBrowser",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
       "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "valid": false
     },
     {
       "dir": "hubToBrowser",
@@ -6341,6 +6406,16 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com.evil/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
       "valid": false
     }
   ]

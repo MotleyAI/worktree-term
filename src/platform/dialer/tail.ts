@@ -6,7 +6,7 @@ const MAX_REASON = 1024;
 const MAX_READ = 1024 * 1024;
 
 // eslint-disable-next-line no-control-regex -- control characters are what a reason must not contain
-const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/g;
+export const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/g;
 
 /** The last 4 KiB a process wrote to standard error, giving its last non-empty line. */
 export class StderrTail {

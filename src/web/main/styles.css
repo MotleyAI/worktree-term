@@ -103,9 +103,23 @@ input:focus-visible,
   border-bottom: 1px solid var(--border);
 }
 
-.banner button {
+.banner button,
+.banner a.button {
   border-color: var(--text);
   margin-left: 6px;
+}
+
+.banner a.button {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid var(--text);
+  padding: 5px 9px;
+  border-radius: 5px;
+}
+
+.banner a.button:hover {
+  background: var(--hover);
 }
 
 .workspace {

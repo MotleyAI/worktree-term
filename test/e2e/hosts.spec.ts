@@ -91,6 +91,34 @@ test.describe('host banners', () => {
   });
 });
 
+test.describe('Tailscale login', () => {
+  test('a host blocked on a Tailscale check shows a banner with its login link, cleared once approved', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    nodeRemote(ssh, 'box');
+    await installRemote(hub, ssh, 'box');
+    ssh.loginHost('box');
+    writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: ['/srv/app'] }] });
+    await openUi(hub, page);
+    const banner = page.locator(hostBanner(REMOTE));
+    await expect(banner).toContainText('needs Tailscale login', { timeout: 15_000 });
+    await expect(banner).toContainText('box');
+    await expect(banner.locator(byTestId(TID.hostAction))).toHaveCount(0);
+    const link = banner.locator(byTestId(TID.hostLogin));
+    await expect(link).toHaveText('Open login link');
+    await expect(link).toHaveAttribute('href', /^https:\/\/login\.tailscale\.com\/a\/wtd\d+$/);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /\bnoopener\b/);
+    await expect(link).toHaveAttribute('rel', /\bnoreferrer\b/);
+    const tab = page.locator(repoTab('/srv/app'));
+    await expect(tab).toContainText('box:app');
+    await expect(tab.locator(byTestId(TID.hostStatus))).toHaveText('needs login');
+
+    ssh.approveLogin((await link.getAttribute('href')) ?? '');
+    await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0, { timeout: 30_000 });
+    await expect(tab.locator(byTestId(TID.hostStatus))).toHaveCount(0);
+  });
+});
+
 test.describe('host actions', () => {
   test('cancelling the confirmation sends nothing', async ({ hub, page, wire }) => {
     const { repo } = makeRepoWith(hub, 'app', []);

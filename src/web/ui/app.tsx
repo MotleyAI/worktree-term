@@ -4,7 +4,7 @@ import type { HostEntry, Preset, Terminal } from '../../protocol/index.js';
 import { repoKey, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
-import { hasBanner, hostAction } from './hosts.js';
+import { hasBanner, hostAction, statusText } from './hosts.js';
 import { aggregate, markTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
@@ -47,8 +47,19 @@ const OutdatedUi = () => (
   </div>
 );
 
-/** The banner of a `down` or `outdated` host, with its action. */
+/** The banner of a `needs-login` host, with its login link. */
+const LoginBanner = ({ host, login }: { host: HostEntry; login: string }) => (
+  <div class="banner host-banner" data-testid="host-banner" data-host={String(host.idx)}>
+    {host.name}: needs Tailscale login{' '}
+    <a class="button" data-testid="host-login" href={login} target="_blank" rel="noopener noreferrer">
+      Open login link
+    </a>
+  </div>
+);
+
+/** The banner of a `down`, `outdated` or `needs-login` host, with its action or login link. */
 const HostBanner = ({ host, view }: { host: HostEntry; view: View }) => {
+  if (host.status === 'needs-login' && host.login !== null) return <LoginBanner host={host} login={host.login} />;
   const action = hostAction(host);
   const what = host.status === 'outdated' ? `outdated daemon ${host.daemonVersion ?? '(unknown version)'}` : 'down';
   return (
@@ -279,7 +290,7 @@ const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; vie
       {tab.label}
       {status !== null && status !== 'connected' && (
         <span class="host-status" data-testid="host-status">
-          {status}
+          {statusText(status)}
         </span>
       )}
       <Mark of={aggregate(client.store.repos.value.get(key)?.terminals ?? [], 'group')} />

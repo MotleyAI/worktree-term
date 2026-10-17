@@ -630,6 +630,46 @@ describe('host entries and tokens', () => {
     expect(decodes('hubToBrowser', withEntry({ instance }))).toBe(ok);
   });
 
+  describe('login', () => {
+    const LOGIN = 'https://login.tailscale.com/a/abc123';
+    const needsLogin = (login: unknown): unknown => withEntry({ status: 'needs-login', login });
+
+    it('decodes a needs-login host entry carrying its login URL', () => {
+      const entry = { ...hosts[0], status: 'needs-login', daemonVersion: null, instance: null, login: LOGIN };
+      expect(decodeMessage('hubToBrowser', raw({ t: 'hosts', hosts: [entry] }))).toEqual({ t: 'hosts', hosts: [entry] });
+    });
+
+    it('accepts a login URL of 1024 characters', () => {
+      expect(decodes('hubToBrowser', needsLogin(LOGIN + 'x'.repeat(1024 - LOGIN.length)))).toBe(true);
+    });
+
+    it.each([
+      ['plain http', 'http://login.tailscale.com/a/x'],
+      ['a lookalike host', 'https://login.tailscale.com.evil/a/x'],
+      ['another host', 'https://example.com/a/x'],
+      ['a javascript: URL', 'javascript:alert(1)'],
+      ['1025 characters', LOGIN + 'x'.repeat(1025 - LOGIN.length)],
+      ['no path', 'https://login.tailscale.com'],
+      ['a number', 1],
+    ])('rejects a login URL that is %s', (_name, login) => {
+      expect(decodes('hubToBrowser', needsLogin(login))).toBe(false);
+    });
+
+    it('rejects a needs-login host entry with a null login', () => {
+      expect(decodes('hubToBrowser', needsLogin(null))).toBe(false);
+    });
+
+    it.each(['connecting', 'connected', 'reconnecting', 'down', 'outdated'])('rejects a %s host entry with a login', (status) => {
+      expect(decodes('hubToBrowser', withEntry({ status, login: LOGIN }))).toBe(false);
+      expect(decodes('hubToBrowser', withEntry({ status, login: null }))).toBe(true);
+    });
+
+    it('rejects a host entry without login', () => {
+      const withoutLogin = Object.fromEntries(Object.entries(entry ?? {}).filter(([key]) => key !== 'login'));
+      expectRejected('hubToBrowser', raw({ t: 'hosts', hosts: [withoutLogin] }));
+    });
+  });
+
   it('decodes a token message from the hub', () => {
     expect(decodeMessage('hubToBrowser', raw({ t: 'token', token: TOKEN }))).toEqual({ t: 'token', token: TOKEN });
   });

@@ -10,6 +10,7 @@ describe('hostAction', () => {
     [true, 'connected', null],
     [true, 'reconnecting', null],
     [false, 'connecting', null],
+    [true, 'needs-login', null],
   ] as const)('gives a %s host that is %s the action %j', (remote, status, action) => {
     expect(hostAction({ remote, status })).toEqual(action);
   });
@@ -22,6 +23,7 @@ describe('hasBanner', () => {
     ['connected', false],
     ['connecting', false],
     ['reconnecting', false],
+    ['needs-login', true],
   ] as const)('is %s for a %s host', (status, banner) => {
     expect(hasBanner({ status })).toBe(banner);
   });

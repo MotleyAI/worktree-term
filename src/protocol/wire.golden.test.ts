@@ -164,6 +164,38 @@ const EDGE_CASES: readonly unknown[] = [
       { idx: 1, name: 'box', remote: true, status: 'down', reason: 'r'.repeat(1025), daemonVersion: null, instance: null, repos: [] },
     ],
   },
+  {
+    t: 'hosts',
+    hosts: [
+      {
+        idx: 1,
+        name: 'box',
+        remote: true,
+        status: 'needs-login',
+        reason: null,
+        daemonVersion: null,
+        instance: null,
+        login: 'https://login.tailscale.com.evil/a/x',
+        repos: [],
+      },
+    ],
+  },
+  {
+    t: 'hosts',
+    hosts: [
+      {
+        idx: 1,
+        name: 'box',
+        remote: true,
+        status: 'connecting',
+        reason: null,
+        daemonVersion: null,
+        instance: null,
+        login: 'https://login.tailscale.com/a/x',
+        repos: [],
+      },
+    ],
+  },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -271,8 +303,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 6 and browser protocol 8', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 6, browser: 8 });
+  it('is blessed for daemon protocol 6 and browser protocol 9', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 6, browser: 9 });
   });
 
   it('records every sample as valid in its own direction', () => {

@@ -90,9 +90,29 @@ export const fullTabLayout: Layout = {
 };
 
 export const hosts: HostEntry[] = [
-  { idx: 0, name: 'local', remote: false, status: 'connected', reason: null, daemonVersion: '0.1.0', instance: 'd_1-A', repos: [REPO] },
-  { idx: 1, name: 'devbox', remote: true, status: 'outdated', reason: null, daemonVersion: '0.0.9', instance: 'old_D', repos: [] },
-  { idx: 2, name: 'gpu', remote: true, status: 'connecting', reason: null, daemonVersion: null, instance: null, repos: [WT] },
+  {
+    idx: 0,
+    name: 'local',
+    remote: false,
+    status: 'connected',
+    reason: null,
+    daemonVersion: '0.1.0',
+    instance: 'd_1-A',
+    login: null,
+    repos: [REPO],
+  },
+  {
+    idx: 1,
+    name: 'devbox',
+    remote: true,
+    status: 'outdated',
+    reason: null,
+    daemonVersion: '0.0.9',
+    instance: 'old_D',
+    login: null,
+    repos: [],
+  },
+  { idx: 2, name: 'gpu', remote: true, status: 'connecting', reason: null, daemonVersion: null, instance: null, login: null, repos: [WT] },
   {
     idx: 3,
     name: 'old',
@@ -101,6 +121,7 @@ export const hosts: HostEntry[] = [
     reason: 'ssh: connect to host old port 22: Connection refused',
     daemonVersion: null,
     instance: null,
+    login: null,
     repos: [],
   },
   {
@@ -111,6 +132,18 @@ export const hosts: HostEntry[] = [
     reason: 'r'.repeat(1024),
     daemonVersion: null,
     instance: null,
+    login: null,
+    repos: [],
+  },
+  {
+    idx: 4,
+    name: 'tail',
+    remote: true,
+    status: 'needs-login',
+    reason: null,
+    daemonVersion: null,
+    instance: null,
+    login: 'https://login.tailscale.com/a/abc123',
     repos: [],
   },
 ];

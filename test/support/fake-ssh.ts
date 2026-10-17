@@ -85,6 +85,14 @@ if [ ! -f "$h" ]; then echo "ssh: Could not resolve hostname $alias: Name or ser
 . "$h"
 if [ -n "$R_HANG" ]; then trap '' TERM; exec sleep 600; fi
 if [ -n "$R_GATE" ]; then while [ ! -e "$R_GATE" ]; do sleep 0.05; done; fi
+if [ -n "$R_LOGIN" ] && [ ! -e "$d/login/open-$alias" ]; then
+  printf '%s\n' '# Tailscale SSH requires an additional check.' "# To authenticate, visit: https://login.tailscale.com/a/wtd$$" >&2
+  date +%s%3N > "$d/login/$$.at"
+  while [ ! -e "$d/login/$$.ok" ]; do
+    if [ -e "$d/login/$$.fail" ]; then cat "$d/login/$$.fail" >&2; exit 255; fi
+    sleep 0.05
+  done
+fi
 if [ -n "$R_FAIL_LINE" ]; then printf '%s\n' "$R_FAIL_LINE" >&2; exit 255; fi
 if [ -n "$R_FAIL_BYTES" ]; then head -c "$R_FAIL_BYTES" /dev/zero | tr '\000' x >&2; exit 255; fi
 if [ -n "$R_NOISE_BYTES" ]; then head -c "$R_NOISE_BYTES" /dev/zero | tr '\000' x >&2; fi
@@ -108,6 +116,13 @@ export interface RemoteOptions {
   /** The remote login shell. */
   shell?: string;
 }
+
+/** The pid of the fake SSH run that wrote the login URL `url`. */
+export const loginRun = (url: string): number => {
+  const match = /^https:\/\/login\.tailscale\.com\/a\/wtd(\d+)$/.exec(url);
+  if (match?.[1] === undefined) throw new Error(`not a fake SSH login URL: ${url}`);
+  return Number(match[1]);
+};
 
 /** A remote host reached through FakeSsh: its own temporary home, state and daemon. */
 export class FakeRemote {
@@ -202,6 +217,7 @@ export class FakeSsh {
   readonly program: string;
   private readonly hostsDir: string;
   private readonly callsDir: string;
+  private readonly loginDir: string;
   private readonly remotes: FakeRemote[] = [];
   private noNode: string | null = null;
 
@@ -209,8 +225,10 @@ export class FakeSsh {
     mkdirSync(dir, { recursive: true });
     this.hostsDir = join(dir, 'hosts');
     this.callsDir = join(dir, 'calls');
+    this.loginDir = join(dir, 'login');
     mkdirSync(this.hostsDir, { recursive: true });
     mkdirSync(this.callsDir, { recursive: true });
+    mkdirSync(this.loginDir, { recursive: true });
     this.program = join(dir, 'ssh');
     writeFileSync(this.program, SSH_SCRIPT(dir));
     chmodSync(this.program, 0o755);
@@ -259,6 +277,34 @@ export class FakeSsh {
     return () => {
       writeFileSync(gate, '');
     };
+  }
+
+  /**
+   * Makes every later SSH run for `alias` write Tailscale's check banner, with a login URL naming the run
+   * (see `loginRun`), and wait until that run is approved or expired, or `skipLogin` was called before it started.
+   */
+  loginHost(alias: string): void {
+    appendFileSync(join(this.hostsDir, alias), 'R_LOGIN=1\n');
+  }
+
+  /** When, in ms since the epoch, the run behind `url` wrote its banner. */
+  loginWrittenAt(url: string): number {
+    return Number(readFileSync(join(this.loginDir, `${String(loginRun(url))}.at`), 'utf8').trim());
+  }
+
+  /** Lets the run behind `url` proceed. */
+  approveLogin(url: string): void {
+    writeFileSync(join(this.loginDir, `${String(loginRun(url))}.ok`), '');
+  }
+
+  /** Makes the run behind `url` write `line` to standard error and exit 255. */
+  expireLogin(url: string, line: string): void {
+    writeFileSync(join(this.loginDir, `${String(loginRun(url))}.fail`), `${line}\n`);
+  }
+
+  /** Lets SSH runs for `alias` that start from now on proceed without a banner. */
+  skipLogin(alias: string): void {
+    writeFileSync(join(this.loginDir, `open-${alias}`), '');
   }
 
   /** Every run so far, in no particular order. */

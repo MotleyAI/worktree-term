@@ -137,4 +137,5 @@ export const stopProcess = (child: ChildProcess, graceMs: number): void => {
   }, graceMs).unref();
 };
 
+export { LineScanner, tailscaleLoginUrl } from './login.js';
 export { StderrTail } from './tail.js';

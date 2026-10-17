@@ -19,7 +19,7 @@ import {
   type Direction,
   type Frame,
 } from './index.js';
-import { DIRECTIONS, featWorktree, hello, layout, liveTerminal, raw, REPO, samples, WT } from './test-samples.js';
+import { DIRECTIONS, featWorktree, hello, hosts, layout, liveTerminal, raw, REPO, samples, WT } from './test-samples.js';
 
 const directionSchema = z.enum(['clientToDaemon', 'daemonToClient', 'browserToHub', 'hubToBrowser']);
 
@@ -82,6 +82,11 @@ const decodes = (dir: Direction, json: string): boolean => {
   }
 };
 
+/** The `hosts` sample of browser protocol 8, before host entries carried `login`. */
+const hostsWithoutLogin = hosts
+  .filter((h) => h.status !== 'needs-login')
+  .map((h) => Object.fromEntries(Object.entries(h).filter(([field]) => field !== 'login')));
+
 const termWithBell = { ...Object.fromEntries(Object.entries(liveTerminal).filter(([field]) => field !== 'state')), bell: false };
 
 /** A chain of 9 terminal panes in one tab. */
@@ -91,6 +96,7 @@ const ninePanes = Array.from({ length: 8 }, (_, i) => i + 2).reduce<unknown>(
 );
 
 const EDGE_CASES: readonly unknown[] = [
+  { t: 'hosts', hosts: hostsWithoutLogin },
   { t: 'attach', req: 1, termId: 1, x: 1 },
   { t: 'attach', req: 1 },
   { t: 'resize', termId: 1, cols: '80', rows: 24 },

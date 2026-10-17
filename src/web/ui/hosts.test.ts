@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasBanner, hostAction, Latest, offeredRepos } from './hosts.js';
+import { hasBanner, hostAction, Latest, offeredRepos, statusText } from './hosts.js';
 
 describe('hostAction', () => {
   it.each([
@@ -13,6 +13,17 @@ describe('hostAction', () => {
     [true, 'needs-login', null],
   ] as const)('gives a %s host that is %s the action %j', (remote, status, action) => {
     expect(hostAction({ remote, status })).toEqual(action);
+  });
+});
+
+describe('statusText', () => {
+  it.each([
+    ['needs-login', 'needs login'],
+    ['reconnecting', 'reconnecting'],
+    ['connecting', 'connecting'],
+    ['down', 'down'],
+  ] as const)('shows %s as %j', (status, text) => {
+    expect(statusText(status)).toBe(text);
   });
 });
 

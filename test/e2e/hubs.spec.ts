@@ -151,6 +151,18 @@ test.describe('hub opening status', () => {
     expect(page.url()).toBe(`${hub.origin}/`);
   });
 
+  test('an opening the lost hub connection ended shows as failed, with a ×', async ({ hub, page, ssh }) => {
+    ssh.addHost('box').plantWtd('exec sleep 600');
+    await home(hub, page, [{ name: 'box', ssh: 'box' }]);
+    await pick(page, 'box');
+    const status = page.locator(byTestId(TID.hubStatus));
+    await expect(status).toHaveText('Opening box…');
+    // Killed, not stopped: the fake remote's `sleep` keeps a SIGTERMed hub's daemon-link pipes open.
+    for (const pid of hub.hubPids()) process.kill(pid, 'SIGKILL');
+    await expect(status).toContainText('box: the connection to the hub closed');
+    await expect(status.locator(byTestId(TID.hubDismiss))).toBeVisible();
+  });
+
   test('shows the Tailscale login link while waiting, then navigates once approved', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
     const box = await remoteHub(hub, ssh, 'box');

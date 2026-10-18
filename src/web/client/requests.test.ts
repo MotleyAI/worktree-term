@@ -35,6 +35,22 @@ describe('PendingRequests', () => {
     expect(await hub.reply).toBe('hub');
   });
 
+  it('forgets a request: neither a reply nor a failure reaches it', async () => {
+    const pending = new PendingRequests<string>();
+    const forgotten = pending.add(null);
+    const kept = pending.add(null);
+    let settled = false;
+    forgotten.reply.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    pending.forget(forgotten.req);
+    expect(pending.resolve(forgotten.req, 'late')).toBe(false);
+    pending.failAll('closed');
+    await expect(kept.reply).rejects.toThrow('closed');
+    expect(settled).toBe(false);
+  });
+
   it('fails every pending request when the session closes', async () => {
     const pending = new PendingRequests<string>();
     const requests = [pending.add(0), pending.add(3), pending.add(null)];

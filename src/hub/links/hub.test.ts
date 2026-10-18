@@ -254,6 +254,7 @@ describe('forwardToHub', () => {
     forwardToHub(paths, 'box', 7420, hub);
     browser.write('GET / HTTP/1.1\r\n\r\n');
     await waitFor(() => text() === 'GET / HTTP/1.1\r\n\r\n', 'the echoed request');
+    expect(text()).toBe('GET / HTTP/1.1\r\n\r\n');
   });
 
   it('ends the SSH process when the browser side ends', async () => {
@@ -273,7 +274,7 @@ describe('forwardToHub', () => {
     await waitFor(() => pids().length === 1, 'the SSH process to start');
     browser.destroy();
     await waitFor(() => pids().every((pid) => !alive(pid)), 'the SSH process to be killed', 10_000);
-    await forward.ended;
+    await expect(forward.ended).resolves.toBeNull();
   });
 
   it('ends the browser side when SSH exits, with its last standard error line', async () => {

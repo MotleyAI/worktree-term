@@ -61,8 +61,8 @@ export interface TunnelTarget {
 
 /** The hub's listeners forwarding a loopback port per remote host to its hub. */
 export interface HubTunnels {
-  /** Makes the listener on `target.port` forward to `target`; rejects naming a port another process holds. */
-  ensure: (target: TunnelTarget) => Promise<void>;
+  /** Makes the listener on `target.port` forward to `target`, unless `signal` aborts; rejects naming a port another process holds. */
+  ensure: (target: TunnelTarget, signal: AbortSignal) => Promise<void>;
   /** Null when `GET /` through the listener on `port` answers 200 in time, else the failure; aborting ends it. */
   probe: (port: number, signal: AbortSignal) => Promise<string | null>;
 }
@@ -171,12 +171,14 @@ export class Router {
     // Read through a call: the opening may end while any await is pending.
     const ended = (): boolean => signal.aborted;
     const config = await this.readConfig();
+    if (ended()) return failed('cancelled');
     const host = config.hosts.find((h) => h.name === name);
     if (host === undefined) return { kind: 'error', code: 'unknown-host', message: `host ${name} is no longer configured` };
     const printed = await this.printCode(host.ssh, login, signal);
     if (printed === null) return failed('cancelled');
     if (printed.kind === 'outdated') return { kind: 'error', code: 'hub-outdated', message: printed.message };
     if (printed.kind === 'failed') return failed(printed.message);
+    if (ended()) return failed('cancelled');
     let port = host.port;
     if (port === null) {
       try {
@@ -188,7 +190,7 @@ export class Router {
     }
     if (ended()) return failed('cancelled');
     try {
-      await this.options.tunnels.ensure({ host: name, alias: host.ssh, port, remotePort: printed.port });
+      await this.options.tunnels.ensure({ host: name, alias: host.ssh, port, remotePort: printed.port }, signal);
     } catch (error) {
       return failed(messageOf(error));
     }

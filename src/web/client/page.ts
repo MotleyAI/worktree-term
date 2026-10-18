@@ -68,5 +68,7 @@ export const keptRemote = (storage: Pick<Storage, 'getItem' | 'setItem'>, fragme
 export const pageTitle = (remote: RemotePage | null): string => (remote === null ? 'worktree-term' : `worktree-term — ${remote.host}`);
 
 /** The home hub's page on `home`, asking it to open `hub`'s hub when given. */
-export const homePageUrl = (home: number, hub: string | null): string =>
-  `http://127.0.0.1:${String(home)}/${hub === null ? '' : `#${encodeHomeFragment({ code: null, hub })}`}`;
+export const homePageUrl = (home: number, hub: string | null): string => {
+  const fragment = hub === null ? '' : `#${encodeHomeFragment({ code: null, hub })}`;
+  return `http://127.0.0.1:${String(home)}/${fragment}`;
+};

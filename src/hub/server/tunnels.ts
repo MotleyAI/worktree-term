@@ -102,22 +102,26 @@ export class TunnelListeners {
   /**
    * Makes a listener on `target.port` forward to `target`: binds one, repoints the existing one, and
    * closes the host's listener on any other port. Rejects with PortInUseError when another process holds the port.
+   * Once `signal` aborts it changes nothing more.
    */
-  ensure(target: TunnelTarget): Promise<void> {
+  ensure(target: TunnelTarget, signal: AbortSignal): Promise<void> {
+    // Read through a call: `signal` may abort while any await is pending.
+    const ended = (): boolean => signal.aborted;
     return this.serialised(async () => {
       if (this.closed) throw new Error('the hub is shutting down');
-      for (const [port, tunnel] of this.tunnels) {
-        if (port !== target.port && tunnel.target.host === target.host) {
-          this.tunnels.delete(port);
-          await tunnel.close();
-        }
-      }
+      if (ended()) return;
+      const moved = [...this.tunnels].filter(([port, tunnel]) => port !== target.port && tunnel.target.host === target.host);
+      for (const [port] of moved) this.tunnels.delete(port);
+      await Promise.all(moved.map(([, tunnel]) => tunnel.close()));
+      if (ended()) return;
       const existing = this.tunnels.get(target.port);
       if (existing !== undefined) {
         existing.target = target;
         return;
       }
-      this.tunnels.set(target.port, new Tunnel(await listen(target.port), target, this.options));
+      const tunnel = new Tunnel(await listen(target.port), target, this.options);
+      if (ended()) await tunnel.close();
+      else this.tunnels.set(target.port, tunnel);
     });
   }
 

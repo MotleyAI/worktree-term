@@ -1636,6 +1636,7 @@ describe('opening a remote hub', () => {
     const run = await livePrintCode();
     client.close();
     await waitUntil(() => !alive(run), 'the opening’s SSH process to be killed', 5000);
+    expect(alive(run)).toBe(false);
   });
 
   it('runs print-code over the alias config.json names now, not the one the session started with', async () => {

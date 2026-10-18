@@ -331,6 +331,7 @@ describe('remote hub over real ssh', () => {
     for (const pid of mastersIn(host.runDir)) process.kill(pid, 'SIGTERM');
     await closed;
     await waitUntil(() => forwards.every((pid) => !alive(pid)), 'the forwards to end', 10_000);
+    expect(forwards.filter((pid) => alive(pid))).toEqual([]);
   });
 
   it('leaves no ssh process behind once the hub stops', async () => {

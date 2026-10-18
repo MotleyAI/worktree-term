@@ -73,7 +73,7 @@ export const encodeHomeFragment = (fragment: HomeFragment): string => {
 };
 
 const decimalPort = (text: string | undefined): number | undefined =>
-  text !== undefined && /^[1-9][0-9]*$/.test(text) ? Number(text) : undefined;
+  text !== undefined && /^[1-9]\d*$/.test(text) ? Number(text) : undefined;
 
 /** Decodes a remote page fragment: `code`, `host`, `home` and `hubs`. */
 export const decodeRemoteFragment = (text: string): RemoteFragment => {
@@ -92,7 +92,7 @@ export const encodeRemoteFragment = (fragment: RemoteFragment): string => {
   return `code=${code}&host=${host}&home=${String(home)}&hubs=${hubs.join(',')}`;
 };
 
-const OPENED_URL = /^http:\/\/127\.0\.0\.1:([1-9][0-9]*)\/#([^]*)$/;
+const OPENED_URL = /^http:\/\/127\.0\.0\.1:([1-9]\d*)\/#([^]*)$/;
 
 const isOpenedUrl = (url: string): boolean => {
   const match = OPENED_URL.exec(url);

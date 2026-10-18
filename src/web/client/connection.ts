@@ -96,6 +96,8 @@ export class HubClient {
   private readonly eventListeners = new Set<(host: number, m: DaemonEvent) => void>();
   private readonly connectedListeners = new Set<(host: number, instance: string, repos: readonly string[]) => void>();
   private readonly openingListeners = new Set<(m: HubOpeningMessage) => void>();
+  /** The latest `openHub` request. */
+  private openingReq: number | null = null;
   /** The remote hub this page shows, kept across reloads; null on a home page. */
   remote: RemotePage | null = null;
   /** The host whose hub the address asked a home page to open. */
@@ -148,21 +150,28 @@ export class HubClient {
     };
   }
 
-  /** Asks the hub to open remote `host`'s hub; its messages reach `onHubOpening`. Null while disconnected. */
+  /** Asks the hub to open remote `host`'s hub, ending the previous opening; its messages reach `onHubOpening`. Null while disconnected. */
   openHub(host: number): number | null {
-    return this.hubOperation((req) => ({ t: 'openHub', req, host }));
+    const req = this.hubOperation(host, (r) => ({ t: 'openHub', req: r, host }));
+    if (req === null) return null;
+    // The hub ends the previous opening without a reply.
+    if (this.openingReq !== null) this.pending.forget(this.openingReq);
+    this.openingReq = req;
+    return req;
   }
 
   /** Asks the hub to install its bundle on remote `host`, leaving its daemon running; its reply reaches `onHubOpening`. */
   installHub(host: number): number | null {
-    return this.hubOperation((req) => ({ t: 'installHub', req, host }));
+    return this.hubOperation(host, (req) => ({ t: 'installHub', req, host }));
   }
 
-  private hubOperation(message: (req: number) => BrowserMessage): number | null {
+  private hubOperation(host: number, message: (req: number) => BrowserMessage): number | null {
     if (this.ws?.readyState !== WebSocket.OPEN) return null;
     const { req, reply } = this.pending.add(null);
-    // Its outcome reaches the opening listeners; the pending entry only keeps the req from being reused.
-    reply.catch(() => undefined);
+    // Its outcome reaches the opening listeners; a closed connection ends it as an error there.
+    reply.catch((error: unknown) => {
+      this.opening({ t: 'error', req, host, code: 'internal', message: error instanceof Error ? error.message : String(error) });
+    });
     this.sendMessage(message(req));
     return req;
   }

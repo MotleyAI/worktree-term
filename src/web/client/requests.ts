@@ -32,6 +32,11 @@ export class PendingRequests<T> {
     return true;
   }
 
+  /** Drops request `req` unsettled: no reply or failure reaches it. */
+  forget(req: number): void {
+    this.entries.delete(req);
+  }
+
   /** Fails the requests to `host`. */
   failHost(host: number, message: string): void {
     for (const [req, entry] of this.entries) {

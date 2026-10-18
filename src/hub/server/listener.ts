@@ -28,7 +28,7 @@ type ErrorCode = Extract<MessageOf<'hubToBrowser'>, { t: 'error' }>['code'];
 
 const MAX_BODY = 1024;
 const BEARER = /^Bearer ([0-9a-f]{64})$/;
-const LOOPBACK_HOST = /^127\.0\.0\.1:([1-9][0-9]{0,4})$/;
+const LOOPBACK_HOST = /^127\.0\.0\.1:([1-9]\d{0,4})$/;
 /** Close code for a session that broke the protocol. */
 const POLICY_VIOLATION = 1008;
 const GOING_AWAY = 1001;

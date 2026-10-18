@@ -11,7 +11,7 @@ const OPEN_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT = 4096;
 const KILL_GRACE_MS = 1000;
 /** Exit statuses of a `wtd` without `--print-code` (usage error) or without `wtd` (command not found). */
-const OUTDATED_STATUSES: readonly number[] = [2, 127];
+const OUTDATED_STATUSES: ReadonlySet<number> = new Set([2, 127]);
 
 export type HubOpenResult =
   { kind: 'opened'; port: number; code: string } | { kind: 'outdated'; message: string } | { kind: 'failed'; message: string };
@@ -128,7 +128,7 @@ export class HubOpener {
     program: string,
   ): HubOpenResult {
     const outdated: HubOpenResult = { kind: 'outdated', message: `wtd on ${this.alias} is missing or too old to serve its hub` };
-    if (code !== null && OUTDATED_STATUSES.includes(code)) return outdated;
+    if (code !== null && OUTDATED_STATUSES.has(code)) return outdated;
     if (code === 0) {
       try {
         return { kind: 'opened', ...decodePrintCode(output) };
@@ -203,7 +203,8 @@ export const forwardToHub = (paths: Parameters<typeof sshCommand>[0], alias: str
     });
     child.once('close', (code, signal) => {
       const exit = code === null ? `${program} was killed by ${String(signal)}` : `${program} exited with status ${String(code)}`;
-      resolve(localEnded ? null : (tail.reason() ?? (code === 0 ? null : exit)));
+      const failure = code === 0 ? null : exit;
+      resolve(localEnded ? null : (tail.reason() ?? failure));
       endLocal();
     });
   });

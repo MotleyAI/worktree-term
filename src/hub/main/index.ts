@@ -98,7 +98,7 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
         console.error(error);
       },
       tunnels: {
-        ensure: (target) => tunnels.ensure(target),
+        ensure: (target, signal) => tunnels.ensure(target, signal),
         probe: (port, signal) => tunnels.probe(port, probeMs, signal),
       },
       configRead: (read) => {

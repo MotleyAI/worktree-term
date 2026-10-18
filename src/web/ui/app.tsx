@@ -148,6 +148,11 @@ const Hubs = ({ client }: { client: HubClient }) => {
     if (target.t === 'navigate') location.assign(target.url);
     else if (target.t === 'open') openHub(target.host, target.name);
   };
+  const closeOnEscape = (event: TargetedKeyboardEvent<HTMLElement>): void => {
+    if (event.key !== 'Escape') return;
+    event.stopPropagation();
+    setOpen(false);
+  };
   const install = (): void => {
     const pending = stateRef.current.line;
     const host = hosts.find((h) => h.remote && h.name === pending?.name);
@@ -166,14 +171,7 @@ const Hubs = ({ client }: { client: HubClient }) => {
         />
       )}
       {entries !== null && (
-        <span
-          class="hubs"
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape') return;
-            event.stopPropagation();
-            setOpen(false);
-          }}
-        >
+        <span class="hubs">
           <button
             type="button"
             class="hubs-menu"
@@ -182,11 +180,12 @@ const Hubs = ({ client }: { client: HubClient }) => {
             onClick={() => {
               setOpen(!open);
             }}
+            onKeyDown={closeOnEscape}
           >
             Hubs
           </button>
           {open && (
-            <div class="hubs-list" role="menu">
+            <div class="hubs-list" role="menu" tabIndex={-1} onKeyDown={closeOnEscape}>
               {entries.map((entry) => (
                 <button
                   key={entry.label}

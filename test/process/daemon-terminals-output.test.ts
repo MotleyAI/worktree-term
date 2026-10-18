@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FLOW_HIGH, MAX_FRAME } from '../../src/protocol/index.js';
 import { replay } from '../support/daemon-client.js';
 import { sleep, waitUntil } from '../support/daemon-host.js';
-import { a, b, host, KiB, MiB, repo, started, useDaemonTerminalsHost, wt } from '../support/daemon-terminals.js';
+import { fx, KiB, MiB, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonTerminalsHost();
@@ -24,35 +24,35 @@ exec sleep 600
 `;
 
   it('restores the same screen, cursor, modes and scrollback for a client attaching mid-output', async () => {
-    writeFileSync(join(wt, 'gen.sh'), GENERATOR);
-    const term = await started(a, 'bash ./gen.sh');
-    a.sendInput(term.termId, 'go\r');
-    await a.waitOutput(term.termId, 'PHASE-ONE', 20_000);
-    await b.attach(term.termId);
-    a.sendInput(term.termId, 'go\r');
-    await a.waitOutput(term.termId, 'DONE-MARK', 20_000);
-    await b.waitOutput(term.termId, 'DONE-MARK', 20_000);
-    const seenByA = await a.view(term.termId).screen.state();
-    const seenByB = await b.view(term.termId).screen.state();
+    writeFileSync(join(fx.wt, 'gen.sh'), GENERATOR);
+    const term = await started(fx.a, 'bash ./gen.sh');
+    fx.a.sendInput(term.termId, 'go\r');
+    await fx.a.waitOutput(term.termId, 'PHASE-ONE', 20_000);
+    await fx.b.attach(term.termId);
+    fx.a.sendInput(term.termId, 'go\r');
+    await fx.a.waitOutput(term.termId, 'DONE-MARK', 20_000);
+    await fx.b.waitOutput(term.termId, 'DONE-MARK', 20_000);
+    const seenByA = await fx.a.view(term.termId).screen.state();
+    const seenByB = await fx.b.view(term.termId).screen.state();
     expect(seenByA.buffer).toBe('alternate');
     expect(seenByB).toEqual(seenByA);
   });
 
   it('continues output exactly at the snapshot offset however attaches interleave with output', async () => {
-    const term = await started(a, 'read go; seq 1 400000; echo SEQ-DONE; exec sleep 600');
-    a.sendInput(term.termId, 'go\r');
+    const term = await started(fx.a, 'read go; seq 1 400000; echo SEQ-DONE; exec sleep 600');
+    fx.a.sendInput(term.termId, 'go\r');
     for (let i = 0; i < 8; i++) {
-      await b.attach(term.termId, 20_000);
+      await fx.b.attach(term.termId, 20_000);
       await sleep(40);
     }
-    await a.waitOutput(term.termId, 'SEQ-DONE', 30_000);
+    await fx.a.waitOutput(term.termId, 'SEQ-DONE', 30_000);
     // B's last attach may come after the output ended, leaving SEQ-DONE in its snapshot.
-    await waitUntil(async () => (await b.view(term.termId).screen.text()).includes('SEQ-DONE'), 'SEQ-DONE on B', 30_000);
-    const reference = a.view(term.termId);
+    await waitUntil(async () => (await fx.b.view(term.termId).screen.text()).includes('SEQ-DONE'), 'SEQ-DONE on B', 30_000);
+    const reference = fx.a.view(term.termId);
     const [first] = reference.attachments;
     if (first === undefined) throw new Error('A has no snapshot');
     const all = reference.bytes();
-    const view = b.view(term.termId);
+    const view = fx.b.view(term.termId);
     expect(view.gaps).toEqual([]);
     expect(reference.gaps).toEqual([]);
     for (const attachment of view.attachments) {
@@ -75,9 +75,9 @@ exec sleep 600
 
   it('shrinks the scrollback of a snapshot that would exceed MAX_FRAME', async () => {
     const awk = `awk 'BEGIN { for (l = 0; l < 5100; l++) { s = ""; for (c = 0; c < 500; c++) s = s "\\033[31ma\\033[32mb"; print s } }'; echo BIG-DONE`;
-    const term = await a.create(wt, { command: awk, cols: 1000, rows: 50 });
-    await a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 90_000 });
-    const view = await a.attach(term.termId, 60_000);
+    const term = await fx.a.create(fx.wt, { command: awk, cols: 1000, rows: 50 });
+    await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 90_000 });
+    const view = await fx.a.attach(term.termId, 60_000);
     const snapshot = view.attachments[0]?.snapshot;
     if (snapshot === undefined) throw new Error('no snapshot');
     expect(snapshot.length).toBeGreaterThan(MiB);
@@ -86,44 +86,48 @@ exec sleep 600
   }, 180_000);
 
   it('re-attaches with a new snapshot when attaching while attached', async () => {
-    const term = await started(a, 'echo hello; exec sleep 60');
-    await a.waitOutput(term.termId, 'hello');
-    await a.attach(term.termId);
-    expect(a.view(term.termId).attachments).toHaveLength(2);
-    expect(await a.view(term.termId).screen.text()).toContain('hello');
+    const term = await started(fx.a, 'echo hello; exec sleep 60');
+    await fx.a.waitOutput(term.termId, 'hello');
+    await fx.a.attach(term.termId);
+    expect(fx.a.view(term.termId).attachments).toHaveLength(2);
+    expect(await fx.a.view(term.termId).screen.text()).toContain('hello');
   });
 
   it('detaches whether or not attached, and stops output after detaching', async () => {
-    const term = await a.create(wt, { command: null });
-    await a.ok({ t: 'detach', termId: term.termId });
-    await a.attach(term.termId);
-    await a.ok({ t: 'detach', termId: term.termId });
-    const count = a.received.length;
-    b.sendInput(term.termId, 'echo after-detach\r');
+    const term = await fx.a.create(fx.wt, { command: null });
+    await fx.a.ok({ t: 'detach', termId: term.termId });
+    await fx.a.attach(term.termId);
+    await fx.a.ok({ t: 'detach', termId: term.termId });
+    const count = fx.a.received.length;
+    fx.b.sendInput(term.termId, 'echo after-detach\r');
     await sleep(500);
-    expect(a.received.slice(count).filter((r) => r.kind !== 'message')).toEqual([]);
+    expect(fx.a.received.slice(count).filter((r) => r.kind !== 'message')).toEqual([]);
   });
 
   it('attaches to an exited terminal', async () => {
-    const term = await a.create(wt, { command: 'echo bye-bye; exit 0' });
-    await a.waitFor('termExited', (m) => m.termId === term.termId);
-    const view = await a.attach(term.termId);
+    const term = await fx.a.create(fx.wt, { command: 'echo bye-bye; exit 0' });
+    await fx.a.waitFor('termExited', (m) => m.termId === term.termId);
+    const view = await fx.a.attach(term.termId);
     expect(await view.screen.text()).toContain('bye-bye');
   });
 });
 
 describe('output flow control', () => {
   it('evicts a client that never acks while an acking client receives every byte', async () => {
-    const term = await started(b, 'read go; seq 1 1500000; echo FLOOD-DONE');
-    a.autoAck = false;
-    await a.attach(term.termId);
+    const term = await started(fx.b, 'read go; seq 1 1500000; echo FLOOD-DONE');
+    fx.a.autoAck = false;
+    await fx.a.attach(term.termId);
     const goAt = Date.now();
-    b.sendInput(term.termId, 'go\r');
-    expect(await a.waitFor('detached', () => true, { timeout: 20_000 })).toEqual({ t: 'detached', termId: term.termId, reason: 'lagging' });
+    fx.b.sendInput(term.termId, 'go\r');
+    expect(await fx.a.waitFor('detached', () => true, { timeout: 20_000 })).toEqual({
+      t: 'detached',
+      termId: term.termId,
+      reason: 'lagging',
+    });
     expect(Date.now() - goAt).toBeGreaterThanOrEqual(1900);
-    expect(a.view(term.termId).bytes().length).toBeLessThan(FLOW_HIGH + 512 * KiB);
-    await b.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 60_000 });
-    const view = b.view(term.termId);
+    expect(fx.a.view(term.termId).bytes().length).toBeLessThan(FLOW_HIGH + 512 * KiB);
+    await fx.b.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 60_000 });
+    const view = fx.b.view(term.termId);
     expect(view.gaps).toEqual([]);
     const numbers = view
       .text()
@@ -135,97 +139,97 @@ describe('output flow control', () => {
   });
 
   it('lets an unwatched flood complete and shows its final screen to a later attach', async () => {
-    const term = await a.create(wt, { command: 'seq 1 2000000; echo NOBODY-DONE' });
-    await a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 60_000 });
-    const text = await (await a.attach(term.termId)).screen.text();
+    const term = await fx.a.create(fx.wt, { command: 'seq 1 2000000; echo NOBODY-DONE' });
+    await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 60_000 });
+    const text = await (await fx.a.attach(term.termId)).screen.text();
     expect(text).toContain('2000000');
     expect(text).toContain('NOBODY-DONE');
   });
 
   it('closes a connection that acks beyond the output sent to it, leaving the terminal running', async () => {
-    const term = await started(a, 'echo some-output; exec sleep 60');
-    await a.waitOutput(term.termId, 'some-output');
-    a.send({ t: 'ack', termId: term.termId, offset: a.view(term.termId).position + MiB });
-    expect(await a.waitFor('error')).toMatchObject({ req: null, code: 'bad-message' });
-    await a.waitClosed();
-    expect((await b.watch(repo)).terminals.find((t) => t.termId === term.termId)?.exit).toBeNull();
+    const term = await started(fx.a, 'echo some-output; exec sleep 60');
+    await fx.a.waitOutput(term.termId, 'some-output');
+    fx.a.send({ t: 'ack', termId: term.termId, offset: fx.a.view(term.termId).position + MiB });
+    expect(await fx.a.waitFor('error')).toMatchObject({ req: null, code: 'bad-message' });
+    await fx.a.waitClosed();
+    expect((await fx.b.watch(fx.repo)).terminals.find((t) => t.termId === term.termId)?.exit).toBeNull();
   });
 
   it('ignores an ack at or below the current ack position', async () => {
-    const term = await started(a, 'echo some-output; exec sleep 60');
-    await a.waitOutput(term.termId, 'some-output');
-    const position = a.view(term.termId).position;
-    a.send({ t: 'ack', termId: term.termId, offset: position });
-    a.send({ t: 'ack', termId: term.termId, offset: position });
-    a.send({ t: 'ack', termId: term.termId, offset: 0 });
-    await a.expectNone('error', () => true, 400);
-    expect(a.isClosed).toBe(false);
+    const term = await started(fx.a, 'echo some-output; exec sleep 60');
+    await fx.a.waitOutput(term.termId, 'some-output');
+    const position = fx.a.view(term.termId).position;
+    fx.a.send({ t: 'ack', termId: term.termId, offset: position });
+    fx.a.send({ t: 'ack', termId: term.termId, offset: position });
+    fx.a.send({ t: 'ack', termId: term.termId, offset: 0 });
+    await fx.a.expectNone('error', () => true, 400);
+    expect(fx.a.isClosed).toBe(false);
   });
 });
 
 describe('input', () => {
   it('echoes a command round trip', async () => {
-    const term = await started(a, null);
-    a.sendInput(term.termId, "echo h''i\r");
-    await a.waitOutput(term.termId, 'hi\r\n');
-    expect(a.view(term.termId).text()).toContain('hi\r\n');
+    const term = await started(fx.a, null);
+    fx.a.sendInput(term.termId, "echo h''i\r");
+    await fx.a.waitOutput(term.termId, 'hi\r\n');
+    expect(fx.a.view(term.termId).text()).toContain('hi\r\n');
   });
 
   it('writes input frames to the PTY in order', async () => {
-    const term = await started(a, 'stty -echo; cat > in.txt');
+    const term = await started(fx.a, 'stty -echo; cat > in.txt');
     const lines = Array.from({ length: 300 }, (_, i) => `line ${String(i)}`);
-    for (const line of lines) a.sendInput(term.termId, `${line}\n`);
-    a.sendInput(term.termId, '\x04');
-    await a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 10_000 });
-    expect(readFileSync(join(wt, 'in.txt'), 'utf8')).toBe(lines.map((l) => `${l}\n`).join(''));
+    for (const line of lines) fx.a.sendInput(term.termId, `${line}\n`);
+    fx.a.sendInput(term.termId, '\x04');
+    await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 10_000 });
+    expect(readFileSync(join(fx.wt, 'in.txt'), 'utf8')).toBe(lines.map((l) => `${l}\n`).join(''));
   });
 
   it('discards input to an exited terminal without an error', async () => {
-    const term = await a.create(wt, { command: 'exit 0' });
-    await a.waitFor('termExited', (m) => m.termId === term.termId);
-    a.sendInput(term.termId, 'ignored\r');
-    await a.expectNone('error', () => true, 400);
-    expect(a.isClosed).toBe(false);
+    const term = await fx.a.create(fx.wt, { command: 'exit 0' });
+    await fx.a.waitFor('termExited', (m) => m.termId === term.termId);
+    fx.a.sendInput(term.termId, 'ignored\r');
+    await fx.a.expectNone('error', () => true, 400);
+    expect(fx.a.isClosed).toBe(false);
   });
 
   it('answers input beyond 1 MiB unaccepted with busy while still processing acks', async () => {
-    const stuck = await started(a, 'stty raw -echo; echo READY; exec sleep 600');
-    await a.waitOutput(stuck.termId, 'READY');
-    const flood = await started(a, 'yes flood-line');
-    const before = a.view(flood.termId).position;
-    const from = a.mark();
+    const stuck = await started(fx.a, 'stty raw -echo; echo READY; exec sleep 600');
+    await fx.a.waitOutput(stuck.termId, 'READY');
+    const flood = await started(fx.a, 'yes flood-line');
+    const before = fx.a.view(flood.termId).position;
+    const from = fx.a.mark();
     const frame = new Uint8Array(64 * KiB).fill(0x61);
-    for (let i = 0; i < 24; i++) a.sendInput(stuck.termId, frame);
-    await a.waitFor('error', (m) => m.code === 'busy', { from });
-    await waitUntil(() => a.view(flood.termId).position - before > 4 * FLOW_HIGH, 'flood output past the flow window', 10_000);
-    const busy = a.messages.slice(from).filter((m) => m.t === 'error');
+    for (let i = 0; i < 24; i++) fx.a.sendInput(stuck.termId, frame);
+    await fx.a.waitFor('error', (m) => m.code === 'busy', { from });
+    await waitUntil(() => fx.a.view(flood.termId).position - before > 4 * FLOW_HIGH, 'flood output past the flow window', 10_000);
+    const busy = fx.a.messages.slice(from).filter((m) => m.t === 'error');
     expect(busy.every((m) => m.req === null && m.code === 'busy')).toBe(true);
     expect(busy.length).toBeGreaterThanOrEqual(1);
     expect(busy.length).toBeLessThanOrEqual(8);
-    expect(a.isClosed).toBe(false);
+    expect(fx.a.isClosed).toBe(false);
   });
 });
 
 describe('resize', () => {
   it('sets the size the program sees, the last resize winning', async () => {
-    const term = await started(a, null);
-    a.resize(term.termId, 90, 20);
-    a.resize(term.termId, 100, 30);
-    a.sendInput(term.termId, 'stty size\r');
-    await a.waitOutput(term.termId, '30 100\r\n');
-    const state = await (await host.client()).watch(repo);
+    const term = await started(fx.a, null);
+    fx.a.resize(term.termId, 90, 20);
+    fx.a.resize(term.termId, 100, 30);
+    fx.a.sendInput(term.termId, 'stty size\r');
+    await fx.a.waitOutput(term.termId, '30 100\r\n');
+    const state = await (await fx.host.client()).watch(fx.repo);
     expect(state.terminals.find((t) => t.termId === term.termId)).toMatchObject({ cols: 100, rows: 30 });
   });
 
   it('resizes the mirror, so snapshots have the new size', async () => {
-    const term = await started(a, null);
-    a.resize(term.termId, 100, 30);
-    a.sendInput(term.termId, `printf '%099d|\\n' 7\r`);
-    await a.waitOutput(term.termId, '7|\r\n');
-    const c = await host.client();
-    await c.watch(repo);
+    const term = await started(fx.a, null);
+    fx.a.resize(term.termId, 100, 30);
+    fx.a.sendInput(term.termId, `printf '%099d|\\n' 7\r`);
+    await fx.a.waitOutput(term.termId, '7|\r\n');
+    const c = await fx.host.client();
+    await c.watch(fx.repo);
     const view = await c.attach(term.termId);
     expect(await view.screen.text()).toContain(`${'0'.repeat(98)}7|`);
-    expect(await view.screen.state()).toEqual(await a.view(term.termId).screen.state());
+    expect(await view.screen.state()).toEqual(await fx.a.view(term.termId).screen.state());
   });
 });

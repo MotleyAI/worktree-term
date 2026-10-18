@@ -1,15 +1,20 @@
 import { afterEach, beforeEach } from 'vitest';
 import { DaemonHost } from './daemon-host.js';
 
-export let host: DaemonHost;
+/** Per-test values, refilled by the `beforeEach` that `useDaemonServerHost` registers. */
+class DaemonServerFixture {
+  host!: DaemonHost;
+}
+
+export const fx = new DaemonServerFixture();
 
 /** Registers the per-test setup and cleanup. */
 export const useDaemonServerHost = (): void => {
   beforeEach(() => {
-    host = DaemonHost.create();
+    fx.host = DaemonHost.create();
   });
 
   afterEach(async () => {
-    await host.cleanup();
+    await fx.host.cleanup();
   });
 };

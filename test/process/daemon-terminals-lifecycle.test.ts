@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Layout } from '../../src/protocol/index.js';
 import type { DaemonClient, Event, RequestBody } from '../support/daemon-client.js';
 import { addWorktree, alive, git, sleep, waitUntil } from '../support/daemon-host.js';
-import { a, b, daemon, host, MiB, repo, restart, started, useDaemonTerminalsHost, wt } from '../support/daemon-terminals.js';
+import { fx, MiB, restart, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonTerminalsHost();
@@ -28,23 +28,24 @@ const countByte = (data: Uint8Array, byte: number): number => {
   return n;
 };
 
-const stateFile = (): unknown => JSON.parse(readFileSync(host.statePath, 'utf8'));
+const stateFile = (): unknown => JSON.parse(readFileSync(fx.host.statePath, 'utf8'));
 
-const stateMentions = (path: string): boolean => existsSync(host.statePath) && JSON.stringify(stateFile()).includes(JSON.stringify(path));
+const stateMentions = (path: string): boolean =>
+  existsSync(fx.host.statePath) && JSON.stringify(stateFile()).includes(JSON.stringify(path));
 
 describe('terminal creation', () => {
   it('starts a login interactive shell in the worktree', async () => {
-    const term = await started(a, null);
-    a.sendInput(term.termId, 'pwd\r');
-    await a.waitOutput(term.termId, `${wt}\r\n`);
-    expect(a.view(term.termId).text()).toContain(`${wt}\r\n`);
+    const term = await started(fx.a, null);
+    fx.a.sendInput(term.termId, 'pwd\r');
+    await fx.a.waitOutput(term.termId, `${fx.wt}\r\n`);
+    expect(fx.a.view(term.termId).text()).toContain(`${fx.wt}\r\n`);
   });
 
   it('runs a command in a login interactive shell with TERM and COLORTERM set', async () => {
     const command = `case $- in *i*) echo mode-interactive;; esac; shopt -q login_shell && echo mode-login; echo "env=$TERM/$COLORTERM"; exec sleep 60`;
-    const term = await started(a, command);
-    await a.waitOutput(term.termId, 'env=xterm-256color/truecolor');
-    const text = a.view(term.termId).text();
+    const term = await started(fx.a, command);
+    await fx.a.waitOutput(term.termId, 'env=xterm-256color/truecolor');
+    const text = fx.a.view(term.termId).text();
     expect(text).toContain('mode-interactive');
     expect(text).toContain('mode-login');
   });
@@ -54,58 +55,65 @@ describe('terminal creation', () => {
     ['relative', 'bash'],
   ])('uses /bin/sh when SHELL is %s', async (_name, shell) => {
     await restart({ SHELL: shell });
-    const term = await started(a, 'echo "shell=$0"; exec sleep 60');
-    await a.waitOutput(term.termId, 'shell=/bin/sh');
+    const term = await started(fx.a, 'echo "shell=$0"; exec sleep 60');
+    await fx.a.waitOutput(term.termId, 'shell=/bin/sh');
   });
 
   it('answers the requester with its req and every other watcher with req null', async () => {
-    const outsider = await host.client();
-    const from = b.mark();
-    const reply = await a.request({ t: 'createTerm', worktree: wt, preset: 'my-preset', command: 'exec sleep 60', cols: 100, rows: 30 });
-    const term = { termId: 1, worktree: wt, preset: 'my-preset', cols: 100, rows: 30, exit: null, unseen: false, state: 'idle' };
+    const outsider = await fx.host.client();
+    const from = fx.b.mark();
+    const reply = await fx.a.request({
+      t: 'createTerm',
+      worktree: fx.wt,
+      preset: 'my-preset',
+      command: 'exec sleep 60',
+      cols: 100,
+      rows: 30,
+    });
+    const term = { termId: 1, worktree: fx.wt, preset: 'my-preset', cols: 100, rows: 30, exit: null, unseen: false, state: 'idle' };
     expect(reply).toEqual({ t: 'termCreated', req: ANY_REQ, term });
-    expect(await b.waitFor('termCreated', () => true, { from })).toEqual({ t: 'termCreated', req: null, term });
+    expect(await fx.b.waitFor('termCreated', () => true, { from })).toEqual({ t: 'termCreated', req: null, term });
     await outsider.expectNone('termCreated', () => true, 300);
   });
 
   it('counts terminal ids up from 1 without reusing them', async () => {
     const ids = [];
-    for (let i = 0; i < 3; i++) ids.push((await a.create(wt, { command: 'exec sleep 60' })).termId);
+    for (let i = 0; i < 3; i++) ids.push((await fx.a.create(fx.wt, { command: 'exec sleep 60' })).termId);
     expect(ids).toEqual([1, 2, 3]);
-    await a.ok({ t: 'closeTerm', termId: 3 });
-    expect((await a.create(wt, { command: 'exec sleep 60' })).termId).toBe(4);
+    await fx.a.ok({ t: 'closeTerm', termId: 3 });
+    expect((await fx.a.create(fx.wt, { command: 'exec sleep 60' })).termId).toBe(4);
   });
 
   it('does not attach the creator', async () => {
-    const term = await a.create(wt, { command: 'echo visible-output; exec sleep 60' });
+    const term = await fx.a.create(fx.wt, { command: 'echo visible-output; exec sleep 60' });
     await sleep(500);
-    expect(a.received.filter((r) => r.kind !== 'message' && r.termId === term.termId)).toEqual([]);
+    expect(fx.a.received.filter((r) => r.kind !== 'message' && r.termId === term.termId)).toEqual([]);
   });
 
   it('fails with unknown-worktree for a worktree of a repo this connection does not watch', async () => {
-    const outsider = await host.client();
-    expect(await outsider.fails({ t: 'createTerm', worktree: wt, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe(
+    const outsider = await fx.host.client();
+    expect(await outsider.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe(
       'unknown-worktree',
     );
   });
 
   it('fails with unknown-worktree for a path that is not in the list', async () => {
-    expect(await a.fails({ t: 'createTerm', worktree: join(repo, 'sub'), preset: 'shell', command: null, cols: 80, rows: 24 })).toBe(
+    expect(await fx.a.fails({ t: 'createTerm', worktree: join(fx.repo, 'sub'), preset: 'shell', command: null, cols: 80, rows: 24 })).toBe(
       'unknown-worktree',
     );
   });
 
   it('fails with spawn-failed when the worktree directory is gone', async () => {
-    const gone = addWorktree(repo, join(host.dir, 'gone'), 'gone');
-    await a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
+    const gone = addWorktree(fx.repo, join(fx.host.dir, 'gone'), 'gone');
+    await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
     rmSync(gone, { recursive: true });
-    await a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone && w.prunable));
-    expect(await a.fails({ t: 'createTerm', worktree: gone, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('spawn-failed');
+    await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone && w.prunable));
+    expect(await fx.a.fails({ t: 'createTerm', worktree: gone, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('spawn-failed');
   });
 
   it('fails with spawn-failed when the shell does not exist', async () => {
-    await restart({ SHELL: join(host.dir, 'no-such-shell') });
-    expect(await a.fails({ t: 'createTerm', worktree: wt, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('spawn-failed');
+    await restart({ SHELL: join(fx.host.dir, 'no-such-shell') });
+    expect(await fx.a.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('spawn-failed');
   });
 });
 
@@ -115,21 +123,21 @@ describe('terminal access', () => {
     ['detach', { t: 'detach', termId: 99 }],
     ['closeTerm', { t: 'closeTerm', termId: 99 }],
   ] as const)('fails %s of an unknown terminal with unknown-term', async (_name, body) => {
-    expect(await a.fails(body)).toBe('unknown-term');
+    expect(await fx.a.fails(body)).toBe('unknown-term');
   });
 
   it('answers resize and input for an unknown terminal with an uncorrelated unknown-term', async () => {
-    let from = a.mark();
-    a.send({ t: 'resize', termId: 99, cols: 80, rows: 24 });
-    expect(await a.waitFor('error', () => true, { from })).toMatchObject({ req: null, code: 'unknown-term' });
-    from = a.mark();
-    a.sendInput(99, 'x');
-    expect(await a.waitFor('error', () => true, { from })).toMatchObject({ req: null, code: 'unknown-term' });
+    let from = fx.a.mark();
+    fx.a.send({ t: 'resize', termId: 99, cols: 80, rows: 24 });
+    expect(await fx.a.waitFor('error', () => true, { from })).toMatchObject({ req: null, code: 'unknown-term' });
+    from = fx.a.mark();
+    fx.a.sendInput(99, 'x');
+    expect(await fx.a.waitFor('error', () => true, { from })).toMatchObject({ req: null, code: 'unknown-term' });
   });
 
   it('fails requests for a terminal of a repo the connection does not watch with not-watched', async () => {
-    const term = await a.create(wt, { command: 'exec sleep 60' });
-    const outsider = await host.client();
+    const term = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const outsider = await fx.host.client();
     expect(await outsider.fails({ t: 'attach', termId: term.termId })).toBe('not-watched');
     expect(await outsider.fails({ t: 'closeTerm', termId: term.termId })).toBe('not-watched');
     let from = outsider.mark();
@@ -143,66 +151,66 @@ describe('terminal access', () => {
 
 describe('terminal lifetime', () => {
   it('keeps running when its only client disconnects, keeping the output meanwhile', async () => {
-    const term = await started(a, 'sleep 0.8; echo MARKER-AFTER-LEAVE; exec sleep 60');
-    a.close();
+    const term = await started(fx.a, 'sleep 0.8; echo MARKER-AFTER-LEAVE; exec sleep 60');
+    fx.a.close();
     await sleep(1500);
-    const c = await host.client();
-    const state = await c.watch(repo);
+    const c = await fx.host.client();
+    const state = await c.watch(fx.repo);
     expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toBeNull();
     const view = await c.attach(term.termId);
     expect(await view.screen.text()).toContain('MARKER-AFTER-LEAVE');
   });
 
   it('keeps running when its client unwatches the repo', async () => {
-    const term = await started(a, 'exec sleep 60');
-    await a.ok({ t: 'unwatchRepo', repo });
-    await b.expectNone('termExited', () => true, 300);
-    expect((await b.watch(repo)).terminals.map((t) => t.termId)).toEqual([term.termId]);
+    const term = await started(fx.a, 'exec sleep 60');
+    await fx.a.ok({ t: 'unwatchRepo', repo: fx.repo });
+    await fx.b.expectNone('termExited', () => true, 300);
+    expect((await fx.b.watch(fx.repo)).terminals.map((t) => t.termId)).toEqual([term.termId]);
   });
 
   it('delivers a final burst before termExited', async () => {
-    const term = await started(a, "read go; head -c 1048576 /dev/zero | tr '\\0' x; exit 0");
-    a.sendInput(term.termId, 'go\r');
-    await a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 30_000 });
-    const exitedAt = a.received.findIndex((r) => r.kind === 'message' && r.message.t === 'termExited');
-    const before = a.received
+    const term = await started(fx.a, "read go; head -c 1048576 /dev/zero | tr '\\0' x; exit 0");
+    fx.a.sendInput(term.termId, 'go\r');
+    await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 30_000 });
+    const exitedAt = fx.a.received.findIndex((r) => r.kind === 'message' && r.message.t === 'termExited');
+    const before = fx.a.received
       .slice(0, exitedAt)
       .reduce((n, r) => n + (r.kind === 'output' && r.termId === term.termId ? countByte(r.data, 0x78) : 0), 0);
     expect(before).toBe(MiB);
   });
 
   it('reports the exit code to every watcher and keeps the terminal until closed', async () => {
-    const term = await a.create(wt, { command: 'exit 3' });
+    const term = await fx.a.create(fx.wt, { command: 'exit 3' });
     const expected = { t: 'termExited', termId: term.termId, code: 3, signal: null };
-    expect(await a.waitFor('termExited')).toEqual(expected);
-    expect(await b.waitFor('termExited')).toEqual(expected);
-    const state = await (await host.client()).watch(repo);
+    expect(await fx.a.waitFor('termExited')).toEqual(expected);
+    expect(await fx.b.waitFor('termExited')).toEqual(expected);
+    const state = await (await fx.host.client()).watch(fx.repo);
     expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toEqual({ code: 3, signal: null });
-    await a.ok({ t: 'closeTerm', termId: term.termId });
+    await fx.a.ok({ t: 'closeTerm', termId: term.termId });
   });
 
   it('reports the name of a fatal signal', async () => {
-    const term = await a.create(wt, { command: 'kill -KILL $$' });
-    expect(await a.waitFor('termExited', (m) => m.termId === term.termId)).toMatchObject({ signal: 'SIGKILL' });
+    const term = await fx.a.create(fx.wt, { command: 'kill -KILL $$' });
+    expect(await fx.a.waitFor('termExited', (m) => m.termId === term.termId)).toMatchObject({ signal: 'SIGKILL' });
   });
 
   it('ends the shell and its background job on close, then reports termClosed before done', async () => {
-    const term = await a.create(wt, { command: 'sleep 600 & echo $! > bg.pid; echo $$ > sh.pid; wait' });
-    const shell = await pidIn(wt, 'sh.pid');
-    const job = await pidIn(wt, 'bg.pid');
-    const from = a.mark();
-    await a.ok({ t: 'closeTerm', termId: term.termId });
-    expect(repliesFrom(a, from).map((m) => m.t)).toEqual(['termClosed', 'done']);
-    expect(await b.waitFor('termClosed')).toEqual({ t: 'termClosed', termId: term.termId });
+    const term = await fx.a.create(fx.wt, { command: 'sleep 600 & echo $! > bg.pid; echo $$ > sh.pid; wait' });
+    const shell = await pidIn(fx.wt, 'sh.pid');
+    const job = await pidIn(fx.wt, 'bg.pid');
+    const from = fx.a.mark();
+    await fx.a.ok({ t: 'closeTerm', termId: term.termId });
+    expect(repliesFrom(fx.a, from).map((m) => m.t)).toEqual(['termClosed', 'done']);
+    expect(await fx.b.waitFor('termClosed')).toEqual({ t: 'termClosed', termId: term.termId });
     await waitUntil(() => !alive(shell) && !alive(job), 'shell and job to end', 7000);
-    expect((await b.watch(repo)).terminals).toEqual([]);
-    expect(await a.fails({ t: 'closeTerm', termId: term.termId })).toBe('unknown-term');
+    expect((await fx.b.watch(fx.repo)).terminals).toEqual([]);
+    expect(await fx.a.fails({ t: 'closeTerm', termId: term.termId })).toBe('unknown-term');
   });
 
   it('kills a shell that ignores SIGHUP 5 s after close', async () => {
-    const term = await a.create(wt, { command: "trap '' HUP; echo $$ > sh.pid; while :; do sleep 0.2; done" });
-    const shell = await pidIn(wt, 'sh.pid');
-    await a.ok({ t: 'closeTerm', termId: term.termId });
+    const term = await fx.a.create(fx.wt, { command: "trap '' HUP; echo $$ > sh.pid; while :; do sleep 0.2; done" });
+    const shell = await pidIn(fx.wt, 'sh.pid');
+    await fx.a.ok({ t: 'closeTerm', termId: term.termId });
     await sleep(3000);
     expect(alive(shell)).toBe(true);
     await waitUntil(() => !alive(shell), 'the shell to be killed', 5000);
@@ -216,77 +224,81 @@ describe('checked state and layouts', () => {
   });
 
   it('broadcasts a checkbox change to every watcher before answering done', async () => {
-    const from = a.mark();
-    const fromB = b.mark();
-    await a.ok({ t: 'setChecked', worktree: wt, checked: true });
-    expect(a.messages.slice(from)).toEqual([
-      { t: 'checkedChanged', worktree: wt, checked: true },
+    const from = fx.a.mark();
+    const fromB = fx.b.mark();
+    await fx.a.ok({ t: 'setChecked', worktree: fx.wt, checked: true });
+    expect(fx.a.messages.slice(from)).toEqual([
+      { t: 'checkedChanged', worktree: fx.wt, checked: true },
       { t: 'done', req: ANY_REQ },
     ]);
-    expect(await b.waitFor('checkedChanged', () => true, { from: fromB })).toEqual({ t: 'checkedChanged', worktree: wt, checked: true });
-    expect((await (await host.client()).watch(repo)).checked).toEqual([wt]);
-    expect(stateMentions(wt)).toBe(true);
-    expect(statSync(host.statePath).mode & 0o777).toBe(0o600);
+    expect(await fx.b.waitFor('checkedChanged', () => true, { from: fromB })).toEqual({
+      t: 'checkedChanged',
+      worktree: fx.wt,
+      checked: true,
+    });
+    expect((await (await fx.host.client()).watch(fx.repo)).checked).toEqual([fx.wt]);
+    expect(stateMentions(fx.wt)).toBe(true);
+    expect(statSync(fx.host.statePath).mode & 0o777).toBe(0o600);
   });
 
   it.each<[string, (worktree: string) => RequestBody]>([
     ['setChecked', (worktree) => ({ t: 'setChecked', worktree, checked: true })],
     ['setLayout', (worktree) => ({ t: 'setLayout', worktree, layout: { tabs: [], active: 0 } })],
   ])('fails %s for a worktree not in a watched list with unknown-worktree', async (_name, body) => {
-    const outsider = await host.client();
-    expect(await outsider.fails(body(wt))).toBe('unknown-worktree');
-    expect(await a.fails(body(join(repo, 'sub')))).toBe('unknown-worktree');
+    const outsider = await fx.host.client();
+    expect(await outsider.fails(body(fx.wt))).toBe('unknown-worktree');
+    expect(await fx.a.fails(body(join(fx.repo, 'sub')))).toBe('unknown-worktree');
   });
 
   it('broadcasts a layout of the worktree terminals and reports it in repoState', async () => {
-    const one = await a.create(wt, { command: 'exec sleep 60' });
-    const two = await a.create(wt, { command: 'exec sleep 60' });
+    const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const two = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
     const layout = twoPanes(one.termId, two.termId);
-    const from = a.mark();
-    await a.ok({ t: 'setLayout', worktree: wt, layout });
-    expect(repliesFrom(a, from)).toEqual([
-      { t: 'layoutChanged', worktree: wt, layout },
+    const from = fx.a.mark();
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout });
+    expect(repliesFrom(fx.a, from)).toEqual([
+      { t: 'layoutChanged', worktree: fx.wt, layout },
       { t: 'done', req: ANY_REQ },
     ]);
-    await b.waitFor('layoutChanged', (m) => m.worktree === wt);
-    expect((await (await host.client()).watch(repo)).layouts).toEqual([{ worktree: wt, layout }]);
+    await fx.b.waitFor('layoutChanged', (m) => m.worktree === fx.wt);
+    expect((await (await fx.host.client()).watch(fx.repo)).layouts).toEqual([{ worktree: fx.wt, layout }]);
   });
 
   it('rejects a layout holding a terminal of another worktree, keeping the stored one', async () => {
-    const own = await a.create(wt, { command: 'exec sleep 60' });
-    const other = await a.create(repo, { command: 'exec sleep 60' });
+    const own = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const other = await fx.a.create(fx.repo, { command: 'exec sleep 60' });
     const kept: Layout = { tabs: [{ id: 'only', root: { term: own.termId } }], active: 0 };
-    await a.ok({ t: 'setLayout', worktree: wt, layout: kept });
-    expect(await a.fails({ t: 'setLayout', worktree: wt, layout: twoPanes(own.termId, other.termId) })).toBe('unknown-term');
-    expect(await a.fails({ t: 'setLayout', worktree: wt, layout: twoPanes(own.termId, 999) })).toBe('unknown-term');
-    expect((await (await host.client()).watch(repo)).layouts).toEqual([{ worktree: wt, layout: kept }]);
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout: kept });
+    expect(await fx.a.fails({ t: 'setLayout', worktree: fx.wt, layout: twoPanes(own.termId, other.termId) })).toBe('unknown-term');
+    expect(await fx.a.fails({ t: 'setLayout', worktree: fx.wt, layout: twoPanes(own.termId, 999) })).toBe('unknown-term');
+    expect((await (await fx.host.client()).watch(fx.repo)).layouts).toEqual([{ worktree: fx.wt, layout: kept }]);
   });
 
   it('replaces a split by its other half when a terminal in it is closed', async () => {
-    const one = await a.create(wt, { command: 'exec sleep 60' });
-    const two = await a.create(wt, { command: 'exec sleep 60' });
-    const fromSet = b.mark();
-    await a.ok({ t: 'setLayout', worktree: wt, layout: twoPanes(one.termId, two.termId) });
-    await b.waitFor('layoutChanged', () => true, { from: fromSet });
-    const from = b.mark();
-    await a.ok({ t: 'closeTerm', termId: one.termId });
-    expect(await b.waitFor('layoutChanged', () => true, { from })).toEqual({
+    const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const two = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const fromSet = fx.b.mark();
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout: twoPanes(one.termId, two.termId) });
+    await fx.b.waitFor('layoutChanged', () => true, { from: fromSet });
+    const from = fx.b.mark();
+    await fx.a.ok({ t: 'closeTerm', termId: one.termId });
+    expect(await fx.b.waitFor('layoutChanged', () => true, { from })).toEqual({
       t: 'layoutChanged',
-      worktree: wt,
+      worktree: fx.wt,
       layout: { tabs: [{ id: 'main', root: { term: two.termId } }], active: 0 },
     });
   });
 
   it('removes a tab left empty when its last terminal is closed', async () => {
-    const one = await a.create(wt, { command: 'exec sleep 60' });
-    const fromSet = b.mark();
-    await a.ok({ t: 'setLayout', worktree: wt, layout: { tabs: [{ id: 'solo', root: { term: one.termId } }], active: 0 } });
-    await b.waitFor('layoutChanged', () => true, { from: fromSet });
-    const from = b.mark();
-    await a.ok({ t: 'closeTerm', termId: one.termId });
-    expect(await b.waitFor('layoutChanged', () => true, { from })).toEqual({
+    const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const fromSet = fx.b.mark();
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout: { tabs: [{ id: 'solo', root: { term: one.termId } }], active: 0 } });
+    await fx.b.waitFor('layoutChanged', () => true, { from: fromSet });
+    const from = fx.b.mark();
+    await fx.a.ok({ t: 'closeTerm', termId: one.termId });
+    expect(await fx.b.waitFor('layoutChanged', () => true, { from })).toEqual({
       t: 'layoutChanged',
-      worktree: wt,
+      worktree: fx.wt,
       layout: { tabs: [], active: 0 },
     });
   });
@@ -294,21 +306,21 @@ describe('checked state and layouts', () => {
   it.skipIf(process.getuid?.() === 0)(
     'answers internal for a change that cannot be persisted, keeping state and broadcasting nothing',
     async () => {
-      const one = await a.create(wt, { command: 'exec sleep 60' });
-      await a.ok({ t: 'setChecked', worktree: repo, checked: true });
-      const before = await (await host.client()).watch(repo);
-      chmodSync(host.stateDir, 0o500);
+      const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+      await fx.a.ok({ t: 'setChecked', worktree: fx.repo, checked: true });
+      const before = await (await fx.host.client()).watch(fx.repo);
+      chmodSync(fx.host.stateDir, 0o500);
       try {
-        const fromB = b.mark();
-        expect(await a.fails({ t: 'setChecked', worktree: wt, checked: true })).toBe('internal');
+        const fromB = fx.b.mark();
+        expect(await fx.a.fails({ t: 'setChecked', worktree: fx.wt, checked: true })).toBe('internal');
         const layout: Layout = { tabs: [{ id: 'solo', root: { term: one.termId } }], active: 0 };
-        expect(await a.fails({ t: 'setLayout', worktree: wt, layout })).toBe('internal');
+        expect(await fx.a.fails({ t: 'setLayout', worktree: fx.wt, layout })).toBe('internal');
         await sleep(300);
-        expect(b.messages.slice(fromB).filter((m) => m.t === 'checkedChanged' || m.t === 'layoutChanged')).toEqual([]);
-        const after = await (await host.client()).watch(repo);
+        expect(fx.b.messages.slice(fromB).filter((m) => m.t === 'checkedChanged' || m.t === 'layoutChanged')).toEqual([]);
+        const after = await (await fx.host.client()).watch(fx.repo);
         expect({ checked: after.checked, layouts: after.layouts }).toEqual({ checked: before.checked, layouts: before.layouts });
       } finally {
-        chmodSync(host.stateDir, 0o700);
+        chmodSync(fx.host.stateDir, 0o700);
       }
     },
   );
@@ -316,54 +328,54 @@ describe('checked state and layouts', () => {
 
 describe('persistence and pruning', () => {
   it('keeps checked worktrees across a restart and drops layout terminals', async () => {
-    const term = await a.create(wt, { command: 'exec sleep 60' });
-    await a.ok({ t: 'setChecked', worktree: wt, checked: true });
-    await a.ok({ t: 'setLayout', worktree: wt, layout: { tabs: [{ id: 'x', root: { term: term.termId } }], active: 0 } });
+    const term = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    await fx.a.ok({ t: 'setChecked', worktree: fx.wt, checked: true });
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout: { tabs: [{ id: 'x', root: { term: term.termId } }], active: 0 } });
     await restart();
-    const state = await (await host.client()).watch(repo);
-    expect(state.checked).toEqual([wt]);
-    expect(state.layouts.find((l) => l.worktree === wt)?.layout.tabs ?? []).toEqual([]);
+    const state = await (await fx.host.client()).watch(fx.repo);
+    expect(state.checked).toEqual([fx.wt]);
+    expect(state.layouts.find((l) => l.worktree === fx.wt)?.layout.tabs ?? []).toEqual([]);
     expect(state.terminals).toEqual([]);
   });
 
   it('prunes a removed worktree without terminals', async () => {
-    const gone = addWorktree(repo, join(host.dir, 'gone'), 'gone');
-    await a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
-    await a.ok({ t: 'setChecked', worktree: gone, checked: true });
+    const gone = addWorktree(fx.repo, join(fx.host.dir, 'gone'), 'gone');
+    await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
+    await fx.a.ok({ t: 'setChecked', worktree: gone, checked: true });
     expect(stateMentions(gone)).toBe(true);
-    git(repo, 'worktree', 'remove', gone);
-    await a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
+    git(fx.repo, 'worktree', 'remove', gone);
+    await fx.a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
     await waitUntil(() => !stateMentions(gone), 'the entry to be pruned', 2000);
-    expect((await (await host.client()).watch(repo)).checked).toEqual([]);
+    expect((await (await fx.host.client()).watch(fx.repo)).checked).toEqual([]);
   });
 
   it('keeps a removed worktree with a live terminal until the terminal is closed', async () => {
-    const gone = addWorktree(repo, join(host.dir, 'gone'), 'gone');
-    await a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
-    const term = await a.create(gone, { command: 'exec sleep 600' });
-    await a.ok({ t: 'setChecked', worktree: gone, checked: true });
-    git(repo, 'worktree', 'remove', '--force', gone);
-    await a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
+    const gone = addWorktree(fx.repo, join(fx.host.dir, 'gone'), 'gone');
+    await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
+    const term = await fx.a.create(gone, { command: 'exec sleep 600' });
+    await fx.a.ok({ t: 'setChecked', worktree: gone, checked: true });
+    git(fx.repo, 'worktree', 'remove', '--force', gone);
+    await fx.a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
     await sleep(500);
     expect(stateMentions(gone)).toBe(true);
-    const state = await (await host.client()).watch(repo);
+    const state = await (await fx.host.client()).watch(fx.repo);
     expect(state.terminals.map((t) => t.worktree)).toEqual([gone]);
-    await a.ok({ t: 'closeTerm', termId: term.termId });
+    await fx.a.ok({ t: 'closeTerm', termId: term.termId });
     await waitUntil(() => !stateMentions(gone), 'the entry to be pruned', 2000);
   });
 
   it('moves a corrupt state file aside and starts with no checked worktrees', async () => {
-    await a.ok({ t: 'setChecked', worktree: wt, checked: true });
-    a.send({ t: 'shutdown' });
-    await daemon.exited;
-    writeFileSync(host.statePath, '{"version":1,"repos":[');
-    await host.start();
+    await fx.a.ok({ t: 'setChecked', worktree: fx.wt, checked: true });
+    fx.a.send({ t: 'shutdown' });
+    await fx.daemon.exited;
+    writeFileSync(fx.host.statePath, '{"version":1,"repos":[');
+    await fx.host.start();
     // The socket answers before the state is loaded; connections wait for it.
     const names = await waitUntil(() => {
-      const moved = readdirSync(host.stateDir).filter((n) => n.startsWith('state.json.corrupt-'));
+      const moved = readdirSync(fx.host.stateDir).filter((n) => n.startsWith('state.json.corrupt-'));
       return moved.length > 0 && moved;
     }, 'the corrupt state file moved aside');
     expect(names).toHaveLength(1);
-    expect((await (await host.client()).watch(repo)).checked).toEqual([]);
+    expect((await (await fx.host.client()).watch(fx.repo)).checked).toEqual([]);
   });
 });

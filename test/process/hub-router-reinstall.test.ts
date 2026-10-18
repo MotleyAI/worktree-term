@@ -6,7 +6,7 @@ import { FakeDaemon } from '../support/fake-daemon.js';
 import {
   configure,
   connectedHost,
-  host,
+  fx,
   INSTALL_TIMEOUT,
   installedBox,
   instanceOf,
@@ -14,7 +14,6 @@ import {
   packageVersion,
   REMOTE_TIMEOUT,
   remoteInstance,
-  ssh,
   useHubRouterHost,
 } from '../support/hub-router.js';
 
@@ -24,7 +23,7 @@ useHubRouterHost();
 describe('remote daemon restart and reinstall', () => {
   it('restarts a connected remote daemon into a new instance', async () => {
     const { remote } = await installedBox();
-    const client = await host.session();
+    const client = await fx.host.session();
     const old = await remoteInstance(client, 1);
     const [oldPid] = remote.daemonPids();
     const from = client.mark();
@@ -41,7 +40,7 @@ describe('remote daemon restart and reinstall', () => {
       const { remote } = await installedBox();
       const releases = remote.releases();
       const fake = await FakeDaemon.listen(remote.socket, { protocol: 4, version: '0.0.4', instance: 'old_remote' });
-      const client = await host.session();
+      const client = await fx.host.session();
       expect(await client.waitHost(1, (h) => h.status === 'outdated', { timeout: REMOTE_TIMEOUT })).toMatchObject({
         daemonVersion: '0.0.4',
         instance: 'old_remote',
@@ -64,7 +63,7 @@ describe('remote daemon restart and reinstall', () => {
     async () => {
       const remote = nodeRemote('box');
       configure([{ name: 'box', ssh: 'box' }]);
-      const client = await host.session();
+      const client = await fx.host.session();
       await client.waitHost(1, (h) => h.status === 'down', { timeout: 10_000 });
       const from = client.mark();
       const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 1 }, INSTALL_TIMEOUT);
@@ -79,9 +78,9 @@ describe('remote daemon restart and reinstall', () => {
   it(
     'reports an installation failure as internal, naming the install step and the missing Node',
     async () => {
-      ssh.addHost('box');
+      fx.ssh.addHost('box');
       configure([{ name: 'box', ssh: 'box' }]);
-      const client = await host.session();
+      const client = await fx.host.session();
       await client.waitHost(1, (h) => h.status === 'down', { timeout: 10_000 });
       const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 1 }, INSTALL_TIMEOUT);
       expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: 1, code: 'internal' } });
@@ -97,8 +96,8 @@ describe('remote daemon restart and reinstall', () => {
     async () => {
       const { remote } = await installedBox();
       await FakeDaemon.listen(remote.socket, { protocol: 4, version: '0.0.4', instance: 'old_remote' });
-      const a = await host.session();
-      const b = await host.session();
+      const a = await fx.host.session();
+      const b = await fx.host.session();
       await a.waitHost(1, (h) => h.status === 'outdated', { timeout: REMOTE_TIMEOUT });
       await b.waitHost(1, (h) => h.status === 'outdated', { timeout: REMOTE_TIMEOUT });
       const fromA = a.mark();
@@ -120,18 +119,18 @@ describe('remote daemon restart and reinstall', () => {
   );
 
   it('refuses to reinstall the local host, touching no daemon', async () => {
-    const client = await host.session();
+    const client = await fx.host.session();
     const instance = await instanceOf(client);
-    const [pid] = host.daemonPids();
+    const [pid] = fx.host.daemonPids();
     const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 0 });
     expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: 0, code: 'internal' } });
     await sleep(500);
-    expect(host.daemonPids()).toEqual([pid]);
+    expect(fx.host.daemonPids()).toEqual([pid]);
     expect(client.hosts()[0]).toMatchObject({ status: 'connected', instance });
   });
 
   it('answers a reinstall for an unknown host with unknown-host', async () => {
-    const client = await host.session();
+    const client = await fx.host.session();
     const reply = await client.hubRequest({ t: 'reinstallDaemon', host: 7 });
     expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, code: 'unknown-host' } });
   });

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeWsData, MAX_FRAME, BROWSER_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { sleep, type WtdProcess } from '../support/daemon-host.js';
 import type { HubClient, HubMessageOf } from '../support/hub-client.js';
-import { ANY_TEXT, header, host, outcome, packageVersion, refusal, useHubServerHost, waitExit } from '../support/hub-server.js';
+import { ANY_TEXT, fx, header, outcome, packageVersion, refusal, useHubServerHost, waitExit } from '../support/hub-server.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useHubServerHost();
@@ -17,21 +17,21 @@ describe('WebSocket authentication', () => {
   let token: string;
 
   beforeEach(async () => {
-    hub = await host.startHub();
-    token = host.token();
+    hub = await fx.host.startHub();
+    token = fx.host.token();
   });
 
   it('accepts the token and selects the subprotocol wtd', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     expect(client.protocol).toBe('wtd');
     client.close();
-    const raw = await host.upgrade(['wtd', `wtd.token.${token}`]);
+    const raw = await fx.host.upgrade(['wtd', `wtd.token.${token}`]);
     expect(raw.status).toBe(101);
     expect(header(raw, 'sec-websocket-protocol')).toEqual(['wtd']);
   });
 
   it('accepts the credential before wtd', async () => {
-    expect((await host.upgrade([`wtd.token.${token}`, 'wtd'])).status).toBe(101);
+    expect((await fx.host.upgrade([`wtd.token.${token}`, 'wtd'])).status).toBe(101);
   });
 
   it.each([
@@ -40,19 +40,19 @@ describe('WebSocket authentication', () => {
     ['localhost as Origin', 'http://localhost'],
     ['another port as Origin', 'http://127.0.0.1:1'],
   ])('refuses an upgrade with %s with 403', async (_name, origin) => {
-    expect(await refusal(host.open(['wtd', `wtd.token.${token}`], origin))).toBe(403);
+    expect(await refusal(fx.host.open(['wtd', `wtd.token.${token}`], origin))).toBe(403);
   });
 
   it('refuses an upgrade with two Origin headers with 403', async () => {
-    const response = await host.http('GET', '/ws', {
+    const response = await fx.host.http('GET', '/ws', {
       headers: [
         ['Upgrade', 'websocket'],
         ['Connection', 'Upgrade'],
         ['Sec-WebSocket-Version', '13'],
         ['Sec-WebSocket-Key', 'dGhlIHNhbXBsZSBub25jZQ=='],
         ['Sec-WebSocket-Protocol', `wtd, wtd.token.${token}`],
-        ['Origin', host.origin],
-        ['Origin', host.origin],
+        ['Origin', fx.host.origin],
+        ['Origin', fx.host.origin],
       ],
       headersOnly: true,
     });
@@ -72,25 +72,25 @@ describe('WebSocket authentication', () => {
     ['a credential without wtd', () => [`wtd.token.${token}`]],
   ])('refuses %s and starts no session', async (_name, protocols) => {
     // Raw upgrade: the ws client itself refuses to offer a duplicated subprotocol.
-    expect((await host.upgrade(protocols())).status).toBe(401);
+    expect((await fx.host.upgrade(protocols())).status).toBe(401);
     await sleep(500);
-    expect(host.daemonPids()).toEqual([]);
+    expect(fx.host.daemonPids()).toEqual([]);
   });
 
   it('refuses an upgrade without Sec-WebSocket-Protocol with 401', async () => {
-    expect((await host.upgrade(null)).status).toBe(401);
+    expect((await fx.host.upgrade(null)).status).toBe(401);
   });
 
   it('accepts upgrades only at /ws', async () => {
     for (const path of ['/', '/ws/', '/wsx', '/api/code']) {
-      const response = await host.http('GET', path, {
+      const response = await fx.host.http('GET', path, {
         headers: [
           ['Upgrade', 'websocket'],
           ['Connection', 'Upgrade'],
           ['Sec-WebSocket-Version', '13'],
           ['Sec-WebSocket-Key', 'dGhlIHNhbXBsZSBub25jZQ=='],
           ['Sec-WebSocket-Protocol', `wtd, wtd.token.${token}`],
-          ['Origin', host.origin],
+          ['Origin', fx.host.origin],
         ],
         headersOnly: true,
       });
@@ -99,75 +99,78 @@ describe('WebSocket authentication', () => {
   });
 
   it('accepts a code once', async () => {
-    const code = await host.code();
-    const client = await host.open(['wtd', `wtd.code.${code}`]);
+    const code = await fx.host.code();
+    const client = await fx.host.open(['wtd', `wtd.code.${code}`]);
     expect(client.protocol).toBe('wtd');
-    expect(await refusal(host.open(['wtd', `wtd.code.${code}`]))).toBe(401);
+    expect(await refusal(fx.host.open(['wtd', `wtd.code.${code}`]))).toBe(401);
   });
 
   it('keeps a code presented by an upgrade the WebSocket handshake rejects', async () => {
-    const code = await host.code();
-    const response = await host.http('GET', '/ws', {
+    const code = await fx.host.code();
+    const response = await fx.host.http('GET', '/ws', {
       headers: [
         ['Upgrade', 'websocket'],
         ['Connection', 'Upgrade'],
         ['Sec-WebSocket-Version', '12'],
         ['Sec-WebSocket-Key', 'dGhlIHNhbXBsZSBub25jZQ=='],
         ['Sec-WebSocket-Protocol', `wtd, wtd.code.${code}`],
-        ['Origin', host.origin],
+        ['Origin', fx.host.origin],
       ],
       headersOnly: true,
     });
     expect(response.status).toBe(400);
-    const client = await host.open(['wtd', `wtd.code.${code}`]);
+    const client = await fx.host.open(['wtd', `wtd.code.${code}`]);
     expect(client.protocol).toBe('wtd');
   });
 
   it('accepts exactly one of two concurrent upgrades presenting the same code', async () => {
-    const code = await host.code();
-    const results = await Promise.all([outcome(host.open(['wtd', `wtd.code.${code}`])), outcome(host.open(['wtd', `wtd.code.${code}`]))]);
+    const code = await fx.host.code();
+    const results = await Promise.all([
+      outcome(fx.host.open(['wtd', `wtd.code.${code}`])),
+      outcome(fx.host.open(['wtd', `wtd.code.${code}`])),
+    ]);
     expect(results.filter((r) => typeof r !== 'number')).toHaveLength(1);
     expect(results.filter((r) => typeof r === 'number')).toEqual([401]);
   });
 
   it('refuses an unknown code with 401', async () => {
-    expect(await refusal(host.open(['wtd', `wtd.code.${'b'.repeat(64)}`]))).toBe(401);
+    expect(await refusal(fx.host.open(['wtd', `wtd.code.${'b'.repeat(64)}`]))).toBe(401);
   });
 
   it('keeps at most 16 codes outstanding, dropping the oldest', async () => {
     const codes: string[] = [];
-    for (let i = 0; i < 17; i++) codes.push(await host.code());
-    expect(await refusal(host.open(['wtd', `wtd.code.${codes[0] ?? ''}`]))).toBe(401);
-    const newest = await host.open(['wtd', `wtd.code.${codes[16] ?? ''}`]);
+    for (let i = 0; i < 17; i++) codes.push(await fx.host.code());
+    expect(await refusal(fx.host.open(['wtd', `wtd.code.${codes[0] ?? ''}`]))).toBe(401);
+    const newest = await fx.host.open(['wtd', `wtd.code.${codes[16] ?? ''}`]);
     expect(newest.protocol).toBe('wtd');
-    const second = await host.open(['wtd', `wtd.code.${codes[1] ?? ''}`]);
+    const second = await fx.host.open(['wtd', `wtd.code.${codes[1] ?? ''}`]);
     expect(second.protocol).toBe('wtd');
   });
 
   it('never records the token or codes it was offered', async () => {
-    const used = await host.code();
-    const client = await host.open(['wtd', `wtd.code.${used}`]);
+    const used = await fx.host.code();
+    const client = await fx.host.open(['wtd', `wtd.code.${used}`]);
     await client.handshake();
-    const unused = await host.code();
-    await outcome(host.open(['wtd', `wtd.token.${'0'.repeat(64)}`]));
-    await outcome(host.open(['wtd', `wtd.code.${used}`]));
-    await outcome(host.open(['wtd', `wtd.token.${token}`], 'http://evil.example'));
-    await outcome(host.open(['wtd', `wtd.token.${token}`, `wtd.code.${unused}`]));
+    const unused = await fx.host.code();
+    await outcome(fx.host.open(['wtd', `wtd.token.${'0'.repeat(64)}`]));
+    await outcome(fx.host.open(['wtd', `wtd.code.${used}`]));
+    await outcome(fx.host.open(['wtd', `wtd.token.${token}`], 'http://evil.example'));
+    await outcome(fx.host.open(['wtd', `wtd.token.${token}`, `wtd.code.${unused}`]));
     hub.kill('SIGTERM');
     await waitExit(hub);
-    const logs = [hub.stdout, hub.stderr, existsSync(host.hubLogPath) ? readFileSync(host.hubLogPath, 'utf8') : ''].join('\n');
+    const logs = [hub.stdout, hub.stderr, existsSync(fx.host.hubLogPath) ? readFileSync(fx.host.hubLogPath, 'utf8') : ''].join('\n');
     for (const secret of [token, used, unused]) expect(logs).not.toContain(secret);
   });
 
   it('closes a session sending a message of MAX_FRAME + 1 bytes', async () => {
-    const client = await host.session();
+    const client = await fx.host.session();
     client.sendBinary(new Uint8Array(MAX_FRAME + 1));
     await client.waitClosed(10_000);
     expect(client.closeCode).toBe(1009);
   });
 
   it('accepts a message of MAX_FRAME bytes, then rejects it as malformed', async () => {
-    const client = await host.session();
+    const client = await fx.host.session();
     client.sendBinary(new Uint8Array(MAX_FRAME));
     expect(await client.waitFor('error', () => true, { timeout: 10_000 })).toMatchObject({ code: 'bad-message' });
     expect(client.closeCode).not.toBe(1009);
@@ -178,29 +181,29 @@ describe('session handshake', () => {
   let token: string;
 
   beforeEach(async () => {
-    await host.startHub();
-    token = host.token();
+    await fx.host.startHub();
+    token = fx.host.token();
   });
 
   it('sends hello with the protocol, package version and instance', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     expect(await client.waitFor('hello')).toEqual({
       t: 'hello',
       protocol: BROWSER_PROTOCOL_VERSION,
       version: packageVersion(),
-      instance: host.record()?.instance,
+      instance: fx.host.record()?.instance,
     });
   });
 
   it('sends the token right after hello to a code session', async () => {
-    const client = await host.open(['wtd', `wtd.code.${await host.code()}`]);
+    const client = await fx.host.open(['wtd', `wtd.code.${await fx.host.code()}`]);
     await client.waitFor('token');
     expect(client.messages.slice(0, 2).map((m) => m.t)).toEqual(['hello', 'token']);
     expect(client.messages[1]).toEqual({ t: 'token', token });
   });
 
   it('sends no token to a token session', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
     await client.expectNone('token', () => true, 300);
     const from = client.mark();
@@ -210,7 +213,7 @@ describe('session handshake', () => {
   });
 
   it('sends hosts after the browser’s hello', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
     await client.expectNone('hosts', () => true, 300);
     const { hosts } = await client.handshake();
@@ -218,7 +221,7 @@ describe('session handshake', () => {
   });
 
   it('sends presets and then hosts after the browser’s hello', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
     await client.expectNone('presets', () => true, 300);
     const from = client.mark();
@@ -228,8 +231,8 @@ describe('session handshake', () => {
   });
 
   it('sends the default presets and no repos without a configuration file', async () => {
-    rmSync(host.configPath);
-    const client = await host.session();
+    rmSync(fx.host.configPath);
+    const client = await fx.host.session();
     expect(presetsOf(client)).toEqual([
       [
         { name: 'shell', command: null },
@@ -238,12 +241,12 @@ describe('session handshake', () => {
       ],
     ]);
     expect(client.hosts()[0]?.repos).toEqual([]);
-    expect(existsSync(host.configPath)).toBe(false);
+    expect(existsSync(fx.host.configPath)).toBe(false);
   });
 
   it('sends the shell, claude and codex presets when the configuration has no presets', async () => {
-    host.writeConfig({ port: host.port });
-    const client = await host.session();
+    fx.host.writeConfig({ port: fx.host.port });
+    const client = await fx.host.session();
     expect(presetsOf(client)).toEqual([
       [
         { name: 'shell', command: null },
@@ -254,14 +257,14 @@ describe('session handshake', () => {
   });
 
   it('sends exactly the configured presets in their order', async () => {
-    host.writeConfig({
-      port: host.port,
+    fx.host.writeConfig({
+      port: fx.host.port,
       presets: [
         { name: 'claude', command: 'claude' },
         { name: 'shell', command: null },
       ],
     });
-    const client = await host.session();
+    const client = await fx.host.session();
     expect(presetsOf(client)).toEqual([
       [
         { name: 'claude', command: 'claude' },
@@ -271,7 +274,7 @@ describe('session handshake', () => {
   });
 
   it('answers a message before hello with bad-message and closes the session', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
     client.sendHost(0, { t: 'setVisible', termIds: [] });
     expect(await client.waitFor('error')).toEqual({ t: 'error', req: null, host: null, code: 'bad-message', message: ANY_TEXT });
@@ -279,7 +282,7 @@ describe('session handshake', () => {
   });
 
   it('answers a hello of another protocol with version-mismatch and closes the session', async () => {
-    const client = await host.open(['wtd', `wtd.token.${token}`]);
+    const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
     client.sendHello(BROWSER_PROTOCOL_VERSION + 1);
     expect(await client.waitFor('error')).toEqual({
@@ -298,9 +301,9 @@ describe('malformed browser traffic', () => {
   let b: HubClient;
 
   beforeEach(async () => {
-    await host.startHub();
-    a = await host.session();
-    b = await host.session();
+    await fx.host.startHub();
+    a = await fx.host.session();
+    b = await fx.host.session();
   });
 
   /** Asserts `a` got bad-message and closed while `b` still answers. */

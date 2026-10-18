@@ -4,28 +4,33 @@ import type { Terminal } from '../../src/protocol/index.js';
 import type { DaemonClient } from './daemon-client.js';
 import { addWorktree, DaemonHost, makeRepo, sleep, type WtdProcess } from './daemon-host.js';
 
-export let host: DaemonHost;
-export let daemon: WtdProcess;
-export let repo: string;
-export let wt: string;
-export let a: DaemonClient;
-export let b: DaemonClient;
+/** Per-test values, refilled by the `beforeEach` that `useDaemonTerminalsHost` registers. */
+class DaemonTerminalsFixture {
+  host!: DaemonHost;
+  daemon!: WtdProcess;
+  repo!: string;
+  wt!: string;
+  a!: DaemonClient;
+  b!: DaemonClient;
+}
+
+export const fx = new DaemonTerminalsFixture();
 
 /** Registers the per-test setup and cleanup. */
 export const useDaemonTerminalsHost = (): void => {
   beforeEach(async () => {
-    host = DaemonHost.create();
-    repo = makeRepo(join(host.dir, 'repo'));
-    wt = addWorktree(repo, join(host.dir, 'wt'), 'wt');
-    daemon = await host.start();
-    a = await host.client();
-    b = await host.client();
-    await a.watch(repo);
-    await b.watch(repo);
+    fx.host = DaemonHost.create();
+    fx.repo = makeRepo(join(fx.host.dir, 'repo'));
+    fx.wt = addWorktree(fx.repo, join(fx.host.dir, 'wt'), 'wt');
+    fx.daemon = await fx.host.start();
+    fx.a = await fx.host.client();
+    fx.b = await fx.host.client();
+    await fx.a.watch(fx.repo);
+    await fx.b.watch(fx.repo);
   });
 
   afterEach(async () => {
-    await host.cleanup();
+    await fx.host.cleanup();
   });
 };
 
@@ -40,7 +45,7 @@ export const MiB = 1024 * KiB;
 export const started = async (
   client: DaemonClient,
   command: string | null,
-  { worktree = wt, cols = 80, rows = 24 }: { worktree?: string; cols?: number; rows?: number } = {},
+  { worktree = fx.wt, cols = 80, rows = 24 }: { worktree?: string; cols?: number; rows?: number } = {},
 ): Promise<Terminal> => {
   const term = await client.create(worktree, { command: command === null ? null : `read -r _; ${command}`, cols, rows });
   await client.attach(term.termId);
@@ -56,11 +61,11 @@ export const started = async (
 
 /** Restarts the daemon with extra environment, re-watching from fresh clients. */
 export const restart = async (env: Record<string, string | undefined> = {}): Promise<void> => {
-  a.send({ t: 'shutdown' });
-  await daemon.exited;
-  daemon = await host.start(env);
-  a = await host.client();
-  b = await host.client();
-  await a.watch(repo);
-  await b.watch(repo);
+  fx.a.send({ t: 'shutdown' });
+  await fx.daemon.exited;
+  fx.daemon = await fx.host.start(env);
+  fx.a = await fx.host.client();
+  fx.b = await fx.host.client();
+  await fx.a.watch(fx.repo);
+  await fx.b.watch(fx.repo);
 };

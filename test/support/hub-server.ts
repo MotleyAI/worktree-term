@@ -6,16 +6,21 @@ import { UpgradeRefused, type HubClient } from './hub-client.js';
 import { HubHost, type RawResponse } from './hub-host.js';
 import { REPO_ROOT } from './exec.js';
 
-export let host: HubHost;
+/** Per-test values, refilled by the `beforeEach` that `useHubServerHost` registers. */
+class HubServerFixture {
+  host!: HubHost;
+}
+
+export const fx = new HubServerFixture();
 
 /** Registers the per-test setup and cleanup. */
 export const useHubServerHost = (): void => {
   beforeEach(async () => {
-    host = await HubHost.createHub();
+    fx.host = await HubHost.createHub();
   });
 
   afterEach(async () => {
-    await host.cleanup();
+    await fx.host.cleanup();
   });
 };
 

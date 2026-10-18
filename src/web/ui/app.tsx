@@ -355,11 +355,7 @@ const WorktreeEntry = ({
         }}
       />
     )}
-    <button
-      type="button"
-      class="label"
-      data-testid="worktree-label"
-    >
+    <button type="button" class="label" data-testid="worktree-label">
       {entry.label}
       {entry.gone ? ' (gone)' : ''}
     </button>

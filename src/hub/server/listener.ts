@@ -28,6 +28,7 @@ type ErrorCode = Extract<MessageOf<'hubToBrowser'>, { t: 'error' }>['code'];
 
 const MAX_BODY = 1024;
 const BEARER = /^Bearer ([0-9a-f]{64})$/;
+const LOOPBACK_HOST = /^127\.0\.0\.1:([1-9][0-9]{0,4})$/;
 /** Close code for a session that broke the protocol. */
 const POLICY_VIOLATION = 1008;
 const GOING_AWAY = 1001;
@@ -158,20 +159,18 @@ export class Listener {
     });
   }
 
-  private get origin(): string {
-    return `http://127.0.0.1:${String(this.options.port)}`;
-  }
-
-  private hostAllowed(req: IncomingMessage): boolean {
+  /** The request's single `127.0.0.1:<port>` Host value, any port so a forwarded one reaches the hub; else null. */
+  private host(req: IncomingMessage): string | null {
     const hosts = headerValues(req, 'host');
-    return hosts.length === 1 && hosts[0] === `127.0.0.1:${String(this.options.port)}`;
+    const match = hosts.length === 1 ? LOOPBACK_HOST.exec(hosts[0] ?? '') : null;
+    return match?.[1] !== undefined && Number(match[1]) <= 65535 ? (hosts[0] ?? null) : null;
   }
 
-  /** Whether the request carries no Origin or exactly the hub's own. */
+  /** Whether the request carries no Origin or exactly its own Host's. */
   private originAllowed(req: IncomingMessage, required: boolean): boolean {
     const origins = headerValues(req, 'origin');
     if (origins.length === 0) return !required;
-    return origins.length === 1 && origins[0] === this.origin;
+    return origins.length === 1 && origins[0] === `http://${this.host(req) ?? ''}`;
   }
 
   private authorized(req: IncomingMessage): boolean {
@@ -189,7 +188,7 @@ export class Listener {
   }
 
   private request(req: IncomingMessage, res: ServerResponse): void {
-    if (!this.hostAllowed(req)) {
+    if (this.host(req) === null) {
       this.reply(res, 403);
       return;
     }
@@ -294,7 +293,7 @@ export class Listener {
 
   /** The status an upgrade is refused with, or null to accept it. */
   private upgradeRefusal(req: IncomingMessage, credential: Credential | null): number | null {
-    if (!this.hostAllowed(req)) return 403;
+    if (this.host(req) === null) return 403;
     if (!this.ready) return 503;
     if ((req.url ?? '') !== '/ws') return 404;
     if (!this.originAllowed(req, true)) return 403;

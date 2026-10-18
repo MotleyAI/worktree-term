@@ -5,6 +5,7 @@ import { repoKey, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction, statusText } from './hosts.js';
+import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
 import { aggregate, markTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
@@ -78,6 +79,134 @@ const HostBanner = ({ host, view }: { host: HostEntry; view: View }) => {
         </button>
       )}
     </div>
+  );
+};
+
+/** The status line of the latest hub opening, with its login link, reinstall button or ×. */
+const HubStatus = ({ line, install, dismiss }: { line: HubLine; install: () => void; dismiss: () => void }) => (
+  <span class="hub-status" data-testid="hub-status">
+    {hubLineText(line)}
+    {line.kind === 'login' && (
+      <>
+        {' '}
+        <a class="button" data-testid="hub-login" href={line.login} target="_blank" rel="noopener noreferrer">
+          Open login link
+        </a>
+      </>
+    )}
+    {line.kind === 'outdated' && (
+      <>
+        {' '}
+        <button type="button" data-testid="hub-reinstall" onClick={install}>
+          Reinstall on {line.name}
+        </button>
+      </>
+    )}
+    {line.kind === 'failed' && (
+      <button type="button" data-testid="hub-dismiss" title="Dismiss" onClick={dismiss}>
+        ×
+      </button>
+    )}
+  </span>
+);
+
+/** The Hubs menu and the status line of the latest hub opening; a home page opens hubs, a remote page links home. */
+const Hubs = ({ client }: { client: HubClient }) => {
+  const [state, setState] = useState(initialHubState);
+  const [open, setOpen] = useState(false);
+  const stateRef = useRef(state);
+  const hosts = client.store.hosts.value;
+  const dispatch = (action: HubAction): void => {
+    const { state: next, effect } = hubStep(stateRef.current, action);
+    stateRef.current = next;
+    setState(next);
+    if (effect?.t === 'navigate') location.assign(effect.url);
+    else if (effect?.t === 'reopen') openHub(effect.host, effect.name);
+  };
+  const openHub = (host: number, name: string): void => {
+    const req = client.openHub(host);
+    if (req !== null) dispatch({ t: 'open', req, host, name });
+  };
+  useEffect(
+    () =>
+      client.onHubOpening((m) => {
+        dispatch({ t: 'reply', m });
+      }),
+    [client],
+  );
+  useEffect(() => {
+    const name = client.requestedHub;
+    if (name === null || client.store.status.value !== 'open' || hosts.length === 0) return;
+    client.requestedHub = null;
+    const host = hosts.find((h) => h.remote && h.name === name);
+    if (host === undefined) dispatch({ t: 'unknown', name });
+    else openHub(host.idx, host.name);
+  }, [hosts]);
+  const entries = hubsMenu(client.remote, hosts);
+  const pick = (target: HubTarget): void => {
+    setOpen(false);
+    if (target.t === 'navigate') location.assign(target.url);
+    else if (target.t === 'open') openHub(target.host, target.name);
+  };
+  const install = (): void => {
+    const pending = stateRef.current.line;
+    const host = hosts.find((h) => h.remote && h.name === pending?.name);
+    const req = host === undefined ? null : client.installHub(host.idx);
+    if (host !== undefined && req !== null) dispatch({ t: 'install', req, host: host.idx, name: host.name });
+  };
+  return (
+    <>
+      {state.line !== null && (
+        <HubStatus
+          line={state.line}
+          install={install}
+          dismiss={() => {
+            dispatch({ t: 'dismiss' });
+          }}
+        />
+      )}
+      {entries !== null && (
+        <span
+          class="hubs"
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return;
+            event.stopPropagation();
+            setOpen(false);
+          }}
+        >
+          <button
+            type="button"
+            class="hubs-menu"
+            data-testid="hubs-menu"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(!open);
+            }}
+          >
+            Hubs
+          </button>
+          {open && (
+            <div class="hubs-list" role="menu">
+              {entries.map((entry) => (
+                <button
+                  key={entry.label}
+                  type="button"
+                  role="menuitem"
+                  class={entry.marked ? 'hubs-entry marked' : 'hubs-entry'}
+                  data-testid="hubs-entry"
+                  aria-current={entry.marked ? 'true' : undefined}
+                  onClick={() => {
+                    pick(entry.target);
+                  }}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </span>
+      )}
+    </>
   );
 };
 
@@ -1104,6 +1233,7 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
           + Add repo
         </button>
         <span class="spacer" />
+        <Hubs client={client} />
         {status === 'reconnecting' && (
           <span class="reconnecting" data-testid="reconnecting">
             Reconnecting…

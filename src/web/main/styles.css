@@ -97,6 +97,52 @@ input:focus-visible,
   margin-right: 8px;
 }
 
+.hubs {
+  position: relative;
+}
+
+.hubs-list {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--panel-raised);
+  border: 1px solid #3a414c;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+}
+
+.hubs-entry {
+  text-align: left;
+}
+
+.hubs-entry.marked {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.hub-status {
+  margin-right: 8px;
+}
+
+.hub-status button,
+.hub-status a.button {
+  margin-left: 6px;
+  border-color: var(--text);
+}
+
+.hub-status a.button {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid var(--text);
+  padding: 5px 9px;
+  border-radius: 5px;
+}
+
 .banner {
   padding: 6px 10px;
   background: #5a1d1d;

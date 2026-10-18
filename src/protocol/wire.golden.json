@@ -1,7 +1,7 @@
 {
   "protocolVersions": {
     "daemon": 6,
-    "browser": 9
+    "browser": 10
   },
   "constants": {
     "MAX_FRAME": 16777216,
@@ -2013,6 +2013,56 @@
           "properties": {
             "t": {
               "type": "string",
+              "const": "openHub"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "host": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "host"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "installHub"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "host": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "host"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
               "const": "addPreset"
             },
             "req": {
@@ -3252,7 +3302,9 @@
                 "version-mismatch",
                 "not-a-repo",
                 "host-unavailable",
-                "internal"
+                "internal",
+                "hub-outdated",
+                "hub-failed"
               ]
             },
             "message": {
@@ -3301,6 +3353,56 @@
             "req",
             "host",
             "repos"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "hubLogin"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "login": {
+              "type": "string",
+              "maxLength": 1024,
+              "format": "starts_with",
+              "pattern": "^https:\\/\\/login\\.tailscale\\.com\\/.*"
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "login"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "const": "hubOpened"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "url": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "url"
           ],
           "additionalProperties": false
         }
@@ -3690,6 +3792,16 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"openHub\",\"req\":10,\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"installHub\",\"req\":11,\"host\":65535}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
       "valid": false
     },
@@ -3831,6 +3943,31 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubLogin\",\"req\":4,\"login\":\"https://login.tailscale.com/a/abc123\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":5,\"url\":\"http://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box,gpu\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":6,\"url\":\"http://127.0.0.1:65535/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&home=1024&hubs=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":7,\"host\":1,\"code\":\"hub-outdated\",\"message\":\"wtd on box is missing or too old to serve its hub\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":8,\"host\":2,\"code\":\"hub-failed\",\"message\":\"ssh: Could not resolve hostname box: Name or service not known\"}",
       "valid": false
     },
     {
@@ -4121,6 +4258,66 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"openHub\",\"req\":1}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"openHub\",\"req\":1,\"host\":65536}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"installHub\",\"req\":1,\"host\":1,\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubLogin\",\"req\":1,\"login\":\"https://login.tailscale.com.evil/a/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://evil.example:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"https://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:80/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:7418/x#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"javascript:alert(1)\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-outdated\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-failed\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":1,\"code\":\"hub-gone\",\"message\":\"x\"}",
       "valid": false
     },
     {
@@ -4455,6 +4652,16 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"openHub\",\"req\":10,\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"installHub\",\"req\":11,\"host\":65535}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
       "valid": false
     },
@@ -4596,6 +4803,31 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubLogin\",\"req\":4,\"login\":\"https://login.tailscale.com/a/abc123\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":5,\"url\":\"http://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box,gpu\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":6,\"url\":\"http://127.0.0.1:65535/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&home=1024&hubs=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":7,\"host\":1,\"code\":\"hub-outdated\",\"message\":\"wtd on box is missing or too old to serve its hub\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":8,\"host\":2,\"code\":\"hub-failed\",\"message\":\"ssh: Could not resolve hostname box: Name or service not known\"}",
       "valid": false
     },
     {
@@ -4886,6 +5118,66 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"openHub\",\"req\":1}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"openHub\",\"req\":1,\"host\":65536}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"installHub\",\"req\":1,\"host\":1,\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubLogin\",\"req\":1,\"login\":\"https://login.tailscale.com.evil/a/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://evil.example:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"https://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:80/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:7418/x#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"javascript:alert(1)\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-outdated\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-failed\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":1,\"code\":\"hub-gone\",\"message\":\"x\"}",
       "valid": false
     },
     {
@@ -5220,6 +5512,16 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"openHub\",\"req\":10,\"host\":1}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"installHub\",\"req\":11,\"host\":65535}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
       "valid": false
     },
@@ -5361,6 +5663,31 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubLogin\",\"req\":4,\"login\":\"https://login.tailscale.com/a/abc123\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":5,\"url\":\"http://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box,gpu\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":6,\"url\":\"http://127.0.0.1:65535/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&home=1024&hubs=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":7,\"host\":1,\"code\":\"hub-outdated\",\"message\":\"wtd on box is missing or too old to serve its hub\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":8,\"host\":2,\"code\":\"hub-failed\",\"message\":\"ssh: Could not resolve hostname box: Name or service not known\"}",
       "valid": false
     },
     {
@@ -5651,6 +5978,66 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"openHub\",\"req\":1}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"openHub\",\"req\":1,\"host\":65536}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"installHub\",\"req\":1,\"host\":1,\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubLogin\",\"req\":1,\"login\":\"https://login.tailscale.com.evil/a/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://evil.example:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"https://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:80/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:7418/x#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"javascript:alert(1)\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-outdated\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-failed\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":1,\"code\":\"hub-gone\",\"message\":\"x\"}",
       "valid": false
     },
     {
@@ -5985,6 +6372,16 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"openHub\",\"req\":10,\"host\":1}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"installHub\",\"req\":11,\"host\":65535}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"token\",\"token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
       "valid": true
     },
@@ -6126,6 +6523,31 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubLogin\",\"req\":4,\"login\":\"https://login.tailscale.com/a/abc123\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":5,\"url\":\"http://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box,gpu\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":6,\"url\":\"http://127.0.0.1:65535/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&home=1024&hubs=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":7,\"host\":1,\"code\":\"hub-outdated\",\"message\":\"wtd on box is missing or too old to serve its hub\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":8,\"host\":2,\"code\":\"hub-failed\",\"message\":\"ssh: Could not resolve hostname box: Name or service not known\"}",
       "valid": true
     },
     {
@@ -6416,6 +6838,66 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":1,\"name\":\"box\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/x\",\"repos\":[]}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"openHub\",\"req\":1}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"openHub\",\"req\":1,\"host\":65536}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"installHub\",\"req\":1,\"host\":1,\"force\":true}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubLogin\",\"req\":1,\"login\":\"https://login.tailscale.com.evil/a/x\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://evil.example:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"https://127.0.0.1:7418/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:80/#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"http://127.0.0.1:7418/x#code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"hubOpened\",\"req\":1,\"url\":\"javascript:alert(1)\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-outdated\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"hub-failed\",\"message\":\"x\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":1,\"host\":1,\"code\":\"hub-gone\",\"message\":\"x\"}",
       "valid": false
     }
   ]

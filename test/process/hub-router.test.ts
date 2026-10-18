@@ -1524,11 +1524,12 @@ describe('opening a remote hub', () => {
     ssh.addHost('box').plantWtd(String.raw`head -c 5000 /dev/zero | tr '\000' x; exec sleep 600`);
     configure([{ name: 'box', ssh: 'box' }]);
     const client = await host.session();
-    const pending = openHub(client, 1);
-    const run = await livePrintCode();
-    const reply = await pending;
+    // The run is killed as soon as its output passes the limit, too soon to be seen alive reliably.
+    const reply = await openHub(client, 1);
     expect(reply.m).toMatchObject({ t: 'error', req: 1, host: 1, code: 'hub-failed' });
-    await waitUntil(() => !alive(run), 'the print-code run to be killed', 5000);
+    const [run] = printCodeRuns();
+    expect(run).toBeDefined();
+    await waitUntil(() => !alive(run?.pid ?? 0), 'the print-code run to be killed', 5000);
   });
 
   it('answers hub-failed once the probe through the forward outlasts WTD_HUB_PROBE_MS', async () => {

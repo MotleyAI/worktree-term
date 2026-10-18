@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keptRemote, pageTitle, readFragment, type PageFragment, type RemotePage } from './page.js';
+import { homePageUrl, keptRemote, pageTitle, readFragment, type PageFragment, type RemotePage } from './page.js';
 
 const CODE = '0123456789abcdef'.repeat(4);
 const OTHER = 'f'.repeat(64);
@@ -106,5 +106,16 @@ describe('pageTitle', () => {
 
   it('titles a remote page by its host', () => {
     expect(pageTitle({ host: 'devbox', home: 7417, hubs: ['devbox'] })).toBe('worktree-term — devbox');
+  });
+});
+
+describe('homePageUrl', () => {
+  it('links the home hub’s page without a fragment', () => {
+    expect(homePageUrl(7417, null)).toBe('http://127.0.0.1:7417/');
+  });
+
+  it('asks the home hub to open a host’s hub', () => {
+    expect(homePageUrl(7417, 'gpu')).toBe('http://127.0.0.1:7417/#hub=gpu');
+    expect(readFragment('#hub=gpu')).toEqual({ kind: 'home', code: null, hub: 'gpu' });
   });
 });

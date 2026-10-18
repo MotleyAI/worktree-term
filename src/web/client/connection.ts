@@ -14,6 +14,7 @@ import {
 } from '../../protocol/index.js';
 import { reconnectDelay } from './backoff.js';
 import { hostKey, TerminalMemory, type TerminalStorage } from './memory.js';
+import { keptRemote, readFragment, type RemotePage } from './page.js';
 import { PendingRequests } from './requests.js';
 import { checkBundle } from './stale.js';
 import { HubStore } from './store.js';
@@ -30,9 +31,12 @@ export type DaemonRequestBody = Unnumbered<Extract<DaemonMessage, { req: number 
 export type DaemonNotice = Exclude<DaemonMessage, { req: number }>;
 /** A successful reply to a daemon request. */
 export type DaemonReply = Extract<DaemonEvent, { t: 'done' | 'termCreated' | 'reposDiscovered' | 'worktreeAtRisk' }>;
+/** What the hub sends about a hub opening or an install for one: a login link, the URL, done or an error. */
+export type HubOpeningMessage = Extract<HubMessage, { t: 'hubLogin' | 'hubOpened' | 'done' | 'error' }>;
 
 type Reply =
-  { ok: true; m: DaemonReply | Extract<HubMessage, { t: 'done' | 'reposDiscovered' }> } | { ok: false; code: ErrorCode; message: string };
+  | { ok: true; m: DaemonReply | Extract<HubMessage, { t: 'done' | 'reposDiscovered' | 'hubOpened' }> }
+  | { ok: false; code: ErrorCode; message: string };
 
 /** A request the daemon or the hub answered with an error. */
 export class RequestError extends Error {
@@ -53,7 +57,6 @@ interface Credential {
 
 const TOKEN_KEY = 'wtd.token';
 const RELOADED_KEY = 'wtd.reloadedFor';
-const CODE_FRAGMENT = /^#code=([0-9a-f]{64})$/;
 const SECRET = /^[0-9a-f]{64}$/;
 
 const randomInstance = (): string => {
@@ -92,6 +95,11 @@ export class HubClient {
   private readonly dataListeners = new Set<(host: number, frame: DataFrame) => void>();
   private readonly eventListeners = new Set<(host: number, m: DaemonEvent) => void>();
   private readonly connectedListeners = new Set<(host: number, instance: string, repos: readonly string[]) => void>();
+  private readonly openingListeners = new Set<(m: HubOpeningMessage) => void>();
+  /** The remote hub this page shows, kept across reloads; null on a home page. */
+  remote: RemotePage | null = null;
+  /** The host whose hub the address asked a home page to open. */
+  requestedHub: string | null = null;
   private readonly instance = randomInstance();
   private readonly encoder = new TextEncoder();
   private credential: Credential | null = null;
@@ -107,12 +115,15 @@ export class HubClient {
 
   constructor(private readonly version: string) {}
 
-  /** Takes the one-time code from the address or the stored token, and connects. */
+  /** Takes the fragment from the address, keeping a remote hub's values, then connects with its code or the stored token. */
   start(): void {
-    const code = CODE_FRAGMENT.exec(location.hash)?.[1];
+    const fragment = readFragment(location.hash);
     if (location.hash !== '') history.replaceState(null, '', `${location.pathname}${location.search}`);
+    this.remote = keptRemote(sessionStorage, fragment);
+    if (this.remote === null && fragment.kind === 'home') this.requestedHub = fragment.hub;
+    const code = fragment.kind === 'none' ? null : fragment.code;
     const token = sessionStorage.getItem(TOKEN_KEY);
-    if (code !== undefined) this.credential = { kind: 'code', secret: code };
+    if (code !== null) this.credential = { kind: 'code', secret: code };
     else if (token !== null && SECRET.test(token)) this.credential = { kind: 'token', secret: token };
     if (this.credential === null) {
       this.stop('auth');
@@ -129,6 +140,33 @@ export class HubClient {
     this.eventListeners.add(listener);
   }
 
+  /** Called with each login link, URL, done and error the hub sends for a request. */
+  onHubOpening(listener: (m: HubOpeningMessage) => void): () => void {
+    this.openingListeners.add(listener);
+    return () => {
+      this.openingListeners.delete(listener);
+    };
+  }
+
+  /** Asks the hub to open remote `host`'s hub; its messages reach `onHubOpening`. Null while disconnected. */
+  openHub(host: number): number | null {
+    return this.hubOperation((req) => ({ t: 'openHub', req, host }));
+  }
+
+  /** Asks the hub to install its bundle on remote `host`, leaving its daemon running; its reply reaches `onHubOpening`. */
+  installHub(host: number): number | null {
+    return this.hubOperation((req) => ({ t: 'installHub', req, host }));
+  }
+
+  private hubOperation(message: (req: number) => BrowserMessage): number | null {
+    if (this.ws?.readyState !== WebSocket.OPEN) return null;
+    const { req, reply } = this.pending.add(null);
+    // Its outcome reaches the opening listeners; the pending entry only keeps the req from being reused.
+    reply.catch(() => undefined);
+    this.sendMessage(message(req));
+    return req;
+  }
+
   /** Called whenever a host becomes connected to a daemon instance. */
   onHostConnected(listener: (host: number, instance: string, repos: readonly string[]) => void): void {
     this.connectedListeners.add(listener);
@@ -137,7 +175,7 @@ export class HubClient {
   /** Sends a daemon request to `host`; resolves with its reply, rejects with RequestError or when it cannot complete. */
   async request(host: number, body: DaemonRequestBody): Promise<DaemonReply> {
     const m = await this.exchange(host, (req) => ({ t: 'host', host, m: { ...body, req } }));
-    if ('host' in m) throw new Error(`unexpected hub reply ${m.t}`);
+    if ('host' in m || m.t === 'hubOpened') throw new Error(`unexpected hub reply ${m.t}`);
     return m;
   }
 
@@ -309,18 +347,30 @@ export class HubClient {
         this.daemonEvent(m.host, m.m);
         return;
       case 'done':
+      case 'hubOpened':
+        this.pending.resolve(m.req, { ok: true, m });
+        this.opening(m);
+        return;
       case 'reposDiscovered':
         this.pending.resolve(m.req, { ok: true, m });
+        return;
+      case 'hubLogin':
+        this.opening(m);
         return;
       case 'error':
         if (m.req === null || !this.pending.resolve(m.req, { ok: false, code: m.code, message: m.message })) {
           this.store.notice.value = `${m.code}: ${m.message}`;
         }
+        if (m.req !== null) this.opening(m);
         return;
       case 'presets':
         this.store.setPresets(m.presets);
         return;
     }
+  }
+
+  private opening(m: HubOpeningMessage): void {
+    for (const listener of this.openingListeners) listener(m);
   }
 
   private hello(m: Extract<HubMessage, { t: 'hello' }>): void {

@@ -22,6 +22,8 @@ export interface RemoteHostConfig {
   name: string;
   /** The SSH alias. */
   ssh: string;
+  /** The local port its hub is forwarded to; null until the hub assigns one. */
+  port: number | null;
   repos: string[];
   roots: string[];
 }
@@ -57,29 +59,43 @@ const roots = z.array(discoveryRootSchema).min(1).max(MAX_ROOTS);
 // eslint-disable-next-line no-control-regex -- control characters are what aliases must not contain
 const SSH_ALIAS = /^[^-\s\u0000-\u0008\u000e-\u001f\u007f][^\s\u0000-\u0008\u000e-\u001f\u007f]*$/;
 
+const port = z.int().min(1024).max(65535);
+
 const remoteHost = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, 'must be 1–64 characters from A–Z, a–z, 0–9, ., _ and -'),
   ssh: z.string().max(255).regex(SSH_ALIAS, 'must not be empty, start with - or contain whitespace or control characters'),
+  port: port.optional(),
   repos: z.array(absolutePath).max(MAX_REPOS).optional(),
   roots: roots.optional(),
 });
 
-const configSchema = z.strictObject({
-  port: z.int().min(1024).max(65535).optional(),
-  repos: z.array(repoPath).max(MAX_REPOS).optional(),
-  roots: roots.optional(),
-  hosts: z
-    .array(remoteHost)
-    .max(MAX_REMOTE_HOSTS)
-    .refine((list) => new Set(list.map((h) => h.name)).size === list.length, 'host names must be unique')
-    .optional(),
-  presets: z
-    .array(presetSchema)
-    .min(1)
-    .max(MAX_PRESETS)
-    .refine((list) => new Set(list.map((p) => p.name)).size === list.length, 'preset names must be unique')
-    .optional(),
-});
+const configSchema = z
+  .strictObject({
+    port: port.optional(),
+    repos: z.array(repoPath).max(MAX_REPOS).optional(),
+    roots: roots.optional(),
+    hosts: z
+      .array(remoteHost)
+      .max(MAX_REMOTE_HOSTS)
+      .refine((list) => new Set(list.map((h) => h.name)).size === list.length, 'host names must be unique')
+      .optional(),
+    presets: z
+      .array(presetSchema)
+      .min(1)
+      .max(MAX_PRESETS)
+      .refine((list) => new Set(list.map((p) => p.name)).size === list.length, 'preset names must be unique')
+      .optional(),
+  })
+  .superRefine((config, ctx) => {
+    const taken = new Set([config.port ?? DEFAULT_PORT]);
+    for (const [i, host] of (config.hosts ?? []).entries()) {
+      if (host.port === undefined) continue;
+      if (taken.has(host.port)) {
+        ctx.addIssue({ code: 'custom', path: ['hosts', i, 'port'], message: 'must differ from the hub port and every other host port' });
+      }
+      taken.add(host.port);
+    }
+  });
 
 const oneLine = (text: string): string => text.replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
 
@@ -115,8 +131,26 @@ export const parseConfig = (text: string | null, home: string): HubConfig => {
     repos: (result.data.repos ?? []).map((repo) => expand(repo, home)),
     roots: result.data.roots ?? [...DEFAULT_ROOTS],
     presets: result.data.presets ?? [...DEFAULT_PRESETS],
-    hosts: (result.data.hosts ?? []).map((h) => ({ name: h.name, ssh: h.ssh, repos: h.repos ?? [], roots: h.roots ?? [...DEFAULT_ROOTS] })),
+    hosts: (result.data.hosts ?? []).map((h) => ({
+      name: h.name,
+      ssh: h.ssh,
+      port: h.port ?? null,
+      repos: h.repos ?? [],
+      roots: h.roots ?? [...DEFAULT_ROOTS],
+    })),
   };
+};
+
+/**
+ * The port for a host without one: above the hub's and every held port, else the lowest free one from 1024;
+ * null when none is free.
+ */
+export const nextHostPort = (hubPort: number, held: readonly number[]): number | null => {
+  const taken = new Set([hubPort, ...held]);
+  const above = Math.max(...taken) + 1;
+  if (above <= 65535) return above;
+  for (let candidate = 1024; candidate <= 65535; candidate++) if (!taken.has(candidate)) return candidate;
+  return null;
 };
 
 /** Reads and parses the configuration at `path`; throws ConfigError naming the file and the problem. */

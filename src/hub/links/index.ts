@@ -5,6 +5,8 @@ import { dial, LineScanner, spawnDetached, sshCommand, StderrTail, tailscaleLogi
 import { installRemote, type InstalledRemote } from '../../platform/install/index.js';
 import { ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
 
+export { forwardToHub, HubOpener, PRINT_CODE_COMMAND, type HubForward, type HubOpening, type HubOpenResult } from './hub.js';
+
 /** The host files a local link needs. */
 export type DaemonPaths = Parameters<typeof dial>[0];
 

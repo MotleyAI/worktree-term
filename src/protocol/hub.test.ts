@@ -56,7 +56,8 @@ describe('print-code line', () => {
   });
 
   it('rejects invalid UTF-8', () => {
-    expect(() => decodePrintCode(new Uint8Array([0xff, 0x0a]))).toThrow(ProtocolError);
+    const bytes = new Uint8Array([0xff, 0x0a]);
+    expect(() => decodePrintCode(bytes)).toThrow(ProtocolError);
   });
 
   it('refuses to encode a value that would not decode', () => {

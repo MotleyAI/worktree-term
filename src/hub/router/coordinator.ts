@@ -1,23 +1,31 @@
-type Kind = 'restart' | 'reinstall';
+type Kind = 'restart' | 'reinstall' | 'install';
 
 interface Run {
   kind: Kind;
   promise: Promise<void>;
 }
 
-/** One host's restart and reinstall operations. */
+/** One host's restart, reinstall and install-only operations. */
 export interface HostOperations {
   restart: () => Promise<void>;
   reinstall: () => Promise<void>;
+  install: () => Promise<void>;
 }
 
+/** The runs a request of each kind shares instead of queueing its own. */
+const SHARES: Readonly<Record<Kind, readonly Kind[]>> = {
+  install: ['install', 'reinstall'],
+  restart: ['restart', 'reinstall'],
+  reinstall: ['reinstall'],
+};
+
 /**
- * Runs one host's restarts and reinstalls one at a time, across sessions: identical requests share
- * a run, a restart shares a running or queued reinstall, and other requests wait for the running one.
+ * Runs one host's operations one at a time, in request order, across sessions: a request shares a
+ * running or queued run it is covered by, and otherwise queues behind every other.
  */
 export class HostCoordinator {
-  private running: Run | null = null;
-  private queued: Run | null = null;
+  /** The running run first, then the queued ones. */
+  private runs: Run[] = [];
 
   constructor(private readonly operations: HostOperations) {}
 
@@ -27,39 +35,30 @@ export class HostCoordinator {
 
   /** The running or queued reinstall, which a restart shares whatever the host's status; null without one. */
   reinstalling(): Promise<void> | null {
-    return [this.running, this.queued].find((run) => run?.kind === 'reinstall')?.promise ?? null;
+    return this.runs.find((run) => run.kind === 'reinstall')?.promise ?? null;
   }
 
   reinstall(): Promise<void> {
     return this.request('reinstall');
   }
 
-  private request(kind: Kind): Promise<void> {
-    const shared = [this.running, this.queued].find((run) => run !== null && (run.kind === kind || run.kind === 'reinstall'));
-    if (shared !== undefined && shared !== null) return shared.promise;
-    if (this.running === null) return this.start(kind).promise;
-    const before = this.running.promise;
-    const queued: Run = {
-      kind,
-      promise: before
-        .catch(() => undefined)
-        .then(() => {
-          this.queued = null;
-          return this.start(kind).promise;
-        }),
-    };
-    this.queued = queued;
-    return queued.promise;
+  install(): Promise<void> {
+    return this.request('install');
   }
 
-  private start(kind: Kind): Run {
+  private request(kind: Kind): Promise<void> {
+    const shared = this.runs.find((run) => SHARES[kind].includes(run.kind));
+    if (shared !== undefined) return shared.promise;
+    const before = this.runs.at(-1)?.promise.catch(() => undefined) ?? Promise.resolve();
     const run: Run = {
       kind,
-      promise: this.operations[kind]().finally(() => {
-        if (this.running === run) this.running = null;
-      }),
+      promise: before
+        .then(() => this.operations[kind]())
+        .finally(() => {
+          this.runs = this.runs.filter((r) => r !== run);
+        }),
     };
-    this.running = run;
-    return run;
+    this.runs.push(run);
+    return run.promise;
   }
 }

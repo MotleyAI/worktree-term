@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { ProtocolError } from './errors.js';
+import { openedUrl } from './hub.js';
+import { parseJson, toText } from './json.js';
 import { layout } from './layout.js';
 import {
   count,
@@ -8,6 +10,7 @@ import {
   errorMessage,
   head,
   hostIdx,
+  hubErrorCode,
   instance,
   loginUrl,
   longText,
@@ -140,6 +143,8 @@ export const messageSchemas = {
     message('discoverRepos', { req, host: hostIdx }),
     message('restartDaemon', { req, host: hostIdx }),
     message('reinstallDaemon', { req, host: hostIdx }),
+    message('openHub', { req, host: hostIdx }),
+    message('installHub', { req, host: hostIdx }),
     message('addPreset', { req, preset }),
     message('removePreset', { req, name: presetName }),
     message('movePreset', {
@@ -158,8 +163,10 @@ export const messageSchemas = {
     message('hosts', { hosts: z.array(hostEntry).max(MAX_HOSTS) }),
     message('presets', { presets: z.array(preset).max(MAX_PRESETS) }),
     message('done', { req }),
-    message('error', { req: req.nullable(), host: hostIdx.nullable(), code: errorCode, message: errorMessage }),
+    message('error', { req: req.nullable(), host: hostIdx.nullable(), code: hubErrorCode, message: errorMessage }),
     message('reposDiscovered', { req, host: hostIdx, repos }),
+    message('hubLogin', { req, login: loginUrl }),
+    message('hubOpened', { req, url: openedUrl }),
   ]),
 };
 
@@ -173,45 +180,6 @@ export type HostEntry = z.infer<typeof hostEntry>;
 export type Terminal = z.infer<typeof terminal>;
 export type AttentionState = z.infer<typeof attentionState>;
 export type Preset = z.infer<typeof preset>;
-
-// No valid message nests deeper; checked before parsing so hostile nesting cannot exhaust the stack.
-const MAX_NESTING = 32;
-
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-
-const nestingOf = (text: string): number => {
-  let level = 0;
-  let max = 0;
-  let inString = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (c === '\\') i++;
-      else if (c === '"') inString = false;
-    } else if (c === '"') inString = true;
-    else if (c === '{' || c === '[') max = Math.max(max, ++level);
-    else if (c === '}' || c === ']') level--;
-  }
-  return max;
-};
-
-const parseJson = (text: string): unknown => {
-  if (nestingOf(text) > MAX_NESTING) throw new ProtocolError('message nests too deep');
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new ProtocolError('invalid JSON', { cause: error });
-  }
-};
-
-const toText = (data: string | Uint8Array): string => {
-  if (typeof data === 'string') return data;
-  try {
-    return utf8.decode(data);
-  } catch (error) {
-    throw new ProtocolError('invalid UTF-8', { cause: error });
-  }
-};
 
 function validate<D extends Direction>(dir: D, value: unknown): MessageOf<D>;
 function validate(dir: Direction, value: unknown): MessageOf<Direction> {

@@ -363,20 +363,23 @@ describe('ConfigEditor assigning host ports', () => {
   it('refuses a host the file does not list, naming it, leaving the file unchanged', async () => {
     write(HOSTS);
     const before = text();
-    await expect(editor().assignPort('nope')).rejects.toThrow(ConfigError);
-    await expect(editor().assignPort('nope')).rejects.toThrow('nope');
+    const edits = editor();
+    await expect(edits.assignPort('nope')).rejects.toThrow(ConfigError);
+    await expect(edits.assignPort('nope')).rejects.toThrow('nope');
     expect(text()).toBe(before);
   });
 
   it('refuses an absent file, which lists no host', async () => {
-    await expect(editor().assignPort('box')).rejects.toThrow(ConfigError);
+    const edits = editor();
+    await expect(edits.assignPort('box')).rejects.toThrow(ConfigError);
     expect(existsSync(path)).toBe(false);
   });
 
   it('refuses an invalid file, leaving it unchanged', async () => {
     write({ theme: 'dark', hosts: [{ name: 'box', ssh: 'box' }] });
     const before = text();
-    await expect(editor().assignPort('box')).rejects.toThrow('theme');
+    const edits = editor();
+    await expect(edits.assignPort('box')).rejects.toThrow('theme');
     expect(text()).toBe(before);
   });
 

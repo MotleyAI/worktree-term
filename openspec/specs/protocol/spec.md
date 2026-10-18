@@ -6,7 +6,7 @@ The wire contract between the browser UI, the hub and every daemon: which messag
 ## Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 6, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 8, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 6, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 9, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -91,7 +91,7 @@ A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main
 ### Requirement: Browser-link message catalogue
 Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63.
 Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable; `reposDiscovered{req, host, repos}`.
-A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instance, repos}` with `status` one of `connecting`, `connected`, `reconnecting`, `down`, `outdated`, and `reason`, `daemonVersion` and `instance` nullable; `instance` SHALL be the `hello.instance` of the daemon the host is `connected` to or found `outdated`, and null in every other status. A preset SHALL be `{name, command}` with `command` nullable.
+A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instance, login, repos}` with `status` one of `connecting`, `connected`, `reconnecting`, `down`, `outdated`, `needs-login`, and `reason`, `daemonVersion`, `instance` and `login` nullable; `instance` SHALL be the `hello.instance` of the daemon the host is `connected` to or found `outdated`, and null in every other status. `login` SHALL be a string of at most 1024 characters starting with `https://login.tailscale.com/`, non-null exactly when `status` is `needs-login`; decoding SHALL reject any other `login`. A preset SHALL be `{name, command}` with `command` nullable.
 
 #### Scenario: Envelope cannot carry a handshake message
 - **WHEN** a browser `host` envelope whose `m` is a `hello` or a `shutdown` is decoded
@@ -127,6 +127,18 @@ A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instan
 
 #### Scenario: Preset position bounded
 - **WHEN** a `movePreset` with `to` −1, 64 or 0.5 is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Needs-login host carries its login URL
+- **WHEN** a `hosts` entry with `status` "needs-login" and `login` "https://login.tailscale.com/a/abc123" is decoded
+- **THEN** decoding succeeds and yields that URL
+
+#### Scenario: Login URL outside Tailscale rejected
+- **WHEN** a `hosts` entry with `status` "needs-login" whose `login` is "http://login.tailscale.com/a/x", "https://login.tailscale.com.evil/a/x", "javascript:alert(1)" or 1025 characters long is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Login present exactly while needs-login
+- **WHEN** a `hosts` entry with `status` "needs-login" and a null `login`, or with `status` "connecting" and a non-null `login`, is decoded
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Request correlation

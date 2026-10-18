@@ -28,7 +28,7 @@ const expectConsistent = (lru: WebglLru<number, FakeAddon>, created: readonly Fa
   const live = created.filter((a) => a.disposed === 0);
   expect(lru.webglKeys().length).toBeLessThanOrEqual(WEBGL_LIMIT);
   expect(live.map((a) => a.key).sort((a, b) => a - b)).toEqual([...lru.webglKeys()].sort((a, b) => a - b));
-  for (const addon of created) expect(addon.disposed).toBeLessThanOrEqual(1);
+  expect(created.filter((a) => a.disposed > 1)).toEqual([]);
 };
 
 describe('WebglLru', () => {

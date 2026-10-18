@@ -28,8 +28,10 @@ export const TID = {
   removeRepo: 'remove-repo',
   /** In the selected repo's area when its watch failed; text holds the error code and the path. */
   repoError: 'repo-error',
-  /** One per `down` or `outdated` host, none for other statuses; `data-host` = host index; text names the host, its status and its reason when present. */
+  /** One per `down`, `outdated` or `needs-login` host, none for other statuses; `data-host` = host index; text names the host, its status and its reason when present. */
   hostBanner: 'host-banner',
+  /** "Open login link" inside a `needs-login` host's banner: `href` = the host's login URL, `target="_blank"`, `rel` with `noopener` and `noreferrer`. */
+  hostLogin: 'host-login',
   /** Button inside a host banner: "Restart daemon" (outdated local), "Reinstall & restart" (outdated remote) or "Install" (down remote); opens the confirmation dialog, then sends `restartDaemon` or `reinstallDaemon`. */
   hostAction: 'host-action',
   /** In-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed; text says every running terminal on the host will be killed when it lists none. */

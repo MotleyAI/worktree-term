@@ -47,12 +47,16 @@ const fileText = (name: string): string => (existsSync(join(dir, name)) ? readFi
 interface Opened {
   link: Link;
   frames: Frame[];
+  logins: string[];
+  loginAt: () => number | null;
   ended: Promise<Error | null>;
   endedAt: () => number | null;
 }
 
 const open = (alias = 'box'): Opened => {
   const frames: Frame[] = [];
+  const logins: string[] = [];
+  let loginAt: number | null = null;
   let at: number | null = null;
   let resolveEnded: (error: Error | null) => void = () => undefined;
   const ended = new Promise<Error | null>((resolve) => {
@@ -60,12 +64,16 @@ const open = (alias = 'box'): Opened => {
   });
   const link = new RemoteDaemon(paths, alias).open({
     frame: (frame) => frames.push(frame),
+    login: (url) => {
+      loginAt ??= Date.now();
+      logins.push(url);
+    },
     ended: (error) => {
       at = Date.now();
       resolveEnded(error);
     },
   });
-  return { link, frames, ended, endedAt: () => at };
+  return { link, frames, logins, loginAt: () => loginAt, ended, endedAt: () => at };
 };
 
 const controlFrame = (text: string): Uint8Array => encodeFrame({ kind: FrameKind.control, payload: new TextEncoder().encode(text) });
@@ -206,5 +214,82 @@ describe('RemoteDaemon', () => {
     link.close();
     await sleep(1500);
     expect(endedAt()).toBeNull();
+  });
+});
+
+const LOGIN_URL = 'https://login.tailscale.com/a/abc123';
+/** Shell lines writing Tailscale's check banner for `url` to standard error. */
+const banner = (url = LOGIN_URL): string =>
+  `printf '%s\\n' '# Tailscale SSH requires an additional check.' '# To authenticate, visit: ${url}' >&2`;
+
+describe('RemoteDaemon Tailscale login', () => {
+  it('reports the login URL within 1 s of SSH writing the banner, keeping the link open', async () => {
+    fakeSsh(`${banner()}\ndate +%s%3N >> "$D/banner"\nexec sleep 30`);
+    const { link, logins, loginAt, endedAt } = open();
+    await waitFor(() => logins.length > 0, 'the login URL', 3000);
+    expect(logins).toEqual([LOGIN_URL]);
+    await waitFor(() => fileText('banner') !== '', 'the banner time');
+    expect((loginAt() ?? Infinity) - Number(fileText('banner').trim())).toBeLessThanOrEqual(1000);
+    await sleep(300);
+    expect(endedAt()).toBeNull();
+    link.close();
+  });
+
+  it('reports a banner whose line arrives in several writes', async () => {
+    fakeSsh(`printf '# To authenticate, vi' >&2; sleep 0.1; printf 'sit: ${LOGIN_URL}\\n' >&2\nexec sleep 30`);
+    const { link, logins } = open();
+    await waitFor(() => logins.length > 0, 'the login URL', 2000);
+    expect(logins).toEqual([LOGIN_URL]);
+    link.close();
+  });
+
+  it('reports a repeated URL once', async () => {
+    fakeSsh(`${banner()}; sleep 0.1; ${banner()}; echo written >> "$D/banner"\nexec sleep 30`);
+    const { link, logins } = open();
+    await waitFor(() => fileText('banner') !== '', 'both banners to be written');
+    await sleep(300);
+    expect(logins).toEqual([LOGIN_URL]);
+    link.close();
+  });
+
+  it('reports no URL outside login.tailscale.com', async () => {
+    fakeSsh(`${banner('https://login.tailscale.com.evil/a/x')}; echo written >> "$D/banner"\nexec sleep 30`);
+    const { link, logins } = open();
+    await waitFor(() => fileText('banner') !== '', 'the banner to be written');
+    await sleep(300);
+    expect(logins).toEqual([]);
+    link.close();
+  });
+
+  it('reports no banner written after the first frame', async () => {
+    writeFileSync(join(dir, 'frame'), controlFrame('{"t":"shutdown"}'));
+    fakeSsh(`cat "$D/frame"; while [ ! -e "$D/go" ]; do sleep 0.02; done; ${banner()}; echo written >> "$D/banner"\nexec sleep 30`);
+    const { link, frames, logins } = open();
+    await waitFor(() => frames.length === 1, 'the first frame');
+    writeFileSync(join(dir, 'go'), '');
+    await waitFor(() => fileText('banner') !== '', 'the banner to be written');
+    await sleep(300);
+    expect(frames).toHaveLength(1);
+    expect(logins).toEqual([]);
+    link.close();
+  });
+
+  it('reports no banner written after close()', async () => {
+    fakeSsh(`cat >/dev/null; ${banner()}; echo written >> "$D/banner"\nexec sleep 30`);
+    const { link, logins } = open();
+    await waitFor(() => fileText('pids') !== '', 'the SSH program to run');
+    link.close();
+    await waitFor(() => fileText('banner') !== '', 'the banner to be written');
+    await sleep(300);
+    expect(logins).toEqual([]);
+  });
+
+  it('reports no banner written after the link ended', async () => {
+    fakeSsh(`exec >&-; sleep 0.6; ${banner()}; echo written >> "$D/banner"\nexec sleep 30`);
+    const { logins, ended } = open();
+    await ended;
+    await waitFor(() => fileText('banner') !== '', 'the banner to be written');
+    await sleep(300);
+    expect(logins).toEqual([]);
   });
 });

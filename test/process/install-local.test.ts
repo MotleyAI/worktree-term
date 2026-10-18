@@ -103,7 +103,7 @@ describe('wtd install-local', () => {
     expect(readdirSync(join(dir, PTY_PACKAGE, 'prebuilds')).length).toBeGreaterThan(0);
     expect(shim(host.home, ['--version'])).toEqual({
       status: 0,
-      stdout: `wtd ${version} (daemon protocol 6, browser protocol 8)\n`,
+      stdout: `wtd ${version} (daemon protocol 6, browser protocol 9)\n`,
       stderr: '',
     });
   });
@@ -150,7 +150,7 @@ describe('wtd install-local', () => {
     await shimDaemon(host.home);
     const pid = await waitUntil(() => daemonPidsOf(host.stateHome)[0], 'the shim daemon');
     expect(readlinkSync(`/proc/${String(pid)}/exe`)).toBe(node);
-    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 8)\n`);
+    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 9)\n`);
   });
 });
 
@@ -179,7 +179,7 @@ describe('launcher', () => {
     expectInstalled(await installLocal([], { HOME: home }));
     const [program, ...args] = desktopExec(iniGroup(readFileSync(installPaths(home).launcher, 'utf8'), 'Desktop Entry').get('Exec') ?? '');
     const result = spawnSync(program ?? '', [...args.slice(0, -1), '--version'], { env: host.env({ HOME: home }), encoding: 'utf8' });
-    expect(result.stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 8)\n`);
+    expect(result.stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 9)\n`);
   });
 
   it('writes no unit file without --systemd', async () => {
@@ -314,7 +314,7 @@ describe('reinstalling', () => {
     const term = await after.create(repo, { command: 'echo after-reinstall; exec sleep 60' });
     await after.attach(term.termId);
     await after.waitOutput(term.termId, 'after-reinstall');
-    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 8)\n`);
+    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 9)\n`);
   });
 
   it('runs the newest release through the shim after a reinstall', async () => {

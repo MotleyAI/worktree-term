@@ -4,6 +4,62 @@ A fast, worktree-centric terminal manager for coding agents. One tab per repo (l
 
 The CLI is `wtd`: a daemon per host owns the PTYs and git watches, and a local hub serves the browser UI and reaches every daemon over one protocol. See `architecture/` for the structure and its principles.
 
+## Architecture
+
+Three running components, all started from the one `wtd` binary:
+
+| Component | Runs | Owns |
+| --- | --- | --- |
+| Daemon (`wtd daemon`) | One per host, independent of any page or hub | The PTYs and their screen mirrors, git worktree watches, and `~/.local/state/worktree-term/state.json`: each worktree's terminal tabs, splits, active tab and checkbox |
+| Hub (`wtd hub`, started by `wtd ui`) | One on the machine you browse from | `~/.config/worktree-term/config.json` (repos, roots, presets, hosts); nothing else |
+| Page | The browser | Rendering (xterm.js) and view preferences in `localStorage`: selected repo, selected worktree per repo, "checked only" filter, name search, sidebar width |
+
+- **The browser talks only to the hub**: the hub serves the page and one WebSocket per page, on `127.0.0.1` only.
+- **The daemon manages the terminals.** A terminal lives until it is closed or its worktree removed; closing the page or restarting the hub does not end it.
+- **Tabs and splits are persisted by the daemon** of the host the worktree is on, so every page sees the same layout. View preferences stay in each browser.
+- For each page, the hub holds one link per host: the daemon's owner-only unix socket locally, `ssh <alias> "$HOME/.local/bin/wtd" connect` remotely. `wtd connect` only bridges SSH's stdio to the remote daemon's socket, starting the daemon if needed.
+
+### One machine
+
+```mermaid
+flowchart LR
+  subgraph machine["Your machine"]
+    page["Page (browser)<br/>xterm.js<br/>localStorage: selection, filters, sidebar width"]
+    hub["Hub<br/>config.json: repos, roots, presets, hosts"]
+    daemon["Daemon<br/>PTYs + screen mirrors, git watches<br/>state.json: tabs, splits, checkboxes"]
+    ptys["Shells and agents in PTYs"]
+    repos[("Repos and worktrees")]
+    page -- "WebSocket, 127.0.0.1:7417" --> hub
+    hub -- "unix socket run/HOST.sock" --> daemon
+    daemon --> ptys
+    daemon -. "watches" .-> repos
+  end
+```
+
+### Two machines over SSH
+
+The browser and hub run on your laptop; the remote host `devbox` contributes only its daemon. A hub's repo tabs, including a remote host's, come from its own `config.json`, so a hub on `devbox` plays no part.
+
+```mermaid
+flowchart LR
+  subgraph laptop["laptop (where you browse)"]
+    page["Page (browser)<br/>localStorage: selection, filters, sidebar width"]
+    hub["Hub<br/>config.json: hosts: devbox + its repos"]
+    localDaemon["Daemon<br/>the laptop's terminals<br/>state.json"]
+    page -- "WebSocket, 127.0.0.1:7417" --> hub
+    hub -- "unix socket" --> localDaemon
+  end
+  subgraph devbox["devbox"]
+    connect["wtd connect<br/>stdio bridge"]
+    remoteDaemon["Daemon<br/>devbox's terminals, git watches<br/>state.json: tabs, splits, checkboxes"]
+    otherHub["Its own hub and config.json<br/>(not used by the laptop)"]
+    connect -- "unix socket" --> remoteDaemon
+  end
+  hub -- "ssh devbox wtd connect<br/>one control master per host;<br/>a Tailscale check's login link is shown on the page" --> connect
+  classDef unused stroke-dasharray: 4 4,color:#888;
+  class otherHub unused;
+```
+
 ## Installation
 
 Requires Linux and Node 20 or later. From a checkout, `pnpm build`, then:
@@ -49,7 +105,7 @@ wtd install-remote devbox --node /opt/node22/bin/node
 
 or with "Install" on the page while the host is down. The remote gets the same layout as `wtd install-local`, without launcher or unit. Its shim runs the Node found at install time, so `"$HOME/.local/bin/wtd" connect` works over plain `ssh` with no dotfile changes.
 
-Each browser session holds one `ssh <alias> "$HOME/.local/bin/wtd" connect` per remote host, multiplexed over one SSH control master per host (`ControlPersist=10m`); a lost link reconnects to the same daemon and keeps its terminals. A host that keeps failing shows as down with SSH's last error line. sshd's `MaxSessions` (default 10) caps the sessions of one master: each open page uses one per host, plus a brief one for each "Add repo" or "Remove repo". When a host's running daemon speaks an older daemon protocol than its installed `wtd` (whose protocol `wtd --version` prints; it does not ask the running daemon), the page offers "Restart daemon" (this machine) or "Reinstall & restart" (a remote host), naming the terminals that will be killed. `WTD_SSH` replaces the `ssh` program.
+Each browser session holds one `ssh <alias> "$HOME/.local/bin/wtd" connect` per remote host, multiplexed over one SSH control master per host (`ControlPersist=10m`); a lost link reconnects to the same daemon and keeps its terminals. A host that keeps failing shows as down with SSH's last error line. A host reached over Tailscale SSH whose check has expired shows "needs Tailscale login" with an "Open login link" button; approving the check there connects every open page. sshd's `MaxSessions` (default 10) caps the sessions of one master: each open page uses one per host, plus a brief one for each "Add repo" or "Remove repo". When a host's running daemon speaks an older daemon protocol than its installed `wtd` (whose protocol `wtd --version` prints; it does not ask the running daemon), the page offers "Restart daemon" (this machine) or "Reinstall & restart" (a remote host), naming the terminals that will be killed. `WTD_SSH` replaces the `ssh` program.
 
 ## Keyboard
 

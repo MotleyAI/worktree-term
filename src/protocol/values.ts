@@ -33,6 +33,8 @@ export const instance = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 export const secret = z.string().regex(/^[0-9a-f]{64}$/);
 export const errorMessage = z.string().max(1024);
 export const reason = errorMessage.nullable();
+/** A Tailscale SSH check login URL. */
+export const loginUrl = z.string().max(1024).startsWith('https://login.tailscale.com/');
 export const errorCode = z.enum([
   'bad-message',
   'unknown-host',

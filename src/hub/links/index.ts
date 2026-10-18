@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { connect, type Socket } from 'node:net';
 import type { Readable, Writable } from 'node:stream';
-import { dial, spawnDetached, sshCommand, StderrTail } from '../../platform/dialer/index.js';
+import { dial, LineScanner, spawnDetached, sshCommand, StderrTail, tailscaleLoginUrl } from '../../platform/dialer/index.js';
 import { installRemote, type InstalledRemote } from '../../platform/install/index.js';
 import { ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
 
@@ -14,6 +14,8 @@ export const CONNECT_COMMAND = '"$HOME/.local/bin/wtd" connect';
 export interface LinkEvents {
   /** A frame from the daemon. */
   frame: (frame: Frame) => void;
+  /** Before the first frame: SSH waits for its Tailscale check to be approved at `url`. Once per URL. */
+  login?: (url: string) => void;
   /** The link ended: the dial failed, the connection closed, or the daemon sent a malformed stream. Called once. */
   ended: (error: Error | null) => void;
 }
@@ -151,6 +153,9 @@ class ProcessLink implements Link {
   private readonly child: SshProcess;
   private readonly decoder = new StreamDecoder();
   private readonly tail = new StderrTail();
+  private readonly lines = new LineScanner();
+  private framed = false;
+  private login: string | null = null;
   private exit: string | null = null;
   private stderrDone = false;
   private grace: ReturnType<typeof setTimeout> | null = null;
@@ -169,6 +174,9 @@ class ProcessLink implements Link {
     });
     this.child.stdout.once('end', () => {
       this.lost();
+    });
+    this.child.stderr.on('data', (chunk: Buffer) => {
+      this.scan(chunk);
     });
     this.tail.follow(this.child.stderr, () => {
       this.child.kill('SIGTERM');
@@ -234,9 +242,21 @@ class ProcessLink implements Link {
       this.finish(error);
       return;
     }
+    if (frames.length > 0) this.framed = true;
     for (const frame of frames) {
       if (this.closed || this.finished) return;
       this.events.frame(frame);
+    }
+  }
+
+  /** Reports a Tailscale check login URL on standard error while no frame has arrived. */
+  private scan(chunk: Uint8Array): void {
+    if (this.framed || this.closed || this.finished) return;
+    for (const line of this.lines.push(chunk)) {
+      const url = tailscaleLoginUrl(line);
+      if (url === null || url === this.login) continue;
+      this.login = url;
+      this.events.login?.(url);
     }
   }
 

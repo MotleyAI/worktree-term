@@ -2,7 +2,7 @@ import { DAEMON_PROTOCOL_VERSION, type DataFrame, type MessageOf } from '../../p
 import { ConfigEditor, ConfigSource, type ConfigSnapshot, type HubConfig } from '../config/index.js';
 import { installOnRemote, LocalDaemon, RemoteDaemon, type DaemonEndpoint, type DaemonPaths } from '../links/index.js';
 import { HostCoordinator } from './coordinator.js';
-import { localHostName } from './hosts.js';
+import { hostKey, localHostName } from './hosts.js';
 import { DaemonRestarter } from './restart.js';
 import { Session, type BrowserChannel, type SessionContext, type SessionHost } from './session.js';
 
@@ -79,6 +79,9 @@ export class Router {
       presetsEdited: (presets) => {
         for (const session of this.sessions) session.showPresets(presets);
       },
+      greeted: (host, from) => {
+        for (const session of this.sessions) if (session !== from) session.redialLogin(host);
+      },
     };
   }
 
@@ -102,7 +105,7 @@ export class Router {
   }
 
   private coordinator(host: SessionHost): HostCoordinator {
-    const key = host.ssh === null ? 'local' : `remote:${host.name}:${host.ssh}`;
+    const key = hostKey(host);
     let coordinator = this.coordinators.get(key);
     if (coordinator === undefined) {
       const restarter = new DaemonRestarter(this.endpoint(host), this.hello);

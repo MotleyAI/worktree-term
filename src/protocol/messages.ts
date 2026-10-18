@@ -9,6 +9,7 @@ import {
   head,
   hostIdx,
   instance,
+  loginUrl,
   longText,
   MAX_DISCOVERED,
   MAX_ENTRIES,
@@ -111,16 +112,22 @@ const daemonEvents = [
   }),
 ] as const;
 
-const hostEntry = z.strictObject({
-  idx: hostIdx,
-  name,
-  remote: z.boolean(),
-  status: z.enum(['connecting', 'connected', 'reconnecting', 'down', 'outdated']),
-  reason,
-  daemonVersion: version.nullable(),
-  instance: instance.nullable(),
-  repos: z.array(path).max(MAX_HOST_REPOS),
-});
+const hostEntry = z
+  .strictObject({
+    idx: hostIdx,
+    name,
+    remote: z.boolean(),
+    status: z.enum(['connecting', 'connected', 'reconnecting', 'down', 'outdated', 'needs-login']),
+    reason,
+    daemonVersion: version.nullable(),
+    instance: instance.nullable(),
+    login: loginUrl.nullable(),
+    repos: z.array(path).max(MAX_HOST_REPOS),
+  })
+  .refine((entry) => (entry.login !== null) === (entry.status === 'needs-login'), {
+    message: 'login is set exactly while needs-login',
+    path: ['login'],
+  });
 
 export const messageSchemas = {
   clientToDaemon: z.discriminatedUnion('t', [hello, shutdown, ...daemonRequests]),

@@ -14,7 +14,7 @@ import {
 import { ConfigError, type ConfigSnapshot, type PresetEdit, type RepoEdit } from '../config/index.js';
 import type { DaemonEndpoint, Link } from '../links/index.js';
 import type { HostCoordinator } from './coordinator.js';
-import { hostTransition, initialHostState, retryDelay, type HostEvent, type HostState } from './hosts.js';
+import { hostKey, hostTransition, initialHostState, retryDelay, type HostEvent, type HostState } from './hosts.js';
 import { OneShotError, requestOnce } from './oneshot.js';
 import { controlFrame } from './restart.js';
 
@@ -59,6 +59,8 @@ export interface SessionContext {
   ) => Promise<PresetEdit>;
   /** Shows the presets after an edit to every session. */
   presetsEdited: (presets: Preset[]) => void;
+  /** A link of session `from` to `host` exchanged hello: redials the other sessions' links to it that need login. */
+  greeted?: (host: SessionHost, from: Session) => void;
 }
 
 /** Depth of hub-level repo discovery. */
@@ -116,6 +118,9 @@ class HostLink {
           this.greet(frame);
         } else if (this.state.status === 'connected') this.relay(frame);
       },
+      login: (url) => {
+        if (this.link === link) this.transition({ kind: 'login', url });
+      },
       ended: (error) => {
         if (this.link === link) this.lost(error?.message ?? 'the link to the daemon ended');
       },
@@ -145,6 +150,16 @@ class HostLink {
     this.link = null;
   }
 
+  /** Replaces a link that needs login by a new one at once; links in other statuses are left alone. */
+  redial(): void {
+    if (this.closed || this.state.status !== 'needs-login') return;
+    if (this.retry !== null) clearTimeout(this.retry);
+    this.link?.close();
+    this.link = null;
+    this.transition({ kind: 'redial' });
+    this.connect();
+  }
+
   private greet(frame: Frame): void {
     const hello = this.decode(frame);
     if (hello?.t !== 'hello') {
@@ -153,6 +168,7 @@ class HostLink {
     }
     this.link?.send(controlFrame(this.hello));
     this.transition({ kind: 'hello', protocol: hello.protocol, version: hello.version, instance: hello.instance });
+    this.session.greeted(this.host);
   }
 
   private relay(frame: Frame): void {
@@ -311,6 +327,18 @@ export class Session {
     for (const host of this.hosts) host.close();
   }
 
+  /** One of this session's links to `host` exchanged hello. */
+  greeted(host: SessionHost): void {
+    this.context.greeted?.(host, this);
+  }
+
+  /** Redials this session's link to `host` if it needs login. */
+  redialLogin(host: SessionHost): void {
+    if (this.closed) return;
+    const key = hostKey(host);
+    for (const target of this.hosts) if (hostKey(target.host) === key) target.redial();
+  }
+
   /** Sends a daemon message, given as its JSON text, inside a `host` envelope. */
   forwardText(host: number, text: string): void {
     this.send(`{"t":"host","host":${String(host)},"m":${text}}`);
@@ -330,6 +358,7 @@ export class Session {
       reason: state.reason,
       daemonVersion: state.daemonVersion,
       instance: state.instance,
+      login: state.login,
       repos: host.repos,
     }));
     this.message({ t: 'hosts', hosts });

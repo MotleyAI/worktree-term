@@ -9,34 +9,44 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # tsc, ESLint, la-arch-check, LikeC4 and the structure and dependency rules.
+  architecture:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: pnpm
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-      # la-arch-check (run by the architecture tests) and its TypeScript twin, which is not on npm.
-      - run: uv tool install --no-build living-architecture==0.3.1
-      - run: |
-          twin="$RUNNER_TEMP/living-architecture"
-          git init -q "$twin"
-          git -C "$twin" fetch -q --depth 1 https://github.com/MotleyAI/living-architecture.git 15ed4263ccce08513535aae077c8e7ba7363571d # v0.3.1
-          git -C "$twin" checkout -q FETCH_HEAD
-          cd "$twin/node"
-          npm ci --ignore-scripts
-          npm run build
-          mkdir "$twin/bin"
-          for file in dist/bin/*.js; do ln -s "$PWD/$file" "$twin/bin/$(basename "$file" .js)"; done
-          echo "$twin/bin" >> "$GITHUB_PATH"
-      - run: git config --global user.name ci && git config --global user.email ci@example.com
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+          arch-tools: 'true'
+      - run: pnpm exec vitest run --project architecture
+
+  vitest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec vitest run --project unit --project process --shard=${{ matrix.shard }}/2
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
       # The perf budgets need hardware WebGL, which hosted runners lack; `pnpm test` runs them locally.
-      - run: pnpm test:ci
+      - run: pnpm exec playwright test --project e2e --shard=${{ matrix.shard }}/2

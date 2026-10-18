@@ -149,7 +149,9 @@ describe('stream framing', () => {
     const got: Frame[] = [];
     for (let at = 0; at < bytes.length; at += 1000) got.push(...decoder.push(bytes.subarray(at, at + 1000)));
     decoder.end();
-    expect(got).toEqual([{ kind: 2, payload }]);
+    // toEqual walks a typed array element by element, which takes seconds on a loaded machine.
+    expect(got.map((frame) => [frame.kind, frame.payload.length])).toEqual([[2, payload.length]]);
+    expect(got[0]?.payload.findIndex((byte, i) => byte !== payload[i])).toBe(-1);
   });
 
   it('fails on an unknown kind', () => {

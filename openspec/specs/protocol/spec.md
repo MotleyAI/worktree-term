@@ -297,7 +297,7 @@ On a stream, an output or snapshot payload SHALL be a 4-byte terminal id, an 8-b
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Shared constants
-The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 6; `BROWSER_PROTOCOL_VERSION` = 8; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
+The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 6; `BROWSER_PROTOCOL_VERSION` = 10; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
 
 #### Scenario: Constants hold their values
 - **WHEN** the exported constants are read

@@ -34,7 +34,7 @@ export const alive = (pid: number): boolean => {
 };
 
 /** Live pids whose argv and environment satisfy `matches`. */
-const livePidsWhere = (matches: (cmdline: string[], environ: string[]) => boolean): number[] => {
+export const livePidsWhere = (matches: (cmdline: string[], environ: string[]) => boolean): number[] => {
   const pids: number[] = [];
   for (const name of readdirSync('/proc')) {
     if (!/^\d+$/.test(name)) continue;

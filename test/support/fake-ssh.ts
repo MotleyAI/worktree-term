@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { DaemonClient, type EventOf } from './daemon-client.js';
-import { alive, hostFileName, waitUntil, type DaemonHost, type Exit } from './daemon-host.js';
+import { alive, hostFileName, livePidsWhere, waitUntil, type DaemonHost, type Exit } from './daemon-host.js';
 
 const QUOTED_QUOTE = String.raw`'\''`;
 
@@ -326,15 +326,41 @@ export class FakeSsh {
   }
 
   async cleanup(): Promise<void> {
-    for (const call of this.calls()) {
+    this.killRuns();
+    await Promise.all(this.remotes.map((remote) => remote.cleanup()));
+    // rmSync empties a directory once and then retries only removing it, so a call recorded meanwhile fails it
+    // for good: retry the whole removal, killing runs that started since.
+    await waitUntil(
+      () => {
+        this.killRuns();
+        try {
+          rmSync(this.dir, { recursive: true, force: true });
+          return true;
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOTEMPTY') return false;
+          throw error;
+        }
+      },
+      'the fake SSH directory to go',
+      10_000,
+    );
+  }
+
+  /** Kills every live run, including those that have not recorded their call yet. */
+  private killRuns(): void {
+    let recorded: number[] = [];
+    try {
+      recorded = this.calls().map((call) => call.pid);
+    } catch {
+      // Removed while we read it.
+    }
+    for (const pid of [...recorded, ...livePidsWhere((cmdline) => cmdline[1] === this.program)]) {
       try {
-        if (alive(call.pid)) process.kill(call.pid, 'SIGKILL');
+        if (alive(pid)) process.kill(pid, 'SIGKILL');
       } catch {
         // Already gone.
       }
     }
-    await Promise.all(this.remotes.map((remote) => remote.cleanup()));
-    rmSync(this.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 
   private writeHost(alias: string, values: Record<string, string>): void {

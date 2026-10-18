@@ -311,8 +311,10 @@ describe('reinstalling', () => {
     const after = await client();
     expect((await after.waitFor('hello')).instance).toBe(instance);
     await after.watch(repo);
-    const term = await after.create(repo, { command: 'echo after-reinstall; exec sleep 60' });
+    // Held until attached: waitOutput sees only output that follows the snapshot.
+    const term = await after.create(repo, { command: 'read -r _; echo after-reinstall; exec sleep 60' });
     await after.attach(term.termId);
+    after.sendInput(term.termId, '\r');
     await after.waitOutput(term.termId, 'after-reinstall');
     expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 6, browser protocol 10)\n`);
   });

@@ -42,9 +42,9 @@ flowchart TD
 ## Principles
 
 1. `worktrees`, `terminals` and `state` never import each other; only `server` and `main` compose them. [enforced: arch_check:model-truth]
-2. Its only listener is its owner-only unix socket. [enforced: test:test/process/daemon-server.test.ts]
-3. A PTY ends only by `closeTerm`, `removeWorktree` of its worktree, process exit or `shutdown`, never by a client leaving. [enforced: test:test/process/daemon-terminals.test.ts] [enforced: test:test/process/daemon-worktrees.test.ts]
-4. PTY output is never dropped; backpressure pauses the PTY. [enforced: test:src/daemon/terminals/flow.test.ts] [enforced: test:test/process/daemon-terminals.test.ts]
-5. An attach yields a snapshot and then live output with no gap and no duplicate byte. [enforced: test:test/process/daemon-terminals.test.ts]
+2. Its only listener is its owner-only unix socket. [enforced: test:test/process/daemon-server-startup.test.ts]
+3. A PTY ends only by `closeTerm`, `removeWorktree` of its worktree, process exit or `shutdown`, never by a client leaving. [enforced: test:test/process/daemon-terminals-lifecycle.test.ts] [enforced: test:test/process/daemon-worktrees.test.ts]
+4. PTY output is never dropped; backpressure pauses the PTY. [enforced: test:src/daemon/terminals/flow.test.ts] [enforced: test:test/process/daemon-terminals-output.test.ts]
+5. An attach yields a snapshot and then live output with no gap and no duplicate byte. [enforced: test:test/process/daemon-terminals-output.test.ts]
 6. Worktree changes are observed by events, never by polling. [review]
 7. Persisted state references no worktree that is gone and has no terminals. [enforced: test:src/daemon/state/store.test.ts]

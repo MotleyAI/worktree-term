@@ -38,24 +38,24 @@ flowchart LR
 
 ### Two machines over SSH
 
-The browser and hub run on `calamity`; `confustication` contributes only its daemon. A hub's repo tabs, including a remote host's, come from its own `config.json`, so a hub on `confustication` plays no part.
+The browser and hub run on your laptop; the remote host `devbox` contributes only its daemon. A hub's repo tabs, including a remote host's, come from its own `config.json`, so a hub on `devbox` plays no part.
 
 ```mermaid
 flowchart LR
-  subgraph calamity["calamity (where you browse)"]
+  subgraph laptop["laptop (where you browse)"]
     page["Page (browser)<br/>localStorage: selection, filters, sidebar width"]
-    hub["Hub<br/>config.json: hosts: confustication + its repos"]
-    localDaemon["Daemon<br/>calamity's terminals<br/>state.json"]
+    hub["Hub<br/>config.json: hosts: devbox + its repos"]
+    localDaemon["Daemon<br/>the laptop's terminals<br/>state.json"]
     page -- "WebSocket, 127.0.0.1:7417" --> hub
     hub -- "unix socket" --> localDaemon
   end
-  subgraph confustication["confustication"]
+  subgraph devbox["devbox"]
     connect["wtd connect<br/>stdio bridge"]
-    remoteDaemon["Daemon<br/>confustication's terminals, git watches<br/>state.json: tabs, splits, checkboxes"]
-    otherHub["Its own hub and config.json<br/>(not used by calamity)"]
+    remoteDaemon["Daemon<br/>devbox's terminals, git watches<br/>state.json: tabs, splits, checkboxes"]
+    otherHub["Its own hub and config.json<br/>(not used by the laptop)"]
     connect -- "unix socket" --> remoteDaemon
   end
-  hub -- "ssh confustication wtd connect<br/>one control master per host;<br/>a Tailscale check's login link is shown on the page" --> connect
+  hub -- "ssh devbox wtd connect<br/>one control master per host;<br/>a Tailscale check's login link is shown on the page" --> connect
   classDef unused stroke-dasharray: 4 4,color:#888;
   class otherHub unused;
 ```

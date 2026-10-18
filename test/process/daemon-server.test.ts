@@ -276,8 +276,16 @@ describe('bounded connection queue', () => {
       await sleep(250);
       peak = Math.max(peak, residentBytes(daemon.pid));
     }
+    // Waits for the volume rather than timing it: a loaded machine slows `yes`, not only a blocked PTY.
+    await waitUntil(
+      () => {
+        peak = Math.max(peak, residentBytes(daemon.pid));
+        return view.position - start > 8 * MiB;
+      },
+      'the reader to receive 8 MiB',
+      30_000,
+    );
     expect(peak - baseline).toBeLessThan(128 * MiB);
-    expect(view.position - start).toBeGreaterThan(8 * MiB);
     expect(view.gaps).toEqual([]);
     stalled.resumeReading();
     expect(await stalled.waitFor('detached')).toEqual({ t: 'detached', termId: term.termId, reason: 'lagging' });

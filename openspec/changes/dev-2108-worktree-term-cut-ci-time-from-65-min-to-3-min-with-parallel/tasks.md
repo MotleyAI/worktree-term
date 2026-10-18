@@ -1,7 +1,7 @@
 ## 1. Tests
 
-- [ ] 1.1 Record the baseline: run `pnpm test:vitest` and note the `Tests N passed` total; verify by writing N into this task line when done
-- [ ] 1.2 `test/process/install-local.test.ts` reinstall test: gate `echo after-reinstall` until attach completes, following the `started()` helper pattern (design D6); verify by running that test 20× in a loop (`vitest run --project process -t 'two reinstalls'`) with zero failures, and by showing it fails reliably when the gate is released before attach
+- [x] 1.1 Record the baseline: run `pnpm test:vitest` and note the `Tests N passed` total; verify by writing N into this task line when done — N = 2051
+- [x] 1.2 `test/process/install-local.test.ts` reinstall test: gate `echo after-reinstall` until attach completes, following the `started()` helper pattern (design D6); verify by running that test 20× in a loop (`vitest run --project process -t 'two reinstalls'`) with zero failures, and by showing it fails reliably when the gate is released before attach
 
 ## 2. Split the process-test files
 

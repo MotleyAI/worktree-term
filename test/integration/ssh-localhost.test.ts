@@ -1,15 +1,18 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { connect, createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
+import { forwardToHub, type HubForward } from '../../src/hub/links/index.js';
+import { hostPaths } from '../../src/platform/files/index.js';
+import { DAEMON_PROTOCOL_VERSION, decodePrintCode, decodeRemoteFragment } from '../../src/protocol/index.js';
 import { alive, makeRepo, waitUntil } from '../support/daemon-host.js';
 import { exec, REPO_ROOT } from '../support/exec.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
 import { FakeRemote, shellQuote } from '../support/fake-ssh.js';
-import type { HubClient } from '../support/hub-client.js';
-import { HubHost } from '../support/hub-host.js';
+import { HubClient } from '../support/hub-client.js';
+import { freePort, HubHost, rawHttp } from '../support/hub-host.js';
 
 // Opt-in: needs sshd on localhost accepting this user's key with BatchMode.
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 300_000 });
@@ -19,13 +22,16 @@ const REMOTE = 1;
 
 /**
  * `WTD_SSH` wrapper: the real `ssh` with every option the caller gave, the remote command run under
- * `home` so the test never touches this user's own installation.
+ * `home` so the test never touches this user's own installation; a `-W` forward is passed through as given.
  */
 const sshWrapper = (dir: string, home: string): string => {
   const path = join(dir, 'ssh');
   writeFileSync(
     path,
     `#!/bin/sh
+for a do
+  if [ "$a" = -W ]; then exec ssh "$@"; fi
+done
 n=$#
 for a do
   shift
@@ -78,6 +84,7 @@ const procs = (): { pid: number; ppid: number; argv: string[] }[] => {
 
 let host: HubHost;
 let remote: FakeRemote;
+const servers: Server[] = [];
 let remoteHome: string;
 
 beforeAll(() => {
@@ -95,6 +102,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
+  for (const server of servers.splice(0)) server.close();
   for (const pid of host.hubPids()) process.kill(pid, 'SIGKILL');
   for (const pid of mastersIn(host.runDir)) process.kill(pid, 'SIGTERM');
   await remote.cleanup();
@@ -194,5 +203,151 @@ describe('remote host over real ssh', () => {
     await connectedInstance(second);
     expect(mastersIn(host.runDir)).toEqual(masters);
     expect(sshChildrenOf(hub).filter((pid) => !firstClients.includes(pid))).toHaveLength(1);
+  });
+});
+
+/** Pids of `ssh -W` forwards whose parent is `parent`. */
+const forwardsOf = (parent: number): number[] =>
+  procs()
+    .filter((p) => p.ppid === parent && p.argv.includes('-W'))
+    .map((p) => p.pid);
+
+/** Starts localhost's hub under the throwaway home with `wtd ui --print-code`, without a control master; returns its port and code. */
+const printCode = (): { port: number; code: string } => {
+  const run = spawnSync(host.sshProgram ?? 'ssh', ['-o', 'BatchMode=yes', ALIAS, '"$HOME/.local/bin/wtd" ui --print-code'], {
+    encoding: 'utf8',
+  });
+  if (run.status !== 0) throw new Error(`wtd ui --print-code failed: ${run.stderr}`);
+  return decodePrintCode(run.stdout);
+};
+
+/** A local listener on a free port relaying each connection to `remotePort` on localhost with `forwardToHub`. */
+const tunnel = async (remotePort: number): Promise<{ port: number; forwards: HubForward[] }> => {
+  vi.stubEnv('WTD_SSH', host.sshProgram ?? 'ssh');
+  const paths = hostPaths({ env: { XDG_STATE_HOME: host.stateHome }, home: host.home, host: 'local' });
+  const forwards: HubForward[] = [];
+  const server = createServer((socket) => {
+    forwards.push(forwardToHub(paths, ALIAS, remotePort, socket));
+  });
+  servers.push(server);
+  const port = await freePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return { port, forwards };
+};
+
+/** An open connection to 127.0.0.1:`port` and a promise of its close. */
+const held = async (port: number): Promise<{ socket: Socket; closed: Promise<void> }> => {
+  const socket = connect(port, '127.0.0.1');
+  socket.on('error', () => undefined);
+  const closed = new Promise<void>((resolve) => {
+    socket.once('close', () => {
+      resolve();
+    });
+  });
+  await new Promise<void>((resolve) => {
+    socket.once('connect', () => {
+      resolve();
+    });
+  });
+  return { socket, closed };
+};
+
+/** Configures localhost's hub with a repo and a free port, and the local hub with `lh` on the tunnel port `tunnelPort`. */
+const configureHubs = async (): Promise<{ repo: string; remotePort: number; tunnelPort: number }> => {
+  await install();
+  const repo = makeRepo(join(remoteHome, 'repo'));
+  const remotePort = await freePort();
+  let tunnelPort = await freePort();
+  while (tunnelPort === remotePort) tunnelPort = await freePort(); // NOSONAR(S9382) — retries until the ports differ
+  remote.writeHubConfig({ port: remotePort, repos: [repo] });
+  host.writeConfig({ port: host.port, hosts: [{ name: 'lh', ssh: ALIAS, port: tunnelPort }] });
+  return { repo, remotePort, tunnelPort };
+};
+
+/** Sends `openHub` for `lh` and returns the opened page's port and code. */
+const openLh = async (client: HubClient): Promise<{ port: number; code: string }> => {
+  const from = client.mark();
+  client.send({ t: 'openHub', req: 1000, host: REMOTE });
+  const reply = await client.waitFor(['hubOpened', 'error'], (m) => m.req === 1000, { from, timeout: 60_000 });
+  if (reply.t !== 'hubOpened') throw new Error(`openHub failed: ${JSON.stringify(reply)}`);
+  const url = new URL(reply.url);
+  return { port: Number(url.port), code: decodeRemoteFragment(url.hash.slice(1)).code };
+};
+
+describe('remote hub over real ssh', () => {
+  it('forwards to the remote hub with ssh -W when no control master exists', async () => {
+    const { remotePort } = await configureHubs();
+    expect(printCode().port).toBe(remotePort);
+    expect(mastersIn(host.runDir)).toEqual([]);
+    const { port, forwards } = await tunnel(remotePort);
+    const response = await rawHttp(port, 'GET', '/');
+    expect(response.status).toBe(200);
+    expect(forwards).toHaveLength(1);
+    await expect(forwards[0]?.ended).resolves.not.toMatch(/open failed|forwarding failed/);
+  });
+
+  it('opens the remote hub through the local hub over the existing control master', async () => {
+    const { repo, tunnelPort } = await configureHubs();
+    await host.startHub();
+    const client = await host.session();
+    await connectedInstance(client);
+    const masters = mastersIn(host.runDir);
+    expect(masters).toHaveLength(1);
+
+    const { port, code } = await openLh(client);
+    expect(port).toBe(tunnelPort);
+    expect((await rawHttp(port, 'GET', '/')).status).toBe(200);
+    const page = await HubClient.open(`ws://127.0.0.1:${String(port)}/ws`, {
+      protocols: ['wtd', `wtd.code.${code}`],
+      origin: `http://127.0.0.1:${String(port)}`,
+    });
+    const { hosts } = await page.handshake();
+    expect(hosts.hosts[0]?.repos).toEqual([repo]);
+    expect(mastersIn(host.runDir)).toEqual(masters);
+    page.close();
+  });
+
+  it('reports a forward to a port nothing listens on with the line ssh wrote', async () => {
+    await install();
+    const { port, forwards } = await tunnel(await freePort());
+    const { closed } = await held(port);
+    await closed;
+    await expect(forwards[0]?.ended).resolves.toMatch(/open failed|forwarding failed/);
+  });
+
+  it('ends the forwards when the control master is lost', async () => {
+    await configureHubs();
+    await host.startHub();
+    const client = await host.session();
+    await connectedInstance(client);
+    const { port } = await openLh(client);
+    const { closed } = await held(port);
+    const hub = host.record()?.pid ?? 0;
+    const forwards = await waitUntil(() => {
+      const found = forwardsOf(hub);
+      return found.length > 0 ? found : undefined;
+    }, 'a forward of the held connection');
+
+    for (const pid of mastersIn(host.runDir)) process.kill(pid, 'SIGTERM');
+    await closed;
+    await waitUntil(() => forwards.every((pid) => !alive(pid)), 'the forwards to end', 10_000);
+  });
+
+  it('leaves no ssh process behind once the hub stops', async () => {
+    await configureHubs();
+    await host.startHub();
+    const client = await host.session();
+    await connectedInstance(client);
+    const { port } = await openLh(client);
+    const { closed } = await held(port);
+    const hub = host.record()?.pid ?? 0;
+    await waitUntil(() => forwardsOf(hub).length > 0, 'a forward of the held connection');
+    const children = sshChildrenOf(hub);
+
+    process.kill(hub, 'SIGTERM');
+    await closed;
+    await waitUntil(() => host.hubPids().length === 0, 'the hub to exit', 10_000);
+    await waitUntil(() => children.every((pid) => !alive(pid)), 'the hub’s ssh processes to end', 10_000);
+    await expect(rawHttp(port, 'GET', '/')).rejects.toThrow();
   });
 });

@@ -130,6 +130,18 @@ export const TID = {
   notice: 'notice',
   /** Terminal container, `data-host` and `data-term`; holds the `.xterm` element; hidden ones are not visible. */
   terminal: 'terminal',
+  /** Header button "Hubs", present only while there is a remote host; opens the list of `hubsEntry`. */
+  hubsMenu: 'hubs-menu',
+  /** One per hub in the open Hubs menu, in order: text = "This machine" or the host name; `aria-current="true"` on the page's own hub. */
+  hubsEntry: 'hubs-entry',
+  /** Status line beside the Hubs menu for the latest hub opening: `Opening <host>…`, `<host> needs Tailscale login`, `<host>: <message>`, `Installing on <host>…` or `no host named <name>`. */
+  hubStatus: 'hub-status',
+  /** "Open login link" anchor inside the status line: `href` = the login URL, `target="_blank"`, `rel` with `noopener` and `noreferrer`. */
+  hubLogin: 'hub-login',
+  /** "Reinstall on <host>" button inside the status line of an outdated remote; sends `installHub`, then opens the hub again. */
+  hubReinstall: 'hub-reinstall',
+  /** × inside the status line of a failed opening; clears the line. */
+  hubDismiss: 'hub-dismiss',
 } as const;
 
 /** Mark names in rank order, as `data-mark` values. */
@@ -156,6 +168,8 @@ export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)
 export const termTab = (termId: number): string => `${byTestId(TID.termTab)}[data-term="${String(termId)}"]`;
 
 export const pane = (termId: number): string => `${byTestId(TID.pane)}[data-term="${String(termId)}"]`;
+
+export const hubsEntry = (label: string): string => `${byTestId(TID.hubsEntry)}:text-is("${label}")`;
 
 export const terminalBox = (host: number, termId: number): string =>
   `${byTestId(TID.terminal)}[data-host="${String(host)}"][data-term="${String(termId)}"]`;

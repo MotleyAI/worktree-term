@@ -11,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { DaemonClient, type EventOf } from './daemon-client.js';
 import { alive, hostFileName, livePidsWhere, waitUntil, type DaemonHost, type Exit } from './daemon-host.js';
 
@@ -76,8 +76,14 @@ const SSH_SCRIPT = (dir: string): string => String.raw`#!/bin/sh
 d=${shellQuote(dir)}
 f="$d/calls/$$"
 for a in "$@"; do printf '%s\0' "$a"; done > "$f.tmp" && mv "$f.tmp" "$f"
-while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
-if [ "$#" -ne 3 ]; then echo "fake ssh: expected -- <alias> <command>" >&2; exit 255; fi
+fwd=
+while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+  if [ "$1" = "-W" ]; then fwd=$2; shift; fi
+  shift
+done
+if [ -n "$fwd" ]; then
+  if [ "$#" -ne 2 ]; then echo "fake ssh: expected -W <host:port> -- <alias>" >&2; exit 255; fi
+elif [ "$#" -ne 3 ]; then echo "fake ssh: expected -- <alias> <command>" >&2; exit 255; fi
 alias=$2
 cmd=$3
 h="$d/hosts/$alias"
@@ -96,8 +102,30 @@ fi
 if [ -n "$R_FAIL_LINE" ]; then printf '%s\n' "$R_FAIL_LINE" >&2; exit 255; fi
 if [ -n "$R_FAIL_BYTES" ]; then head -c "$R_FAIL_BYTES" /dev/zero | tr '\000' x >&2; exit 255; fi
 if [ -n "$R_NOISE_BYTES" ]; then head -c "$R_NOISE_BYTES" /dev/zero | tr '\000' x >&2; fi
+if [ -n "$fwd" ]; then
+  if [ -n "$R_NO_FORWARD" ]; then echo 'channel 0: open failed: administratively prohibited' >&2; exit 255; fi
+  exec ${shellQuote(process.execPath)} "$d/relay.cjs" "$fwd"
+fi
 cd "$R_HOME" || exit 255
 exec env -i HOME="$R_HOME" PATH="$R_PATH" SHELL="$R_SHELL" LANG=C.UTF-8 USER="$USER" /bin/sh -c "$cmd"
+`;
+
+/** Relays stdio to the TCP address in argv, as `ssh -W` does; a refused connect fails as OpenSSH reports it. */
+const RELAY_SCRIPT = String.raw`const net = require('node:net');
+const target = process.argv[2];
+const at = target.lastIndexOf(':');
+const socket = net.connect(Number(target.slice(at + 1)), target.slice(0, at));
+let open = false;
+socket.once('connect', () => {
+  open = true;
+  process.stdin.pipe(socket);
+  socket.pipe(process.stdout);
+});
+socket.once('error', () => {
+  if (!open) process.stderr.write('channel 0: open failed: connect failed: Connection refused\nstdio forwarding failed\n');
+  process.exit(255);
+});
+socket.once('close', () => process.exit(0));
 `;
 
 /** One run of the fake SSH program. */
@@ -106,8 +134,10 @@ export interface SshCall {
   /** Its arguments, without the program. */
   args: string[];
   alias: string;
-  /** The remote command, as one argument. */
+  /** The remote command, as one argument; empty for a forward. */
   command: string;
+  /** The `-W` target of a forward, else null. */
+  forward: string | null;
 }
 
 export interface RemoteOptions {
@@ -163,14 +193,37 @@ export class FakeRemote {
     }
   }
 
+  /** Replaces the remote's `wtd` with a shell script. */
+  plantWtd(script: string): void {
+    mkdirSync(dirname(this.shim), { recursive: true });
+    writeFileSync(this.shim, `#!/bin/sh\n${script}\n`);
+    chmodSync(this.shim, 0o755);
+  }
+
+  /** Writes the remote hub's `config.json`. */
+  writeHubConfig(config: unknown): void {
+    const dir = join(this.home, '.config', 'worktree-term');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'config.json'), JSON.stringify(config));
+  }
+
   /** Pids of daemons running with this remote's home. */
   daemonPids(): number[] {
+    return this.pidsOf('daemon');
+  }
+
+  /** Pids of hubs running with this remote's home. */
+  hubPids(): number[] {
+    return this.pidsOf('hub');
+  }
+
+  private pidsOf(verb: string): number[] {
     const pids: number[] = [];
     for (const name of readdirSync('/proc')) {
       if (!/^\d+$/.test(name)) continue;
       try {
         const cmdline = readFileSync(`/proc/${name}/cmdline`, 'utf8').split('\0');
-        if (cmdline[2] !== 'daemon') continue;
+        if (cmdline[2] !== verb) continue;
         const environ = readFileSync(`/proc/${name}/environ`, 'utf8').split('\0');
         if (environ.includes(`HOME=${this.home}`) && alive(Number(name))) pids.push(Number(name));
       } catch {
@@ -198,14 +251,16 @@ export class FakeRemote {
 
   async cleanup(): Promise<void> {
     for (const client of this.clients) client.close();
-    for (const pid of this.daemonPids()) {
+    for (const pid of [...this.hubPids(), ...this.daemonPids()]) {
       try {
         process.kill(pid, 'SIGKILL');
       } catch {
         // Already gone.
       }
     }
-    await waitUntil(() => this.daemonPids().length === 0, 'remote daemons to exit').catch(() => undefined);
+    await waitUntil(() => this.hubPids().length === 0 && this.daemonPids().length === 0, 'remote hubs and daemons to exit').catch(
+      () => undefined,
+    );
   }
 }
 
@@ -230,6 +285,7 @@ export class FakeSsh {
     mkdirSync(this.callsDir, { recursive: true });
     mkdirSync(this.loginDir, { recursive: true });
     this.program = join(dir, 'ssh');
+    writeFileSync(join(dir, 'relay.cjs'), RELAY_SCRIPT);
     writeFileSync(this.program, SSH_SCRIPT(dir));
     chmodSync(this.program, 0o755);
   }
@@ -314,8 +370,22 @@ export class FakeSsh {
       .map((name) => {
         const args = readFileSync(join(this.callsDir, name), 'utf8').split('\0').slice(0, -1);
         const dash = args.indexOf('--');
-        return { pid: Number(name), args, alias: args[dash + 1] ?? '', command: args[dash + 2] ?? '' };
+        const w = args.indexOf('-W');
+        const forward = w >= 0 && w < dash ? (args[w + 1] ?? null) : null;
+        return { pid: Number(name), args, alias: args[dash + 1] ?? '', command: args[dash + 2] ?? '', forward };
       });
+  }
+
+  /** Makes every later forward (`-W`) run for `alias` print OpenSSH's refusal and exit 255; other runs are unaffected. */
+  refuseForwards(alias: string): void {
+    appendFileSync(join(this.hostsDir, alias), 'R_NO_FORWARD=1\n');
+  }
+
+  /** Pids of forward (`-W`) runs for `alias` still alive. */
+  forwardPids(alias: string): number[] {
+    return this.calls()
+      .filter((call) => call.alias === alias && call.forward !== null && alive(call.pid))
+      .map((call) => call.pid);
   }
 
   /** Pids of runs for `alias` still alive. */

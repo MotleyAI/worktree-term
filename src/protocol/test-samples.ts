@@ -149,6 +149,10 @@ export const hosts: HostEntry[] = [
 ];
 
 export const TOKEN = '0123456789abcdef'.repeat(4);
+export const CODE = 'fedcba9876543210'.repeat(4);
+
+/** A `hubOpened` URL for host `box` of a hub on port 7417. */
+export const OPENED_URL = `http://127.0.0.1:7418/#code=${CODE}&host=box&home=7417&hubs=box,gpu`;
 
 export const clientToDaemonSamples: MessageOf<'clientToDaemon'>[] = [
   hello,
@@ -222,6 +226,8 @@ export const browserToHubSamples: MessageOf<'browserToHub'>[] = [
   { t: 'addPreset', req: 7, preset: { name: 'login shell', command: null } },
   { t: 'removePreset', req: 8, name: 'codex' },
   { t: 'movePreset', req: 9, name: 'codex', to: 0 },
+  { t: 'openHub', req: 10, host: 1 },
+  { t: 'installHub', req: 11, host: 65535 },
 ];
 
 export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
@@ -242,6 +248,11 @@ export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   { t: 'error', req: null, host: null, code: 'version-mismatch', message: 'outdated' },
   { t: 'error', req: 3, host: 0, code: 'host-unavailable', message: 'host 0 is reconnecting' },
   { t: 'reposDiscovered', req: 3, host: 0, repos: [REPO] },
+  { t: 'hubLogin', req: 4, login: 'https://login.tailscale.com/a/abc123' },
+  { t: 'hubOpened', req: 5, url: OPENED_URL },
+  { t: 'hubOpened', req: 6, url: `http://127.0.0.1:65535/#code=${CODE}&host=${'x'.repeat(64)}&home=1024&hubs=${'x'.repeat(64)}` },
+  { t: 'error', req: 7, host: 1, code: 'hub-outdated', message: 'wtd on box is missing or too old to serve its hub' },
+  { t: 'error', req: 8, host: 2, code: 'hub-failed', message: 'ssh: Could not resolve hostname box: Name or service not known' },
 ];
 
 export const samples: { readonly [D in Direction]: readonly MessageOf<D>[] } = {
@@ -298,8 +309,10 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'addPreset',
     'removePreset',
     'movePreset',
+    'openHub',
+    'installHub',
   ],
-  hubToBrowser: ['hello', 'token', 'host', 'hosts', 'presets', 'done', 'error', 'reposDiscovered'],
+  hubToBrowser: ['hello', 'token', 'host', 'hosts', 'presets', 'done', 'error', 'reposDiscovered', 'hubLogin', 'hubOpened'],
 };
 
 /** Encodes a JSON value as control-message text, bypassing the protocol encoder. */

@@ -300,3 +300,138 @@ describe('ConfigEditor lists', () => {
     await expect(edits.lists('box', '/r/a')).rejects.toThrow('box');
   });
 });
+
+describe('ConfigEditor assigning host ports', () => {
+  const HOSTS = {
+    roots: ['~/src'],
+    presets: [{ name: 'claude', command: 'claude' }],
+    hosts: [
+      { name: 'box', ssh: 'box.example.org', repos: ['/srv/a'] },
+      { name: 'gpu', ssh: 'gpu' },
+    ],
+  };
+
+  it('gives the first host port one above the default hub port, keeping every other value as written', async () => {
+    write(HOSTS);
+    expect(await editor().assignPort('box')).toEqual({ changed: true, port: 7418 });
+    const expected = { ...HOSTS, hosts: [{ ...HOSTS.hosts[0], port: 7418 }, HOSTS.hosts[1]] };
+    expect(read()).toEqual(expected);
+    expect(text().trimEnd()).toBe(JSON.stringify(expected, null, 2));
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('gives one above the highest of the hub port and the held host ports', async () => {
+    write({
+      port: 7417,
+      hosts: [
+        { name: 'a', ssh: 'a', port: 7418 },
+        { name: 'b', ssh: 'b', port: 7425 },
+        { name: 'new', ssh: 'new' },
+      ],
+    });
+    expect(await editor().assignPort('new')).toEqual({ changed: true, port: 7426 });
+  });
+
+  it('does not reuse a removed host’s lower port while a higher one is held', async () => {
+    write({
+      hosts: [
+        { name: 'b', ssh: 'b', port: 7419 },
+        { name: 'c', ssh: 'c' },
+      ],
+    });
+    expect(await editor().assignPort('c')).toEqual({ changed: true, port: 7420 });
+  });
+
+  it('wraps around to the lowest free port from 1024', async () => {
+    write({
+      port: 65535,
+      hosts: [
+        { name: 'a', ssh: 'a', port: 1024 },
+        { name: 'b', ssh: 'b' },
+      ],
+    });
+    expect(await editor().assignPort('b')).toEqual({ changed: true, port: 1025 });
+  });
+
+  it('leaves a present port and the file untouched', async () => {
+    write({ hosts: [{ name: 'box', ssh: 'box', port: 9000 }] });
+    const before = text();
+    expect(await editor().assignPort('box')).toEqual({ changed: false, port: 9000 });
+    expect(text()).toBe(before);
+  });
+
+  it('refuses a host the file does not list, naming it, leaving the file unchanged', async () => {
+    write(HOSTS);
+    const before = text();
+    await expect(editor().assignPort('nope')).rejects.toThrow(ConfigError);
+    await expect(editor().assignPort('nope')).rejects.toThrow('nope');
+    expect(text()).toBe(before);
+  });
+
+  it('refuses an absent file, which lists no host', async () => {
+    await expect(editor().assignPort('box')).rejects.toThrow(ConfigError);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('refuses an invalid file, leaving it unchanged', async () => {
+    write({ theme: 'dark', hosts: [{ name: 'box', ssh: 'box' }] });
+    const before = text();
+    await expect(editor().assignPort('box')).rejects.toThrow('theme');
+    expect(text()).toBe(before);
+  });
+
+  it('starts over when another writer gave a host a port meanwhile, recomputing the result', async () => {
+    write({
+      hosts: [
+        { name: 'x', ssh: 'x', port: 7420 },
+        { name: 'a', ssh: 'a' },
+        { name: 'b', ssh: 'b' },
+      ],
+    });
+    const attempts: number[] = [];
+    const result = await editor({
+      beforeReplace: (attempt) => {
+        attempts.push(attempt);
+        if (attempt === 1) {
+          writeFileSync(
+            path,
+            JSON.stringify({
+              hosts: [
+                { name: 'x', ssh: 'x', port: 7420 },
+                { name: 'a', ssh: 'a' },
+                { name: 'b', ssh: 'b', port: 7421 },
+              ],
+            }),
+          );
+        }
+      },
+    }).assignPort('a');
+    expect(attempts).toEqual([1, 2]);
+    expect(result).toEqual({ changed: true, port: 7422 });
+    expect(read()).toEqual({
+      hosts: [
+        { name: 'x', ssh: 'x', port: 7420 },
+        { name: 'a', ssh: 'a', port: 7422 },
+        { name: 'b', ssh: 'b', port: 7421 },
+      ],
+    });
+  });
+
+  it('applies concurrent assignments and repo edits one at a time, losing none', async () => {
+    write({
+      hosts: [
+        { name: 'a', ssh: 'a' },
+        { name: 'b', ssh: 'b' },
+      ],
+    });
+    const shared = editor();
+    const [a, , b] = await Promise.all([shared.assignPort('a'), shared.addRepo('a', '/srv/x'), shared.assignPort('b')]);
+    expect([a.port, b.port]).toEqual([7418, 7419]);
+    expect(read()).toEqual({
+      hosts: [
+        { name: 'a', ssh: 'a', port: 7418, repos: ['/srv/x'] },
+        { name: 'b', ssh: 'b', port: 7419 },
+      ],
+    });
+  });
+});

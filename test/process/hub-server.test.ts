@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeWsData, MAX_FRAME, BROWSER_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { sleep, type WtdProcess } from '../support/daemon-host.js';
-import { UpgradeRefused, type HubClient, type HubMessageOf } from '../support/hub-client.js';
+import { HubClient, UpgradeRefused, type HubMessageOf } from '../support/hub-client.js';
 import { HubHost, type RawResponse } from '../support/hub-host.js';
 import { REPO_ROOT } from '../support/exec.js';
 
@@ -219,12 +219,46 @@ describe('request checks and headers', () => {
     ['localhost', () => `localhost:${String(host.port)}`],
     ['a foreign name', () => 'evil.example'],
     ['127.0.0.1 without the port', () => '127.0.0.1'],
-    ['another port', () => `127.0.0.1:${String(host.port + 1)}`],
+    ['a port with a leading zero', () => '127.0.0.1:07417'],
+    ['port 0', () => '127.0.0.1:0'],
+    ['port 65536', () => '127.0.0.1:65536'],
+    ['a port with a sign', () => '127.0.0.1:+7420'],
   ])('refuses a request whose Host is %s with 403', async (_name, value) => {
     expect((await host.http('GET', '/', { host: value() })).status).toBe(403);
     expect((await host.api('GET', '/api/identity')).status).toBe(200);
     const identity = await host.http('GET', '/api/identity', { host: value(), headers: [['Authorization', `Bearer ${host.token()}`]] });
     expect(identity.status).toBe(403);
+  });
+
+  it.each([1, 7420, 65535])('serves index.html for a forwarded Host 127.0.0.1:%i', async (port) => {
+    const response = await host.http('GET', '/', { host: `127.0.0.1:${String(port)}` });
+    expect(response.status).toBe(200);
+    expect(response.body).toContain('<!doctype html>');
+    expectSecurityHeaders(response);
+  });
+
+  it('answers the API for a forwarded Host with no Origin or its own', async () => {
+    const forwarded = '127.0.0.1:7420';
+    const bearer: [string, string] = ['Authorization', `Bearer ${host.token()}`];
+    expect((await host.http('GET', '/api/identity', { host: forwarded, headers: [bearer] })).status).toBe(200);
+    const same = await host.http('GET', '/api/identity', { host: forwarded, headers: [bearer, ['Origin', `http://${forwarded}`]] });
+    expect(same.status).toBe(200);
+    expect((await host.http('POST', '/api/code', { host: forwarded, headers: [bearer, ['Origin', `http://${forwarded}`]] })).status).toBe(
+      200,
+    );
+  });
+
+  it('refuses an API request whose Origin is not http:// and its own Host with 403', async () => {
+    const forwarded = '127.0.0.1:7420';
+    const bearer: [string, string] = ['Authorization', `Bearer ${host.token()}`];
+    for (const origin of [host.origin, 'http://127.0.0.1:8080', 'http://127.0.0.1', 'https://127.0.0.1:7420']) {
+      const response = await host.http('GET', '/api/identity', { host: forwarded, headers: [bearer, ['Origin', origin]] });
+      expect(response.status, origin).toBe(403);
+    }
+    const shutdown = await host.http('POST', '/api/shutdown', { host: forwarded, headers: [bearer, ['Origin', host.origin]] });
+    expect(shutdown.status).toBe(403);
+    await sleep(300);
+    expect(await host.serving()).toBe(true);
   });
 
   it('refuses a request without Host with 403', async () => {
@@ -412,6 +446,28 @@ describe('WebSocket authentication', () => {
     ['another port as Origin', 'http://127.0.0.1:1'],
   ])('refuses an upgrade with %s with 403', async (_name, origin) => {
     expect(await refusal(host.open(['wtd', `wtd.token.${token}`], origin))).toBe(403);
+  });
+
+  it('accepts an upgrade with a forwarded Host and that same Origin, and the session greets', async () => {
+    const forwarded = '127.0.0.1:7420';
+    expect((await host.upgrade(['wtd', `wtd.token.${token}`], { host: forwarded, origin: `http://${forwarded}` })).status).toBe(101);
+    const client = await HubClient.open(host.wsUrl, {
+      protocols: ['wtd', `wtd.token.${token}`],
+      origin: `http://${forwarded}`,
+      headers: { Host: forwarded },
+    });
+    const { hello } = await client.handshake();
+    expect(hello.protocol).toBe(BROWSER_PROTOCOL_VERSION);
+    client.close();
+  });
+
+  it.each([
+    ['the hub’s own port', () => host.origin],
+    ['another port', () => 'http://127.0.0.1:8080'],
+    ['no port', () => 'http://127.0.0.1'],
+    ['none', () => null],
+  ])('refuses an upgrade with a forwarded Host and an Origin of %s with 403', async (_name, origin) => {
+    expect((await host.upgrade(['wtd', `wtd.token.${token}`], { host: '127.0.0.1:7420', origin: origin() })).status).toBe(403);
   });
 
   it('refuses an upgrade with two Origin headers with 403', async () => {

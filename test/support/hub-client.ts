@@ -34,7 +34,7 @@ export interface ReceivedData {
 /** A reply correlated to a request: a daemon reply inside an envelope, or a hub-level reply. */
 export type Reply =
   | { from: 'daemon'; host: number; m: DaemonEventOf<'done' | 'error' | 'termCreated' | 'reposDiscovered' | 'worktreeAtRisk'> }
-  | { from: 'hub'; m: HubMessageOf<'done' | 'error' | 'reposDiscovered'> };
+  | { from: 'hub'; m: HubMessageOf<'done' | 'error' | 'reposDiscovered' | 'hubOpened'> };
 
 /** Thrown when the hub answers an upgrade with an HTTP response instead of switching protocols. */
 export class UpgradeRefused extends Error {
@@ -181,7 +181,7 @@ export class HubClient {
     return this.reply(req, from, timeout);
   }
 
-  /** Sends a hub-level request (restartDaemon, addRepo, …) with the next req; resolves with its reply. */
+  /** Sends a hub-level request (restartDaemon, addRepo, openHub, …) with the next req; resolves with its reply. */
   async hubRequest(body: HubRequestBody, timeout = DEFAULT_TIMEOUT): Promise<Reply> {
     const req = this.nextReq++;
     const from = this.mark();
@@ -328,7 +328,10 @@ export class HubClient {
       () => {
         for (const m of this.messages.slice(from)) {
           if (m.t === 'host' && 'req' in m.m && m.m.req === req) return { from: 'daemon', host: m.host, m: m.m } satisfies Reply;
-          if ((m.t === 'done' || m.t === 'error' || m.t === 'reposDiscovered') && m.req === req) return { from: 'hub', m } satisfies Reply;
+          if ((m.t === 'done' || m.t === 'error' || m.t === 'reposDiscovered' || m.t === 'hubOpened') && m.req === req)
+            return { from: 'hub', m } satisfies Reply;
+          // A request the hub could not decode is refused without its req; waiting on would only time out.
+          if (m.t === 'error' && m.req === null && m.code === 'bad-message') return { from: 'hub', m } satisfies Reply;
         }
         return undefined;
       },

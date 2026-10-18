@@ -23,7 +23,7 @@ describe('shared constants', () => {
       LAG_EVICT_MS,
     }).toEqual({
       DAEMON_PROTOCOL_VERSION: 6,
-      BROWSER_PROTOCOL_VERSION: 9,
+      BROWSER_PROTOCOL_VERSION: 10,
       MAX_FRAME: 16 * 1024 * 1024,
       MAX_INPUT: 64 * 1024,
       FLOW_HIGH: 512 * 1024,

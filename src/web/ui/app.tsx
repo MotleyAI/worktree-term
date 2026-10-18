@@ -115,6 +115,7 @@ const Hubs = ({ client }: { client: HubClient }) => {
   const [state, setState] = useState(initialHubState);
   const [open, setOpen] = useState(false);
   const stateRef = useRef(state);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const hosts = client.store.hosts.value;
   const dispatch = (action: HubAction): void => {
     const { state: next, effect } = hubStep(stateRef.current, action);
@@ -152,6 +153,8 @@ const Hubs = ({ client }: { client: HubClient }) => {
     if (event.key !== 'Escape') return;
     event.stopPropagation();
     setOpen(false);
+    // The focused entry goes with the menu: keep the keyboard on the Hubs button.
+    menuButton.current?.focus();
   };
   const install = (): void => {
     const pending = stateRef.current.line;
@@ -174,6 +177,7 @@ const Hubs = ({ client }: { client: HubClient }) => {
         <span class="hubs">
           <button
             type="button"
+            ref={menuButton}
             class="hubs-menu"
             data-testid="hubs-menu"
             aria-expanded={open}

@@ -8,11 +8,11 @@ import { expect, hubRequests, makeRepoWith, nodeRemote, openUi, runUi, test, wri
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box: Name or service not known';
 
-/** A free port none of the remote hubs of `taken` listens on. */
-const tunnelPort = async (...taken: readonly { port: number }[]): Promise<number> => {
+/** A free port that is neither `hub`'s, which it may not listen on yet, nor any of `taken`. */
+const tunnelPort = async (hub: HubHost, ...taken: readonly { port: number }[]): Promise<number> => {
   for (;;) {
     const port = await freePort(); // NOSONAR(S9382) — retries until a port outside `taken` is free
-    if (!taken.some((t) => t.port === port)) return port;
+    if (port !== hub.port && !taken.some((t) => t.port === port)) return port;
   }
 };
 
@@ -60,6 +60,16 @@ test.describe('Hubs menu', () => {
     await expect(page.locator(hubsEntry('box'))).not.toHaveAttribute('aria-current', 'true');
   });
 
+  test('Escape on an entry closes the menu and keeps the focus on the Hubs button', async ({ hub, page, ssh }) => {
+    ssh.failHost('box', RESOLVE_ERROR);
+    await home(hub, page, [{ name: 'box', ssh: 'box' }]);
+    await page.locator(byTestId(TID.hubsMenu)).click();
+    await page.locator(hubsEntry('box')).focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator(byTestId(TID.hubsEntry))).toHaveCount(0);
+    await expect(page.locator(byTestId(TID.hubsMenu))).toBeFocused();
+  });
+
   test('is absent without remote hosts', async ({ hub, page }) => {
     await home(hub, page, []);
     await expect(page.locator(byTestId(TID.hubsMenu))).toHaveCount(0);
@@ -67,8 +77,8 @@ test.describe('Hubs menu', () => {
 
   test('picking a host shows its own hub in the same tab, titled by the host', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
-    const box = await remoteHub(hub, ssh, 'box');
-    const port = await tunnelPort(box);
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    const port = await tunnelPort(hub, box);
     await home(hub, page, [{ name: 'box', ssh: 'box', port }]);
     await expect(page).toHaveTitle('worktree-term');
     let pages = 0;
@@ -84,9 +94,9 @@ test.describe('Hubs menu', () => {
 
   test('a remote page keeps its title and menu across a reload', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
-    const box = await remoteHub(hub, ssh, 'box');
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
     ssh.failHost('gpu', RESOLVE_ERROR);
-    const port = await tunnelPort(box);
+    const port = await tunnelPort(hub, box);
     await home(hub, page, [
       { name: 'box', ssh: 'box', port },
       { name: 'gpu', ssh: 'gpu' },
@@ -103,8 +113,8 @@ test.describe('Hubs menu', () => {
 
   test('This machine on a remote page goes back home, connected with the stored token', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
-    const box = await remoteHub(hub, ssh, 'box');
-    const port = await tunnelPort(box);
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    const port = await tunnelPort(hub, box);
     const repo = await home(hub, page, [{ name: 'box', ssh: 'box', port }]);
     await pick(page, 'box');
     await landedOn(page, originOf(port));
@@ -118,10 +128,10 @@ test.describe('Hubs menu', () => {
 
   test('switching from one remote to another goes through the home page', async ({ hub, page, ssh }) => {
     test.setTimeout(180_000);
-    const box = await remoteHub(hub, ssh, 'box');
-    const gpu = await remoteHub(hub, ssh, 'gpu', [box.port]);
-    const boxPort = await tunnelPort(box, gpu);
-    const gpuPort = await tunnelPort(box, gpu, { port: boxPort });
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    const gpu = await remoteHub(hub, ssh, 'gpu', [hub.port, box.port]);
+    const boxPort = await tunnelPort(hub, box, gpu);
+    const gpuPort = await tunnelPort(hub, box, gpu, { port: boxPort });
     await home(hub, page, [
       { name: 'box', ssh: 'box', port: boxPort },
       { name: 'gpu', ssh: 'gpu', port: gpuPort },
@@ -165,8 +175,8 @@ test.describe('hub opening status', () => {
 
   test('shows the Tailscale login link while waiting, then navigates once approved', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
-    const box = await remoteHub(hub, ssh, 'box');
-    const port = await tunnelPort(box);
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    const port = await tunnelPort(hub, box);
     await home(hub, page, [{ name: 'box', ssh: 'box', port }]);
     ssh.loginHost('box');
     await pick(page, 'box');
@@ -190,9 +200,9 @@ test.describe('hub opening status', () => {
     test.setTimeout(180_000);
     const remote = nodeRemote(ssh, 'box');
     remote.plantWtd('exit 2');
-    const remotePort = await freePort();
+    const remotePort = await tunnelPort(hub);
     remote.writeHubConfig({ port: remotePort, repos: [makeRepo(join(remote.home, 'app'))] });
-    const port = await tunnelPort({ port: remotePort });
+    const port = await tunnelPort(hub, { port: remotePort });
     await home(hub, page, [{ name: 'box', ssh: 'box', port }]);
 
     await pick(page, 'box');
@@ -222,8 +232,8 @@ test.describe('hub opening status', () => {
 test.describe('hub opening from the address', () => {
   test('wtd ui <host> opens that host’s hub without a click', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
-    const box = await remoteHub(hub, ssh, 'box');
-    const port = await tunnelPort(box);
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    const port = await tunnelPort(hub, box);
     const { repo } = makeRepoWith(hub, 'local-app', []);
     writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box', port }] });
     await page.goto(await runUi(hub, ['box']));

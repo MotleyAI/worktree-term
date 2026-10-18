@@ -15,7 +15,7 @@ import {
 import { reconnectDelay } from './backoff.js';
 import { hostKey, TerminalMemory, type TerminalStorage } from './memory.js';
 import { keptRemote, readFragment, type RemotePage } from './page.js';
-import { PendingRequests } from './requests.js';
+import { OpeningRequests, PendingRequests } from './requests.js';
 import { checkBundle } from './stale.js';
 import { HubStore } from './store.js';
 
@@ -96,8 +96,7 @@ export class HubClient {
   private readonly eventListeners = new Set<(host: number, m: DaemonEvent) => void>();
   private readonly connectedListeners = new Set<(host: number, instance: string, repos: readonly string[]) => void>();
   private readonly openingListeners = new Set<(m: HubOpeningMessage) => void>();
-  /** The latest `openHub` request. */
-  private openingReq: number | null = null;
+  private readonly openings = new OpeningRequests();
   /** The remote hub this page shows, kept across reloads; null on a home page. */
   remote: RemotePage | null = null;
   /** The host whose hub the address asked a home page to open. */
@@ -155,8 +154,8 @@ export class HubClient {
     const req = this.hubOperation(host, (r) => ({ t: 'openHub', req: r, host }));
     if (req === null) return null;
     // The hub ends the previous opening without a reply.
-    if (this.openingReq !== null) this.pending.forget(this.openingReq);
-    this.openingReq = req;
+    const previous = this.openings.start(req);
+    if (previous !== null) this.pending.forget(previous);
     return req;
   }
 
@@ -284,6 +283,7 @@ export class HubClient {
     this.hostStates = new Map();
     this.store.sessionClosed();
     this.pending.failAll('the connection to the hub closed');
+    this.openings.clear();
     if (this.stopped) return;
     this.store.status.value = 'reconnecting';
     if (!opened) {
@@ -367,7 +367,8 @@ export class HubClient {
         this.opening(m);
         return;
       case 'error':
-        if (m.req === null || !this.pending.resolve(m.req, { ok: false, code: m.code, message: m.message })) {
+        // A superseded opening's error, sent before the hub ended it, is no notice.
+        if (m.req === null || (!this.pending.resolve(m.req, { ok: false, code: m.code, message: m.message }) && !this.openings.isSuperseded(m.req))) {
           this.store.notice.value = `${m.code}: ${m.message}`;
         }
         if (m.req !== null) this.opening(m);

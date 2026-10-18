@@ -52,3 +52,33 @@ export class PendingRequests<T> {
     for (const entry of entries) entry.reject(new Error(message));
   }
 }
+
+const MAX_SUPERSEDED = 8;
+
+/** The latest hub opening's request, and the few it superseded whose reply may still be in flight. */
+export class OpeningRequests {
+  private latest: number | null = null;
+  private readonly superseded: number[] = [];
+
+  /** Records `req` as the latest opening; returns the opening it supersedes, if any. */
+  start(req: number): number | null {
+    const previous = this.latest;
+    this.latest = req;
+    if (previous !== null) {
+      this.superseded.push(previous);
+      if (this.superseded.length > MAX_SUPERSEDED) this.superseded.shift();
+    }
+    return previous;
+  }
+
+  /** Whether `req` is a recently superseded opening. */
+  isSuperseded(req: number): boolean {
+    return this.superseded.includes(req);
+  }
+
+  /** Forgets every opening, as when the session closes. */
+  clear(): void {
+    this.latest = null;
+    this.superseded.length = 0;
+  }
+}

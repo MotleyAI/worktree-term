@@ -10,17 +10,17 @@ The `wtd` command line surface: how a user discovers its commands and version, a
 
 #### Scenario: Version
 - **WHEN** the user runs `wtd --version`
-- **THEN** stdout is `wtd <package version> (daemon protocol 6, browser protocol 8)` followed by a newline, stderr is empty, and the exit code is 0
+- **THEN** stdout is `wtd <package version> (daemon protocol 6, browser protocol 10)` followed by a newline, stderr is empty, and the exit code is 0
 
 ### Requirement: Help output
-`wtd --help` SHALL print usage to stdout and exit 0. Usage SHALL list the commands `ui`, `hub`, `daemon`, `connect`, `install-local [--systemd]` and `install-remote <alias> [--node <path>]`, and the options `--help` and `--version`.
+`wtd --help` SHALL print usage to stdout and exit 0. Usage SHALL list the commands `ui [<host>] [--print-code]`, `hub`, `daemon`, `connect`, `install-local [--systemd]` and `install-remote <alias> [--node <path>]`, and the options `--help` and `--version`.
 
 #### Scenario: Help
 - **WHEN** the user runs `wtd --help`
 - **THEN** stdout lists every command and option above, stderr is empty, and the exit code is 0
 
 ### Requirement: Usage errors
-Running `wtd` with no arguments, an unknown command, an option the command does not take, `--node` without a value, or `install-remote` without an alias SHALL print a one-line error and the usage to stderr, print nothing to stdout, and exit 2.
+Running `wtd` with no arguments, an unknown command, an option the command does not take, `--node` without a value, `install-remote` without an alias, a second argument to `ui`, or `ui` with both a host and `--print-code` SHALL print a one-line error and the usage to stderr, print nothing to stdout, and exit 2.
 
 #### Scenario: No arguments
 - **WHEN** the user runs `wtd`
@@ -45,6 +45,14 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 #### Scenario: Missing option value
 - **WHEN** the user runs `wtd install-remote box --node`
 - **THEN** stderr says `--node` needs a value and contains the usage, and the exit code is 2
+
+#### Scenario: Host and print-code together
+- **WHEN** the user runs `wtd ui box --print-code`
+- **THEN** stderr says a host and `--print-code` cannot be combined and contains the usage, stdout is empty, and the exit code is 2
+
+#### Scenario: Two hosts
+- **WHEN** the user runs `wtd ui a b`
+- **THEN** stderr names `b` as unexpected and contains the usage, and the exit code is 2
 
 ### Requirement: Daemon command
 `wtd daemon` SHALL run this host's daemon in the foreground until it receives `shutdown`, `SIGTERM` or `SIGINT`, then exit 0. It SHALL ignore `SIGHUP`. If a daemon is already serving this host's socket, it SHALL print `wtd daemon: already running` to stderr and exit 1. Any other start failure SHALL print one line naming the cause to stderr, without a stack trace, and exit 1.
@@ -88,7 +96,7 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 - **THEN** stderr is `wtd hub: port <port> is in use` and the exit code is 1
 
 ### Requirement: UI command
-`wtd ui` SHALL make a hub of its own version serve and then open the UI. If a running hub reports the same version, it SHALL be reused; if it reports another version, it SHALL be asked to shut down and a new hub started once its port is free; otherwise a hub SHALL be started detached with its output appended to `hub.log`, and `wtd ui` SHALL wait up to 5 s for it to serve. It SHALL then obtain a one-time code from the hub and start the browser command — `$WTD_BROWSER` if set, else `google-chrome` — with the argument `--app=http://127.0.0.1:<port>/#code=<code>`, detached with its stdio ignored, and exit 0. The browser's arguments SHALL never contain the token. A hub that cannot be started or reached, or a browser command that cannot be started, SHALL print one line naming the cause to stderr and exit 1. A hub record whose hub does not answer an authenticated identity request SHALL be treated as stale, and its process SHALL NOT be signalled.
+`wtd ui [<host>] [--print-code]` SHALL make a hub of its own version serve. If a running hub reports the same version, it SHALL be reused; if it reports another version, it SHALL be asked to shut down and a new hub started once its port is free; otherwise a hub SHALL be started detached with its output appended to `hub.log`, and `wtd ui` SHALL wait up to 5 s for it to serve. It SHALL then obtain a one-time code from the hub. Without options it SHALL start the browser command — `$WTD_BROWSER` if set, else `google-chrome` — with the argument `--app=http://127.0.0.1:<port>/#code=<code>`, detached with its stdio ignored, and exit 0. With `<host>` it SHALL first fail, before touching any hub, with one line `wtd ui: no host named <host> in <config path>` on stderr and exit 1 unless the configuration has a remote host of that name, and SHALL otherwise start the browser command the same way with `--app=http://127.0.0.1:<port>/#code=<code>&hub=<host>`. With `--print-code` it SHALL start no browser, print exactly one print-code line holding the hub's port and the code to stdout, and exit 0. The browser's arguments and the printed line SHALL never contain the token. A hub that cannot be started or reached, or a browser command that cannot be started, SHALL print one line naming the cause to stderr and exit 1. A hub record whose hub does not answer an authenticated identity request SHALL be treated as stale, and its process SHALL NOT be signalled.
 
 #### Scenario: Hub started and browser opened
 - **WHEN** no hub is running and the user runs `wtd ui`
@@ -109,6 +117,22 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 #### Scenario: Browser missing
 - **WHEN** the browser command does not exist
 - **THEN** stderr names the browser command and the exit code is 1
+
+#### Scenario: Opening a host's hub
+- **WHEN** the configuration lists remote host `box` and the user runs `wtd ui box`
+- **THEN** the browser command receives `--app=http://127.0.0.1:<port>/#code=<code>&hub=box` and the exit code is 0
+
+#### Scenario: Unknown host
+- **WHEN** the configuration lists no host named `nope` and the user runs `wtd ui nope`
+- **THEN** stderr is `wtd ui: no host named nope in <config path>`, no browser is started, and the exit code is 1
+
+#### Scenario: Printing a code
+- **WHEN** no hub is running and the user runs `wtd ui --print-code`
+- **THEN** a hub serves, stdout is one print-code line with the hub's port and a code that the hub accepts once, no browser command is started, and the exit code is 0
+
+#### Scenario: Printing a code replaces another version
+- **WHEN** a hub reporting another version is running and the user runs `wtd ui --print-code`
+- **THEN** that hub exits, a hub of the current version serves, and stdout is its print-code line
 
 ### Requirement: Install commands
 `wtd install-local [--systemd]` SHALL perform a local installation, with the systemd option when `--systemd` is given. `wtd install-remote <alias> [--node <path>]` SHALL perform a remote installation to `<alias>`, with the given Node path when `--node` is given. On success each SHALL print one line to stdout naming the installed version and where it was installed and exit 0; on failure, one line naming the cause to stderr, without a stack trace, and exit 1.

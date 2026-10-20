@@ -101,9 +101,11 @@ export const openHostAction = async (page: Page, host: number, label: string): P
 export const borderOf = (locator: Locator): Promise<string[]> =>
   locator.evaluate((el) => {
     const style = getComputedStyle(el);
-    return ['top', 'right', 'bottom', 'left'].map(
-      (side) => `${style.getPropertyValue(`border-${side}-width`)} ${style.getPropertyValue(`border-${side}-color`)}`,
-    );
+    return ['top', 'right', 'bottom', 'left'].map((side) => {
+      const width = style.getPropertyValue(`border-${side}-width`);
+      const colour = style.getPropertyValue(`border-${side}-color`);
+      return `${width} ${colour}`;
+    });
   });
 
 /** The computed background colour of the selected repo tab. */

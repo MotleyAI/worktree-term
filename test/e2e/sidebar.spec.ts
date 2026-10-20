@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import type { HubHost } from '../support/hub-host.js';
 import { fakeWorktrees, git } from '../support/daemon-host.js';
 import { COMMANDS, runIn } from './attention-helpers.js';
-import { byTestId, termTab, TID, worktreeEntry } from './contract.js';
+import { byTestId, repoTab, termTab, TID, worktreeEntry } from './contract.js';
 import {
+  borderOf,
   confirmClose,
   detachedWorktree,
   expect,
@@ -16,6 +17,7 @@ import {
   openPage,
   openUi,
   ready,
+  selectedTabColour,
   selectRepo,
   selectWorktree,
   test,
@@ -467,6 +469,26 @@ test.describe('worktree status and deletion', () => {
     expect(existsSync(feat)).toBe(false);
     await client.waitFor('termClosed', (m) => m.termId === ticker, { from });
     expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test("the deletion dialog is framed 3px in the selected tab's colour; a repo removal's is not", async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    withOrigin(hub, repo);
+    writeFileSync(join(feat, 'untracked'), 'new');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const dialog = page.locator(byTestId(TID.confirmDialog));
+    await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+    await page.locator(byTestId(TID.deleteWorktree)).click();
+    await expect(dialog).toBeVisible();
+    const blue = await selectedTabColour(page);
+    expect(await borderOf(dialog)).toEqual(Array(4).fill(`3px ${blue}`));
+    await dialog.locator(byTestId(TID.confirmCancel)).click();
+
+    await page.locator(repoTab(repo)).locator(byTestId(TID.removeRepo)).click();
+    await expect(dialog).toBeVisible();
+    expect((await borderOf(dialog)).every((side) => side.startsWith('1px ') && !side.endsWith(blue))).toBe(true);
   });
 
   test('deleting a detached worktree with commits says they become unreachable and names its head', async ({ hub, page }) => {

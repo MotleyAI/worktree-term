@@ -34,7 +34,7 @@ export const TID = {
   hostLogin: 'host-login',
   /** Button inside a host banner: "Restart daemon" (outdated local), "Reinstall & restart" (outdated remote) or "Install" (down remote); opens the confirmation dialog, then sends `restartDaemon` or `reinstallDaemon`. */
   hostAction: 'host-action',
-  /** In-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed; text says every running terminal on the host will be killed when it lists none. */
+  /** In-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed; text says every running terminal on the host will be killed when it lists none; for a worktree deletion only, framed 3px in the selected repo tab's background colour. */
   confirmDialog: 'confirm-dialog',
   /** One running terminal the page last saw on the daemon instance the host reports; text holds its worktree label and preset. */
   confirmTarget: 'confirm-target',
@@ -132,6 +132,8 @@ export const TID = {
   terminal: 'terminal',
   /** Header button "Hubs", present only while there is a remote host; opens the list of `hubsEntry`. */
   hubsMenu: 'hubs-menu',
+  /** The open Hubs menu holding the `hubsEntry` items; framed 3px in the selected repo tab's background colour. */
+  hubsList: 'hubs-list',
   /** One per hub in the open Hubs menu, in order: text = "This machine" or the host name; `aria-current="true"` on the page's own hub. */
   hubsEntry: 'hubs-entry',
   /** Status line beside the Hubs menu for the latest hub opening: `Opening <host>…`, `<host> needs Tailscale login`, `<host>: <message>`, `Installing on <host>…` or `no host named <name>`. */

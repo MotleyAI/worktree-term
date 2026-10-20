@@ -512,6 +512,12 @@ input:focus-visible,
   box-shadow: 0 12px 36px rgb(0 0 0 / 55%);
 }
 
+/* Framed thick in the selected tab's blue. */
+.hubs-list,
+.confirm-dialog.delete-worktree {
+  border: 3px solid var(--accent);
+}
+
 /* Undo the user agent's centring and colours of an open dialog. */
 dialog.preset-picker,
 dialog.close-dialog,

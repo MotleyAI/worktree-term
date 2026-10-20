@@ -189,7 +189,7 @@ const Hubs = ({ client }: { client: HubClient }) => {
             Hubs
           </button>
           {open && (
-            <div class="hubs-list" role="menu" tabIndex={-1} onKeyDown={closeOnEscape}>
+            <div class="hubs-list" data-testid="hubs-list" role="menu" tabIndex={-1} onKeyDown={closeOnEscape}>
               {entries.map((entry) => (
                 <button
                   key={entry.label}
@@ -296,7 +296,7 @@ const ConfirmDialog = ({ view, confirmation }: { view: View; confirmation: Confi
   return (
     <dialog
       open
-      class="confirm-dialog"
+      class={confirmation.t === 'removeWorktree' ? 'confirm-dialog delete-worktree' : 'confirm-dialog'}
       data-testid="confirm-dialog"
       aria-label="Confirm"
       tabIndex={-1}

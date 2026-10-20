@@ -8,6 +8,12 @@ import type { HubClient } from './hub-client.js';
 import { HubHost } from './hub-host.js';
 import { REPO_ROOT } from './exec.js';
 
+/** Hub budgets for opening a remote hub, probing its forward and installing, shortened for every hub started here. */
+const OPEN_MS = 10_000;
+const PROBE_MS = 3000;
+const INSTALL_MS = 30_000;
+const HUB_ENV = { WTD_HUB_OPEN_MS: String(OPEN_MS), WTD_HUB_PROBE_MS: String(PROBE_MS), WTD_HUB_INSTALL_MS: String(INSTALL_MS) };
+
 /** Per-test values, refilled by the `beforeEach` that `useHubRouterHost` registers. */
 class HubRouterFixture {
   host!: HubHost;
@@ -28,7 +34,7 @@ export const useHubRouterHost = (): void => {
     fx.repo = makeRepo(join(fx.host.dir, 'repo'));
     fx.wt = addWorktree(fx.repo, join(fx.host.dir, 'wt'), 'wt');
     fx.host.writeRepos([fx.repo]);
-    fx.hub = await fx.host.startHub();
+    fx.hub = await fx.host.startHub(HUB_ENV);
   });
 
   afterEach(async () => {
@@ -83,11 +89,12 @@ export const watching = async (): Promise<HubClient> => {
 };
 
 export const REMOTE_TIMEOUT = 20_000;
-export const INSTALL_TIMEOUT = 150_000;
+export const INSTALL_TIMEOUT = INSTALL_MS + 15_000;
 
 export interface RemoteHostConfig {
   name: string;
   ssh: string;
+  port?: number;
   repos?: readonly string[];
   roots?: readonly string[];
 }
@@ -121,3 +128,24 @@ export const remoteInstance = async (client: HubClient, idx: number, from = 0): 
   if (instance === null) throw new Error('connected without an instance');
   return instance;
 };
+
+export const PRINT_CODE = '"$HOME/.local/bin/wtd" ui --print-code';
+
+/** Restarts the hub with `env` over the usual budgets, e.g. a shorter `WTD_HUB_OPEN_MS`. */
+export const restartHub = async (env: Record<string, string>): Promise<void> => {
+  fx.hub.kill('SIGTERM');
+  await fx.hub.exited;
+  fx.hub = await fx.host.startHub({ ...HUB_ENV, ...env });
+};
+
+/** The SSH runs of `box` that ran the connect command. */
+export const connectRuns = (): number[] =>
+  fx.ssh
+    .calls()
+    .filter((call) => call.alias === 'box' && call.command.includes('connect'))
+    .map((call) => call.pid);
+
+export const LOGIN_URL: unknown = expect.stringMatching(/^https:\/\/login\.tailscale\.com\/a\/wtd\d+$/);
+
+/** Reads `config.json` as JSON. */
+export const configFile = (): unknown => JSON.parse(readFileSync(fx.host.configPath, 'utf8'));

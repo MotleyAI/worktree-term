@@ -7,8 +7,10 @@ import {
   ANY_INSTANCE,
   configure,
   connectedHost,
+  connectRuns,
   fx,
   installedBox,
+  LOGIN_URL,
   MiB,
   packageVersion,
   REMOTE_TIMEOUT,
@@ -19,8 +21,6 @@ import {
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useHubRouterHost();
 
-const LOGIN_URL: unknown = expect.stringMatching(/^https:\/\/login\.tailscale\.com\/a\/wtd\d+$/);
-
 /** Host `idx`'s entries in every `hosts` message from `from` on. */
 const entriesOf = (client: HubClient, idx: number, from = 0): HostEntry[] =>
   client.messages.slice(from).flatMap((m) => (m.t === 'hosts' ? m.hosts.filter((h) => h.idx === idx) : []));
@@ -30,13 +30,6 @@ const statusesOf = (client: HubClient, idx: number, from = 0): string[] =>
   entriesOf(client, idx, from)
     .map((h) => h.status)
     .filter((status, i, all) => i === 0 || all[i - 1] !== status);
-
-/** The SSH runs of `box` that ran the connect command. */
-const connectRuns = (): number[] =>
-  fx.ssh
-    .calls()
-    .filter((call) => call.alias === 'box' && call.command.includes('connect'))
-    .map((call) => call.pid);
 
 /** Host 1's entry once it needs login, and the login URL. */
 const needsLogin = async (client: HubClient, from = 0): Promise<{ entry: HostEntry; url: string }> => {

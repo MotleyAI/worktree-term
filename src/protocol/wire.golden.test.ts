@@ -4,7 +4,13 @@ import frozenJson from './frozen.golden.json' with { type: 'json' };
 import wireJson from './wire.golden.json' with { type: 'json' };
 import {
   ACK_EVERY,
+  decodeHomeFragment,
   decodeMessage,
+  decodePrintCode,
+  decodeRemoteFragment,
+  encodeHomeFragment,
+  encodePrintCode,
+  encodeRemoteFragment,
   encodeFrame,
   FLOW_HIGH,
   FLOW_LOW,
@@ -19,7 +25,7 @@ import {
   type Direction,
   type Frame,
 } from './index.js';
-import { DIRECTIONS, featWorktree, hello, hosts, layout, liveTerminal, raw, REPO, samples, WT } from './test-samples.js';
+import { CODE, DIRECTIONS, featWorktree, hello, hosts, layout, liveTerminal, raw, REPO, samples, WT } from './test-samples.js';
 
 const directionSchema = z.enum(['clientToDaemon', 'daemonToClient', 'browserToHub', 'hubToBrowser']);
 
@@ -202,6 +208,18 @@ const EDGE_CASES: readonly unknown[] = [
       },
     ],
   },
+  { t: 'openHub', req: 1 },
+  { t: 'openHub', req: 1, host: 65536 },
+  { t: 'installHub', req: 1, host: 1, force: true },
+  { t: 'hubLogin', req: 1, login: 'https://login.tailscale.com.evil/a/x' },
+  { t: 'hubOpened', req: 1, url: `http://evil.example:7418/#code=${CODE}&host=box&home=7417&hubs=box` },
+  { t: 'hubOpened', req: 1, url: `https://127.0.0.1:7418/#code=${CODE}&host=box&home=7417&hubs=box` },
+  { t: 'hubOpened', req: 1, url: `http://127.0.0.1:80/#code=${CODE}&host=box&home=7417&hubs=box` },
+  { t: 'hubOpened', req: 1, url: `http://127.0.0.1:7418/x#code=${CODE}&host=box&home=7417&hubs=box` },
+  { t: 'hubOpened', req: 1, url: 'javascript:alert(1)' },
+  { t: 'error', req: 1, code: 'hub-outdated', message: 'x' },
+  { t: 'error', req: 1, code: 'hub-failed', message: 'x' },
+  { t: 'error', req: 1, host: 1, code: 'hub-gone', message: 'x' },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -309,8 +327,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 6 and browser protocol 9', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 6, browser: 9 });
+  it('is blessed for daemon protocol 6 and browser protocol 10', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 6, browser: 10 });
   });
 
   it('records every sample as valid in its own direction', () => {
@@ -323,10 +341,27 @@ describe('wire golden', () => {
   });
 });
 
+const shapeSample = <T extends z.ZodType>(value: T) => z.object({ text: z.string(), value: value.nullable() });
+
 const frozenSchema = z.object({
   frames: z.array(z.object({ kind: z.number(), payload: z.string(), bytes: z.string() })),
   messages: z.array(z.object({ dirs: z.array(directionSchema), json: z.string(), valid: z.boolean() })),
+  printCode: z.array(shapeSample(z.object({ port: z.number(), code: z.string() }))).min(1),
+  homeFragments: z.array(shapeSample(z.object({ code: z.string().nullable(), hub: z.string().nullable() }))).min(1),
+  remoteFragments: z
+    .array(shapeSample(z.object({ code: z.string(), host: z.string(), home: z.number(), hubs: z.array(z.string()) })))
+    .min(1),
 });
+
+/** The decoded value of `text`, or null when `decode` rejects it with a ProtocolError. */
+const decodedOrNull = <T>(decode: (text: string) => T, text: string): T | null => {
+  try {
+    return decode(text);
+  } catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    return null;
+  }
+};
 
 const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 const fromHex = (text: string): Uint8Array =>
@@ -350,6 +385,32 @@ describe('frozen handshake and frame header', () => {
       expect(decodes(dir, json), dir).toBe(valid);
       const parsed: unknown = JSON.parse(json);
       if (valid) expect(decodeMessage(dir, json)).toEqual(parsed);
+    }
+  });
+});
+
+describe('frozen print-code line and page fragments', () => {
+  const frozen = frozenSchema.parse(frozenJson);
+
+  it.each(frozen.printCode)('decodes print-code line $text to $value', ({ text, value }) => {
+    expect(decodedOrNull(decodePrintCode, text)).toEqual(value);
+    if (value !== null) expect(encodePrintCode(value)).toBe(`{"port":${String(value.port)},"code":"${value.code}"}\n`);
+  });
+
+  it.each(frozen.homeFragments)('decodes home fragment "$text" to $value', ({ text, value }) => {
+    expect(decodedOrNull(decodeHomeFragment, text)).toEqual(value);
+    if (value !== null) expect(encodeHomeFragment(value)).toBe(text);
+  });
+
+  it.each(frozen.remoteFragments)('decodes remote fragment "$text" to $value', ({ text, value }) => {
+    expect(decodedOrNull(decodeRemoteFragment, text)).toEqual(value);
+    if (value !== null) expect(encodeRemoteFragment(value)).toBe(text);
+  });
+
+  it('holds valid and rejected samples of every shape', () => {
+    for (const samples of [frozen.printCode, frozen.homeFragments, frozen.remoteFragments]) {
+      expect(samples.some((s) => s.value === null)).toBe(true);
+      expect(samples.some((s) => s.value !== null)).toBe(true);
     }
   });
 });

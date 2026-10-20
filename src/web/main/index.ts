@@ -1,5 +1,5 @@
 import { h, render } from 'preact';
-import { HubClient, RequestError, Restorer } from '../client/index.js';
+import { HubClient, pageTitle, RequestError, Restorer } from '../client/index.js';
 import { TerminalManager } from '../terminals/index.js';
 import { App, View } from '../ui/index.js';
 
@@ -56,3 +56,4 @@ const root = document.getElementById('app');
 if (root === null) throw new Error('no #app element');
 render(h(App, { client, manager, view }), root);
 client.start();
+document.title = pageTitle(client.remote);

@@ -14,9 +14,7 @@ interface Hooks {
   removals: { path: string; locked: boolean }[];
 }
 
-const hooks = vi.hoisted(
-  (): Hooks => ({ failRename: false, replaceAfterRename: false, lockHeld: false, lockPath: '', removals: [] }),
-);
+const hooks = vi.hoisted((): Hooks => ({ failRename: false, replaceAfterRename: false, lockHeld: false, lockPath: '', removals: [] }));
 
 vi.mock('../../platform/files/index.js', async (importOriginal) => {
   const real = await importOriginal<typeof files>();

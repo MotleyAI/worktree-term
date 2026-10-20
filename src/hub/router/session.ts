@@ -40,6 +40,16 @@ export interface SessionHost {
   roots: string[];
 }
 
+/** How a hub opening ended: the URL to navigate to, or the error to answer with. */
+export type HubOpenOutcome =
+  | { kind: 'opened'; url: string }
+  | { kind: 'error'; code: Extract<ErrorCode, 'unknown-host' | 'hub-outdated' | 'hub-failed' | 'internal'>; message: string };
+
+/** The configuration no longer lists the session's host. */
+export class HostGoneError extends Error {
+  override readonly name = 'HostGoneError';
+}
+
 /** What a session shares with the rest of the hub. */
 export interface SessionContext {
   /** Our hello to a daemon. */
@@ -61,6 +71,10 @@ export interface SessionContext {
   presetsEdited: (presets: Preset[]) => void;
   /** A link of session `from` to `host` exchanged hello: redials the other sessions' links to it that need login. */
   greeted?: (host: SessionHost, from: Session) => void;
+  /** Opens the hub of the remote host named `name`, read afresh from the configuration; `cancel` ends it silently. */
+  openHub: (name: string, events: { login: (url: string) => void; done: (outcome: HubOpenOutcome) => void }) => { cancel: () => void };
+  /** Installs the hub's bundle on the remote host named `name`; rejects with HostGoneError when it is no longer configured. */
+  installHub: (name: string) => Promise<void>;
 }
 
 /** Depth of hub-level repo discovery. */
@@ -236,6 +250,8 @@ class HostLink {
 /** One browser session: its configuration snapshot, its daemon links and its routing. */
 export class Session {
   private readonly hosts: HostLink[];
+  /** The hub opening in progress, at most one. */
+  private opening: { cancel: () => void } | null = null;
   private paused = false;
   private closed = false;
 
@@ -268,6 +284,12 @@ export class Session {
         return;
       case 'reinstallDaemon':
         this.reinstall(message.req, message.host);
+        return;
+      case 'openHub':
+        this.openHub(message.req, message.host);
+        return;
+      case 'installHub':
+        this.installHub(message.req, message.host);
         return;
       case 'discoverRepos':
         this.discover(message.req, message.host);
@@ -324,6 +346,8 @@ export class Session {
 
   close(): void {
     this.closed = true;
+    this.opening?.cancel();
+    this.opening = null;
     for (const host of this.hosts) host.close();
   }
 
@@ -415,6 +439,47 @@ export class Session {
     if (host === undefined) this.error(req, idx, 'unknown-host', `no host ${String(idx)}`);
     else if (host.host.ssh === null) this.error(req, idx, 'internal', 'the local daemon is restarted, not reinstalled');
     else this.reply(req, idx, this.context.coordinator(host.host).reinstall());
+  }
+
+  /** The remote host `idx`, or null after answering `unknown-host`. */
+  private remoteHost(req: number, idx: number): HostLink | null {
+    const host = this.hosts[idx];
+    if (host !== undefined && host.host.ssh !== null) return host;
+    this.error(req, idx, 'unknown-host', host === undefined ? `no host ${String(idx)}` : `host ${String(idx)} is this machine`);
+    return null;
+  }
+
+  /** Ends any opening in progress, then opens the remote host's hub. */
+  private openHub(req: number, idx: number): void {
+    this.opening?.cancel();
+    this.opening = null;
+    const host = this.remoteHost(req, idx);
+    if (host === null) return;
+    const opening = this.context.openHub(host.host.name, {
+      login: (login) => {
+        this.message({ t: 'hubLogin', req, login });
+      },
+      done: (outcome) => {
+        if (this.opening === opening) this.opening = null;
+        if (outcome.kind === 'opened') this.message({ t: 'hubOpened', req, url: outcome.url });
+        else this.error(req, idx, outcome.code, outcome.message);
+      },
+    });
+    this.opening = opening;
+  }
+
+  private installHub(req: number, idx: number): void {
+    const host = this.remoteHost(req, idx);
+    if (host === null) return;
+    this.context.installHub(host.host.name).then(
+      () => {
+        this.message({ t: 'done', req });
+      },
+      (error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error);
+        this.error(req, idx, error instanceof HostGoneError ? 'unknown-host' : 'internal', text);
+      },
+    );
   }
 
   private discover(req: number, idx: number): void {

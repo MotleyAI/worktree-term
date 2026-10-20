@@ -154,7 +154,10 @@ describe('request checks and headers', () => {
     ['localhost', () => `localhost:${String(fx.host.port)}`],
     ['a foreign name', () => 'evil.example'],
     ['127.0.0.1 without the port', () => '127.0.0.1'],
-    ['another port', () => `127.0.0.1:${String(fx.host.port + 1)}`],
+    ['a port with a leading zero', () => '127.0.0.1:07417'],
+    ['port 0', () => '127.0.0.1:0'],
+    ['port 65536', () => '127.0.0.1:65536'],
+    ['a port with a sign', () => '127.0.0.1:+7420'],
   ])('refuses a request whose Host is %s with 403', async (_name, value) => {
     expect((await fx.host.http('GET', '/', { host: value() })).status).toBe(403);
     expect((await fx.host.api('GET', '/api/identity')).status).toBe(200);
@@ -163,6 +166,37 @@ describe('request checks and headers', () => {
       headers: [['Authorization', `Bearer ${fx.host.token()}`]],
     });
     expect(identity.status).toBe(403);
+  });
+
+  it.each([1, 7420, 65535])('serves index.html for a forwarded Host 127.0.0.1:%i', async (port) => {
+    const response = await fx.host.http('GET', '/', { host: `127.0.0.1:${String(port)}` });
+    expect(response.status).toBe(200);
+    expect(response.body).toContain('<!doctype html>');
+    expectSecurityHeaders(response);
+  });
+
+  it('answers the API for a forwarded Host with no Origin or its own', async () => {
+    const forwarded = '127.0.0.1:7420';
+    const bearer: [string, string] = ['Authorization', `Bearer ${fx.host.token()}`];
+    expect((await fx.host.http('GET', '/api/identity', { host: forwarded, headers: [bearer] })).status).toBe(200);
+    const same = await fx.host.http('GET', '/api/identity', { host: forwarded, headers: [bearer, ['Origin', `http://${forwarded}`]] });
+    expect(same.status).toBe(200);
+    expect(
+      (await fx.host.http('POST', '/api/code', { host: forwarded, headers: [bearer, ['Origin', `http://${forwarded}`]] })).status,
+    ).toBe(200);
+  });
+
+  it('refuses an API request whose Origin is not http:// and its own Host with 403', async () => {
+    const forwarded = '127.0.0.1:7420';
+    const bearer: [string, string] = ['Authorization', `Bearer ${fx.host.token()}`];
+    for (const origin of [fx.host.origin, 'http://127.0.0.1:8080', 'http://127.0.0.1', 'https://127.0.0.1:7420']) {
+      const response = await fx.host.http('GET', '/api/identity', { host: forwarded, headers: [bearer, ['Origin', origin]] });
+      expect(response.status, origin).toBe(403);
+    }
+    const shutdown = await fx.host.http('POST', '/api/shutdown', { host: forwarded, headers: [bearer, ['Origin', fx.host.origin]] });
+    expect(shutdown.status).toBe(403);
+    await sleep(300);
+    expect(await fx.host.serving()).toBe(true);
   });
 
   it('refuses a request without Host with 403', async () => {

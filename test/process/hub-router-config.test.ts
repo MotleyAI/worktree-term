@@ -5,7 +5,17 @@ import { makeRepo, sleep } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
 import { installRemote } from '../support/fake-ssh.js';
 import type { HubClient, HubMessageOf } from '../support/hub-client.js';
-import { configure, connected, connectedHost, fx, installedBox, nodeRemote, useHubRouterHost, watching } from '../support/hub-router.js';
+import {
+  configFile,
+  configure,
+  connected,
+  connectedHost,
+  fx,
+  installedBox,
+  nodeRemote,
+  useHubRouterHost,
+  watching,
+} from '../support/hub-router.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useHubRouterHost();
@@ -18,9 +28,6 @@ const DEFAULT_PRESETS = [SHELL, CLAUDE, { name: 'codex', command: 'codex' }];
 /** The preset lists of every `presets` message received so far. */
 const presetsOf = (client: HubClient): HubMessageOf<'presets'>['presets'][] =>
   client.messages.flatMap((m) => (m.t === 'presets' ? [m.presets] : []));
-
-/** Reads `config.json` as JSON. */
-const configFile = (): unknown => JSON.parse(readFileSync(fx.host.configPath, 'utf8'));
 
 describe('configuration snapshots', () => {
   it('lists no repos when the configuration has none', async () => {

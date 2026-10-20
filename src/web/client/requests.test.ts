@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { PendingRequests } from './requests.js';
+import { OpeningRequests, PendingRequests } from './requests.js';
+
+describe('OpeningRequests', () => {
+  it('returns the opening each new one supersedes, none for the first', () => {
+    const openings = new OpeningRequests();
+    expect(openings.start(1)).toBeNull();
+    expect(openings.start(4)).toBe(1);
+    expect(openings.start(9)).toBe(4);
+  });
+
+  it('knows the superseded openings, not the latest or unrelated requests', () => {
+    const openings = new OpeningRequests();
+    openings.start(1);
+    openings.start(2);
+    openings.start(3);
+    expect([1, 2, 3, 7].map((req) => openings.isSuperseded(req))).toEqual([true, true, false, false]);
+  });
+
+  it('keeps only the 8 most recently superseded openings', () => {
+    const openings = new OpeningRequests();
+    for (let req = 1; req <= 10; req++) openings.start(req);
+    expect([1, 2, 3, 9].map((req) => openings.isSuperseded(req))).toEqual([false, true, true, true]);
+  });
+
+  it('forgets everything on clear, so the next opening supersedes none', () => {
+    const openings = new OpeningRequests();
+    openings.start(1);
+    openings.start(2);
+    openings.clear();
+    expect(openings.isSuperseded(1)).toBe(false);
+    expect(openings.start(3)).toBeNull();
+  });
+});
 
 describe('PendingRequests', () => {
   it('numbers requests from 1 and delivers each reply to its request', async () => {
@@ -33,6 +65,22 @@ describe('PendingRequests', () => {
     pending.resolve(hub.req, 'hub');
     expect(await host1.reply).toBe('one');
     expect(await hub.reply).toBe('hub');
+  });
+
+  it('forgets a request: neither a reply nor a failure reaches it', async () => {
+    const pending = new PendingRequests<string>();
+    const forgotten = pending.add(null);
+    const kept = pending.add(null);
+    let settled = false;
+    forgotten.reply.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    pending.forget(forgotten.req);
+    expect(pending.resolve(forgotten.req, 'late')).toBe(false);
+    pending.failAll('closed');
+    await expect(kept.reply).rejects.toThrow('closed');
+    expect(settled).toBe(false);
   });
 
   it('fails every pending request when the session closes', async () => {

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeWsData, MAX_FRAME, BROWSER_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { sleep, type WtdProcess } from '../support/daemon-host.js';
-import type { HubClient, HubMessageOf } from '../support/hub-client.js';
+import { HubClient, type HubMessageOf } from '../support/hub-client.js';
 import { ANY_TEXT, fx, header, outcome, packageVersion, refusal, useHubServerHost, waitExit } from '../support/hub-server.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
@@ -41,6 +41,28 @@ describe('WebSocket authentication', () => {
     ['another port as Origin', 'http://127.0.0.1:1'],
   ])('refuses an upgrade with %s with 403', async (_name, origin) => {
     expect(await refusal(fx.host.open(['wtd', `wtd.token.${token}`], origin))).toBe(403);
+  });
+
+  it('accepts an upgrade with a forwarded Host and that same Origin, and the session greets', async () => {
+    const forwarded = '127.0.0.1:7420';
+    expect((await fx.host.upgrade(['wtd', `wtd.token.${token}`], { host: forwarded, origin: `http://${forwarded}` })).status).toBe(101);
+    const client = await HubClient.open(fx.host.wsUrl, {
+      protocols: ['wtd', `wtd.token.${token}`],
+      origin: `http://${forwarded}`,
+      headers: { Host: forwarded },
+    });
+    const { hello } = await client.handshake();
+    expect(hello.protocol).toBe(BROWSER_PROTOCOL_VERSION);
+    client.close();
+  });
+
+  it.each([
+    ['the hub’s own port', () => fx.host.origin],
+    ['another port', () => 'http://127.0.0.1:8080'],
+    ['no port', () => 'http://127.0.0.1'],
+    ['none', () => null],
+  ])('refuses an upgrade with a forwarded Host and an Origin of %s with 403', async (_name, origin) => {
+    expect((await fx.host.upgrade(['wtd', `wtd.token.${token}`], { host: '127.0.0.1:7420', origin: origin() })).status).toBe(403);
   });
 
   it('refuses an upgrade with two Origin headers with 403', async () => {

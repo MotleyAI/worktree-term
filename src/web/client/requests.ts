@@ -32,6 +32,11 @@ export class PendingRequests<T> {
     return true;
   }
 
+  /** Drops request `req` unsettled: no reply or failure reaches it. */
+  forget(req: number): void {
+    this.entries.delete(req);
+  }
+
   /** Fails the requests to `host`. */
   failHost(host: number, message: string): void {
     for (const [req, entry] of this.entries) {
@@ -45,5 +50,35 @@ export class PendingRequests<T> {
     const entries = [...this.entries.values()];
     this.entries.clear();
     for (const entry of entries) entry.reject(new Error(message));
+  }
+}
+
+const MAX_SUPERSEDED = 8;
+
+/** The latest hub opening's request, and the few it superseded whose reply may still be in flight. */
+export class OpeningRequests {
+  private latest: number | null = null;
+  private readonly superseded: number[] = [];
+
+  /** Records `req` as the latest opening; returns the opening it supersedes, if any. */
+  start(req: number): number | null {
+    const previous = this.latest;
+    this.latest = req;
+    if (previous !== null) {
+      this.superseded.push(previous);
+      if (this.superseded.length > MAX_SUPERSEDED) this.superseded.shift();
+    }
+    return previous;
+  }
+
+  /** Whether `req` is a recently superseded opening. */
+  isSuperseded(req: number): boolean {
+    return this.superseded.includes(req);
+  }
+
+  /** Forgets every opening, as when the session closes. */
+  clear(): void {
+    this.latest = null;
+    this.superseded.length = 0;
   }
 }

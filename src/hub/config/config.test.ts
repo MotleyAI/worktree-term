@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ConfigError, ConfigSource, DEFAULT_PORT, loadConfig, parseConfig } from './index.js';
+import { ConfigError, ConfigSource, DEFAULT_PORT, loadConfig, nextHostPort, parseConfig } from './index.js';
 
 const HOME = '/home/u';
 
@@ -197,8 +197,8 @@ describe('parseConfig', () => {
       ],
     });
     expect(config.hosts).toEqual([
-      { name: 'b', ssh: 'b.example.org', repos: ['/srv/app'], roots: ['~/src'] },
-      { name: 'a.1_x-y', ssh: 'user@a', repos: [], roots: ['~'] },
+      { name: 'b', ssh: 'b.example.org', port: null, repos: ['/srv/app'], roots: ['~/src'] },
+      { name: 'a.1_x-y', ssh: 'user@a', port: null, repos: [], roots: ['~'] },
     ]);
   });
 
@@ -267,12 +267,74 @@ describe('parseConfig', () => {
     expect(problem(JSON.stringify({ hosts: [host] }))).toContain(key);
   });
 
+  describe('host ports', () => {
+    const withPorts = (...ports: unknown[]): unknown => ({
+      hosts: ports.map((port, i) => ({ name: `h${String(i)}`, ssh: `h${String(i)}`, port })),
+    });
+
+    it.each([1024, 7418, 65535])('accepts port %i', (port) => {
+      expect(parse(withPorts(port)).hosts[0]?.port).toBe(port);
+    });
+
+    it('gives a host without a port the port null', () => {
+      expect(parse({ hosts: [{ name: 'box', ssh: 'box' }] }).hosts[0]?.port).toBeNull();
+    });
+
+    it.each([
+      ['1023', 1023],
+      ['65536', 65536],
+      ['a fraction', 7418.5],
+      ['a string', '7418'],
+      ['null', null],
+    ])('refuses %s, naming port', (_name, port) => {
+      expect(problem(JSON.stringify(withPorts(port)))).toContain('port');
+    });
+
+    it('refuses two hosts with the same port, naming port', () => {
+      expect(problem(JSON.stringify(withPorts(7420, 7420)))).toContain('port');
+    });
+
+    it('refuses a host port equal to the hub port, naming port', () => {
+      expect(problem(JSON.stringify({ port: 9000, hosts: [{ name: 'box', ssh: 'box', port: 9000 }] }))).toContain('port');
+    });
+
+    it('refuses a host port equal to the default hub port when the hub port is absent, naming port', () => {
+      expect(problem(JSON.stringify(withPorts(DEFAULT_PORT)))).toContain('port');
+    });
+
+    it('accepts a host port of 7417 when the hub listens elsewhere', () => {
+      expect(parse({ port: 9000, hosts: [{ name: 'box', ssh: 'box', port: 7417 }] }).hosts[0]?.port).toBe(7417);
+    });
+
+    it('still refuses an unknown key in a host with a port, naming it', () => {
+      expect(problem(JSON.stringify({ hosts: [{ name: 'box', ssh: 'box', port: 7418, user: 'u' }] }))).toContain('user');
+    });
+  });
+
   it('refuses hosts that are not a list', () => {
     expect(problem(JSON.stringify({ hosts: { name: 'box', ssh: 'box' } }))).toContain('hosts');
   });
 
   it('states its problem on one line', () => {
     expect(problem(JSON.stringify({ port: 1, repos: ['x'], extra: 1 }))).not.toContain('\n');
+  });
+});
+
+describe('nextHostPort', () => {
+  it.each([
+    ['one above the hub port without host ports', 7417, [], 7418],
+    ['one above the highest held port', 7417, [7418, 7425], 7426],
+    ['above a higher port held while a lower one was freed', 7417, [7419], 7420],
+    ['above the hub port when it is the highest', 9000, [7418], 9001],
+    ['the lowest free port from 1024 when above 65535', 65535, [1024], 1025],
+    ['the lowest free port, skipping the hub port', 1024, [65535], 1025],
+  ])('gives %s', (_name, hub, held, port) => {
+    expect(nextHostPort(hub, held)).toBe(port);
+  });
+
+  it('gives null when every port is taken', () => {
+    const held = Array.from({ length: 65535 - 1024 }, (_, i) => 1024 + i);
+    expect(nextHostPort(65535, held)).toBeNull();
   });
 });
 
@@ -419,6 +481,15 @@ describe('README', () => {
     'WTD_SSH',
     'MaxSessions',
   ])('documents %s', (text) => {
+    expect(readme).toContain(text);
+  });
+
+  it('gives a configuration example with a host port', () => {
+    const configs = jsonBlocks(section('Configuration')).map((block) => parseConfig(block, HOME));
+    expect(configs.some((config) => config.hosts.some((host) => host.port !== null))).toBe(true);
+  });
+
+  it.each(['wtd ui <host>', 'wtd ui --print-code', 'AllowTcpForwarding'])('documents %s', (text) => {
     expect(readme).toContain(text);
   });
 

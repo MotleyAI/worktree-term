@@ -18,16 +18,24 @@ const deferred = (): Deferred => {
 };
 
 /** A coordinator whose operations record their start and finish when the test settles them. */
-const setup = (): { coordinator: HostCoordinator; started: string[]; settle: (kind: string, error?: Error) => void } => {
+const setup = (): {
+  coordinator: HostCoordinator;
+  started: string[];
+  settle: (kind: string, error?: Error) => void;
+  /** The most operations that ran at once. */
+  peak: () => number;
+} => {
   const started: string[] = [];
   const running = new Map<string, Deferred>();
+  let peak = 0;
   const op = (kind: string) => (): Promise<void> => {
     started.push(kind);
     const d = deferred();
     running.set(kind, d);
+    peak = Math.max(peak, running.size);
     return d.promise;
   };
-  const coordinator = new HostCoordinator({ restart: op('restart'), reinstall: op('reinstall') });
+  const coordinator = new HostCoordinator({ restart: op('restart'), reinstall: op('reinstall'), install: op('install') });
   const settle = (kind: string, error?: Error): void => {
     const d = running.get(kind);
     if (d === undefined) throw new Error(`${kind} is not running`);
@@ -35,7 +43,7 @@ const setup = (): { coordinator: HostCoordinator; started: string[]; settle: (ki
     if (error === undefined) d.resolve();
     else d.reject(error);
   };
-  return { coordinator, started, settle };
+  return { coordinator, started, settle, peak: () => peak };
 };
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -179,5 +187,164 @@ describe('HostCoordinator', () => {
     settle('reinstall');
     await queued;
     expect(coordinator.reinstalling()).toBeNull();
+  });
+});
+
+type Kind = 'install' | 'restart' | 'reinstall';
+
+const request = (coordinator: HostCoordinator, kind: Kind): Promise<void> => coordinator[kind]();
+
+const permutations = <T>(items: readonly T[]): T[][] =>
+  items.length <= 1
+    ? [[...items]]
+    : items.flatMap((item, i) => permutations(items.filter((_, j) => j !== i)).map((rest) => [item, ...rest]));
+
+describe('HostCoordinator installs', () => {
+  it('shares one install between concurrent requests', async () => {
+    const { coordinator, started, settle } = setup();
+    const a = coordinator.install();
+    const b = coordinator.install();
+    await tick();
+    expect(started).toEqual(['install']);
+    settle('install');
+    await expect(Promise.all([a, b])).resolves.toEqual([undefined, undefined]);
+  });
+
+  it('lets an install share a running reinstall', async () => {
+    const { coordinator, started, settle } = setup();
+    const reinstall = coordinator.reinstall();
+    await tick();
+    const install = coordinator.install();
+    await tick();
+    expect(started).toEqual(['reinstall']);
+    expect(await settled(install)).toBe(false);
+    settle('reinstall');
+    await expect(Promise.all([reinstall, install])).resolves.toEqual([undefined, undefined]);
+    expect(started).toEqual(['reinstall']);
+  });
+
+  it('lets an install share a queued reinstall', async () => {
+    const { coordinator, started, settle } = setup();
+    void coordinator.restart();
+    await tick();
+    const reinstall = coordinator.reinstall();
+    const install = coordinator.install();
+    settle('restart');
+    await tick();
+    await tick();
+    expect(started).toEqual(['restart', 'reinstall']);
+    settle('reinstall');
+    await expect(Promise.all([reinstall, install])).resolves.toEqual([undefined, undefined]);
+    expect(started).toEqual(['restart', 'reinstall']);
+  });
+
+  it('lets an install share a queued install', async () => {
+    const { coordinator, started, settle } = setup();
+    void coordinator.restart();
+    await tick();
+    const a = coordinator.install();
+    const b = coordinator.install();
+    settle('restart');
+    await tick();
+    await tick();
+    expect(started).toEqual(['restart', 'install']);
+    settle('install');
+    await expect(Promise.all([a, b])).resolves.toEqual([undefined, undefined]);
+  });
+
+  it.each(['restart', 'reinstall'] as const)('runs a %s requested during an install once the install ended', async (kind) => {
+    const { coordinator, started, settle } = setup();
+    const install = coordinator.install();
+    await tick();
+    const later = request(coordinator, kind);
+    await tick();
+    expect(started).toEqual(['install']);
+    expect(await settled(later)).toBe(false);
+    settle('install');
+    await install;
+    await tick();
+    expect(started).toEqual(['install', kind]);
+    settle(kind);
+    await expect(later).resolves.toBeUndefined();
+  });
+
+  it('runs an install requested during a restart once the restart ended', async () => {
+    const { coordinator, started, settle } = setup();
+    const restart = coordinator.restart();
+    await tick();
+    const install = coordinator.install();
+    await tick();
+    expect(started).toEqual(['restart']);
+    expect(await settled(install)).toBe(false);
+    settle('restart');
+    await restart;
+    await tick();
+    expect(started).toEqual(['restart', 'install']);
+    settle('install');
+    await expect(install).resolves.toBeUndefined();
+  });
+
+  it('runs a queued install even when the restart before it failed', async () => {
+    const { coordinator, started, settle } = setup();
+    const restart = coordinator.restart();
+    await tick();
+    const install = coordinator.install();
+    settle('restart', new Error('no new daemon'));
+    await expect(restart).rejects.toThrow('no new daemon');
+    await tick();
+    expect(started).toEqual(['restart', 'install']);
+    settle('install');
+    await expect(install).resolves.toBeUndefined();
+  });
+
+  it('gives an install sharing a failed reinstall that failure', async () => {
+    const { coordinator, settle } = setup();
+    const reinstall = coordinator.reinstall();
+    await tick();
+    const install = coordinator.install();
+    settle('reinstall', new Error('install: no Node'));
+    await expect(install).rejects.toThrow('install: no Node');
+    await expect(reinstall).rejects.toThrow('install: no Node');
+  });
+
+  /** The runs, in order, that requests made in this order start. */
+  const RUNS: readonly (readonly [readonly Kind[], readonly Kind[]])[] = [
+    [
+      ['install', 'restart', 'reinstall'],
+      ['install', 'restart', 'reinstall'],
+    ],
+    [
+      ['install', 'reinstall', 'restart'],
+      ['install', 'reinstall'],
+    ],
+    [
+      ['restart', 'install', 'reinstall'],
+      ['restart', 'install', 'reinstall'],
+    ],
+    [
+      ['restart', 'reinstall', 'install'],
+      ['restart', 'reinstall'],
+    ],
+    [['reinstall', 'install', 'restart'], ['reinstall']],
+    [['reinstall', 'restart', 'install'], ['reinstall']],
+  ];
+
+  it('lists every ordering of three requests', () => {
+    expect(RUNS.map(([kinds]) => kinds)).toEqual(expect.arrayContaining(permutations<Kind>(['install', 'restart', 'reinstall'])));
+    expect(RUNS).toHaveLength(6);
+  });
+
+  it.each(RUNS)('runs requests made as %j one at a time, in order, as the runs %j', async (kinds, runs) => {
+    const { coordinator, started, settle, peak } = setup();
+    const requests = kinds.map((kind) => request(coordinator, kind));
+    for (let i = 0; i < runs.length; i++) {
+      await tick();
+      await tick();
+      expect(started).toEqual(runs.slice(0, i + 1));
+      settle(runs[i] ?? '');
+    }
+    await expect(Promise.all(requests)).resolves.toEqual([undefined, undefined, undefined]);
+    expect(started).toEqual(runs);
+    expect(peak()).toBe(1);
   });
 });

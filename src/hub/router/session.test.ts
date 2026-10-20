@@ -3,7 +3,7 @@ import { decodeMessage, DAEMON_PROTOCOL_VERSION, type HostEntry, type MessageOf 
 import { parseConfig } from '../config/index.js';
 import type { DaemonEndpoint, Link, LinkEvents } from '../links/index.js';
 import { HostCoordinator } from './coordinator.js';
-import { Session, type BrowserChannel, type SessionContext, type SessionHost } from './session.js';
+import { HostGoneError, Session, type BrowserChannel, type HubOpenOutcome, type SessionContext, type SessionHost } from './session.js';
 
 const LOGIN_URL = 'https://login.tailscale.com/a/abc123';
 
@@ -60,7 +60,7 @@ interface Started {
   host: () => HostEntry | undefined;
 }
 
-const start = (): Started => {
+const start = (overrides: Partial<SessionContext> = {}, hosts: readonly SessionHost[] = [box]): Started => {
   const sent: MessageOf<'hubToBrowser'>[] = [];
   const channel: BrowserChannel = {
     send: (data) => {
@@ -72,14 +72,22 @@ const start = (): Started => {
   const context: SessionContext = {
     hello: { t: 'hello', protocol: DAEMON_PROTOCOL_VERSION, version: '0.1.0', instance: 'hub_1' },
     endpoint: () => endpoint,
-    coordinator: () => new HostCoordinator({ restart: unused, reinstall: unused }),
+    coordinator: () => new HostCoordinator({ restart: unused, reinstall: unused, install: unused }),
     listsRepo: unused,
     editRepos: unused,
     reposEdited: unused,
     editPresets: unused,
     presetsEdited: unused,
+    openHub: unused,
+    installHub: unused,
+    ...overrides,
   };
-  const session = new Session(channel, context, { config: parseConfig(null, '/home/u'), problem: null }, [{ ...box }]);
+  const session = new Session(
+    channel,
+    context,
+    { config: parseConfig(null, '/home/u'), problem: null },
+    hosts.map((h) => ({ ...h })),
+  );
   session.start();
   const host = (): HostEntry | undefined => sent.findLast((m) => m.t === 'hosts')?.hosts[0];
   return { session, endpoint, sent, host };
@@ -129,6 +137,111 @@ describe('Session Tailscale login', () => {
     expect(host()?.status).toBe('needs-login');
     session.receive({ t: 'host', host: 0, m: { t: 'watchRepo', req: 7, repo: '/srv/app' } });
     expect(sent.at(-1)).toMatchObject({ t: 'error', req: 7, host: 0, code: 'host-unavailable' });
+    session.close();
+  });
+});
+
+type OpenEvents = Parameters<SessionContext['openHub']>[1];
+
+/** An `openHub` recording each opening's host, events and cancellation. */
+const openings = (): {
+  openHub: SessionContext['openHub'];
+  opened: { name: string; events: OpenEvents; cancelled: boolean }[];
+} => {
+  const opened: { name: string; events: OpenEvents; cancelled: boolean }[] = [];
+  return {
+    opened,
+    openHub: (name, events) => {
+      const opening = { name, events, cancelled: false };
+      opened.push(opening);
+      return {
+        cancel: () => {
+          opening.cancelled = true;
+        },
+      };
+    },
+  };
+};
+
+const local: SessionHost = { idx: 0, name: 'laptop', ssh: null, repos: [], roots: [] };
+const URL_OF_BOX = `http://127.0.0.1:7418/#code=${'a'.repeat(64)}&host=box&home=7417&hubs=box`;
+
+describe('Session hub openings', () => {
+  it('opens the remote host by name, sending its login link and then hubOpened', () => {
+    const { openHub, opened } = openings();
+    const { session, sent } = start({ openHub }, [local, { ...box, idx: 1 }]);
+    session.receive({ t: 'openHub', req: 4, host: 1 });
+    expect(opened.map((o) => o.name)).toEqual(['box']);
+    opened[0]?.events.login(LOGIN_URL);
+    opened[0]?.events.done({ kind: 'opened', url: URL_OF_BOX });
+    expect(sent.slice(-2)).toEqual([
+      { t: 'hubLogin', req: 4, login: LOGIN_URL },
+      { t: 'hubOpened', req: 4, url: URL_OF_BOX },
+    ]);
+    session.close();
+  });
+
+  it.each<[string, HubOpenOutcome]>([
+    ['hub-outdated', { kind: 'error', code: 'hub-outdated', message: 'wtd on box is missing or too old to serve its hub' }],
+    ['hub-failed', { kind: 'error', code: 'hub-failed', message: 'ssh: Could not resolve hostname box' }],
+  ])('answers a %s opening with the host index', (_code, outcome) => {
+    const { openHub, opened } = openings();
+    const { session, sent } = start({ openHub }, [local, { ...box, idx: 1 }]);
+    session.receive({ t: 'openHub', req: 4, host: 1 });
+    opened[0]?.events.done(outcome);
+    expect(sent.at(-1)).toEqual(
+      outcome.kind === 'error' ? { t: 'error', req: 4, host: 1, code: outcome.code, message: outcome.message } : null,
+    );
+    session.close();
+  });
+
+  it.each([
+    ['the local host', 0],
+    ['an index beyond the hosts', 7],
+  ])('answers unknown-host for %s without opening anything', (_name, idx) => {
+    const { openHub, opened } = openings();
+    const { session, sent } = start({ openHub }, [local, { ...box, idx: 1 }]);
+    session.receive({ t: 'openHub', req: 4, host: idx });
+    expect(opened).toEqual([]);
+    expect(sent.at(-1)).toMatchObject({ t: 'error', req: 4, host: idx, code: 'unknown-host' });
+    session.close();
+  });
+
+  it('cancels the opening in progress when a newer one arrives', () => {
+    const { openHub, opened } = openings();
+    const { session } = start({ openHub }, [local, { ...box, idx: 1 }, { ...box, idx: 2, name: 'gpu', ssh: 'gpu' }]);
+    session.receive({ t: 'openHub', req: 4, host: 1 });
+    session.receive({ t: 'openHub', req: 5, host: 2 });
+    expect(opened.map((o) => [o.name, o.cancelled])).toEqual([
+      ['box', true],
+      ['gpu', false],
+    ]);
+    session.close();
+  });
+
+  it('cancels the opening in progress when the session closes', () => {
+    const { openHub, opened } = openings();
+    const { session } = start({ openHub }, [local, { ...box, idx: 1 }]);
+    session.receive({ t: 'openHub', req: 4, host: 1 });
+    session.close();
+    expect(opened[0]?.cancelled).toBe(true);
+  });
+
+  it('answers installHub with done, or unknown-host once the host is gone', async () => {
+    const installHub = vi
+      .fn<SessionContext['installHub']>()
+      .mockResolvedValueOnce()
+      .mockRejectedValueOnce(new HostGoneError('host box is no longer configured'));
+    const { session, sent } = start({ installHub }, [local, { ...box, idx: 1 }]);
+    session.receive({ t: 'installHub', req: 4, host: 1 });
+    await vi.waitFor(() => {
+      expect(sent.at(-1)).toEqual({ t: 'done', req: 4 });
+    });
+    session.receive({ t: 'installHub', req: 5, host: 1 });
+    await vi.waitFor(() => {
+      expect(sent.at(-1)).toMatchObject({ t: 'error', req: 5, host: 1, code: 'unknown-host' });
+    });
+    expect(installHub.mock.calls).toEqual([['box'], ['box']]);
     session.close();
   });
 });

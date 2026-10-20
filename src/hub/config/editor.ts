@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { fileIdentity, makePrivateDirs, readFileIfExists, writeFileAtomic } from '../../platform/files/index.js';
 import type { Preset } from '../../protocol/index.js';
-import { ConfigError, expandHome, MAX_PRESETS, MAX_REPOS, parseConfig, type HubConfig } from './config.js';
+import { ConfigError, expandHome, MAX_PRESETS, MAX_REPOS, nextHostPort, parseConfig, type HubConfig } from './config.js';
 
 const ATTEMPTS = 3;
 
@@ -24,22 +24,28 @@ export interface EditorHooks {
 
 type JsonObject = Record<string, unknown>;
 
-/** A change to one array in the file. */
+/** The outcome of a port assignment: whether the file changed, and the host's port afterwards. */
+export interface PortAssignment {
+  changed: boolean;
+  port: number;
+}
+
+/** A change to one value in the file. */
 interface FieldEdit<T> {
-  /** The object holding the array, and its key there. */
+  /** The object holding the value, and its key there. */
   owner: (raw: JsonObject) => JsonObject;
   key: string;
-  /** The array's current value, from the parsed configuration or the object as written. */
-  current: (config: HubConfig, owner: JsonObject) => T[];
+  /** The current value, from the parsed configuration or the object as written. */
+  current: (config: HubConfig, owner: JsonObject) => T;
   /** The new value, null to leave the file alone; throws ConfigError to refuse the edit. */
-  change: (current: T[]) => T[] | null;
+  change: (current: T, config: HubConfig) => T | null;
 }
 
 const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const stringsOf = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
 
-/** Edits the repos of one host, or the presets, in `config.json`, keeping everything else as written; one edit at a time. */
+/** Edits the repos or port of one host, or the presets, in `config.json`, keeping everything else as written; one edit at a time. */
 export class ConfigEditor {
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -106,6 +112,26 @@ export class ConfigEditor {
     });
   }
 
+  /** Gives the named remote host a port unless it has one; refuses when no port is free. */
+  async assignPort(host: string): Promise<PortAssignment> {
+    const { changed, value } = await this.edit<number | null>({
+      owner: (raw) => this.ownerOf(raw, host),
+      key: 'port',
+      current: (config) => config.hosts.find((h) => h.name === host)?.port ?? null,
+      change: (current, config) => {
+        if (current !== null) return null;
+        const port = nextHostPort(
+          config.port,
+          config.hosts.flatMap((h) => (h.port === null ? [] : [h.port])),
+        );
+        if (port === null) throw new ConfigError(`there is no free port for host ${host}`);
+        return port;
+      },
+    });
+    if (value === null) throw new ConfigError(`host ${host} has no port`);
+    return { changed, port: value };
+  }
+
   private names(host: string | null, entry: string, repo: string): boolean {
     return entry === repo || (host === null && expandHome(entry, this.home) === repo);
   }
@@ -125,13 +151,13 @@ export class ConfigEditor {
     return { changed, presets: value };
   }
 
-  private edit<T>(field: FieldEdit<T>): Promise<{ changed: boolean; value: T[] }> {
+  private edit<T>(field: FieldEdit<T>): Promise<{ changed: boolean; value: T }> {
     const run = this.queue.then(() => this.attempt(field, 1));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async attempt<T>(field: FieldEdit<T>, attempt: number): Promise<{ changed: boolean; value: T[] }> {
+  private async attempt<T>(field: FieldEdit<T>, attempt: number): Promise<{ changed: boolean; value: T }> {
     const identity = await fileIdentity(this.path);
     const text = await readFileIfExists(this.path);
     const config = parseConfig(text, this.home);
@@ -139,7 +165,7 @@ export class ConfigEditor {
     if (!isObject(raw)) throw new ConfigError('the configuration is not an object');
     const owner = field.owner(raw);
     const current = field.current(config, owner);
-    const next = field.change(current);
+    const next = field.change(current, config);
     if (next === null) return { changed: false, value: current };
     owner[field.key] = next;
     await this.hooks.beforeReplace?.(attempt);

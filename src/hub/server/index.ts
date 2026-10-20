@@ -11,6 +11,7 @@ export { hubIdentity, portServed, requestCode, requestShutdown, type HubIdentity
 export { PortInUseError } from './listener.js';
 export { readHubRecord, type HubRecord } from './record.js';
 export { readToken } from './token.js';
+export { TunnelListeners, type TunnelForward, type TunnelOptions, type TunnelTarget } from './tunnels.js';
 
 /** The host files of the hub. */
 export type HubPaths = Pick<HostPaths, 'stateDir' | 'runDir' | 'hubToken' | 'hubLog' | 'hubLock' | 'hubRecord'>;

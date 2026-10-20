@@ -60,10 +60,11 @@ export const test = base.extend<Fixtures>({
   },
 });
 
-/** A configured remote host: its `name`, SSH alias, absolute repos and discovery roots. */
+/** A configured remote host: its `name`, SSH alias, hub tunnel port, absolute repos and discovery roots. */
 export interface HostConfig {
   name: string;
   ssh: string;
+  port?: number;
   repos?: readonly string[];
   roots?: readonly string[];
 }
@@ -129,10 +130,10 @@ export const refuseBrowserDialogs = (page: Page): string[] => {
   return seen;
 };
 
-/** Runs `wtd ui` with the stub browser and returns the URL it opened. */
-export const runUi = async (hub: HubHost): Promise<string> => {
+/** Runs `wtd ui [args]` with the stub browser and returns the URL it opened. */
+export const runUi = async (hub: HubHost, args: readonly string[] = []): Promise<string> => {
   const before = hub.browserCalls().length;
-  const ui = hub.wtd(['ui']);
+  const ui = hub.wtd(['ui', ...args]);
   const exit = await ui.exited;
   if (exit.code !== 0) throw new Error(`wtd ui exited ${JSON.stringify(exit)}: ${ui.stderr}`);
   // The browser runs detached; wait until it has recorded its call.

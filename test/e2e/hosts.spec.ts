@@ -1,9 +1,9 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { makeRepo, waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
-import { installRemote, type FakeRemote } from '../support/fake-ssh.js';
+import { installRemote } from '../support/fake-ssh.js';
 import { byTestId, hostBanner, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
 import {
   confirmAction,
@@ -34,18 +34,11 @@ import {
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box';
 
-/** Replaces the remote's `wtd` with a shell script. */
-const plantWtd = (remote: FakeRemote, script: string): void => {
-  mkdirSync(dirname(remote.shim), { recursive: true });
-  writeFileSync(remote.shim, `#!/bin/sh\n${script}\n`);
-  chmodSync(remote.shim, 0o755);
-};
-
 test.describe('host status on repo tabs', () => {
   test('a remote tab is labelled with its host and shows a reconnecting host status, without a banner', async ({ hub, page, ssh }) => {
     const remote = ssh.addHost('box');
     // The first connect fails; the retry never answers, so the host stays reconnecting.
-    plantWtd(remote, 'if [ -e "$HOME/once" ]; then exec sleep 600; fi; : > "$HOME/once"; exit 1');
+    remote.plantWtd('if [ -e "$HOME/once" ]; then exec sleep 600; fi; : > "$HOME/once"; exit 1');
     const app = join(remote.home, 'srv', 'app');
     writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: [app] }] });
     await openUi(hub, page);

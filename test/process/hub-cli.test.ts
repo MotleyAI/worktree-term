@@ -5,7 +5,9 @@ import { createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { alive, sessionOf, sleep, waitUntil, WtdProcess, type Exit } from '../support/daemon-host.js';
+import { decodePrintCode } from '../../src/protocol/index.js';
 import { REPO_ROOT } from '../support/exec.js';
+import { UpgradeRefused } from '../support/hub-client.js';
 import { HubHost } from '../support/hub-host.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
@@ -154,6 +156,18 @@ describe('wtd hub', () => {
     ],
     ['an unknown host key', { hosts: [{ name: 'box', ssh: 'box', user: 'me' }] }, 'user'],
     ['a relative discovery root', { roots: ['GitHub'] }, 'roots'],
+    [
+      'two hosts with port 7420',
+      {
+        hosts: [
+          { name: 'a', ssh: 'a', port: 7420 },
+          { name: 'b', ssh: 'b', port: 7420 },
+        ],
+      },
+      'port',
+    ],
+    ['a host port of 7417 without a top-level port', { port: undefined, hosts: [{ name: 'box', ssh: 'box', port: 7417 }] }, 'port'],
+    ['a host port below 1024', { hosts: [{ name: 'box', ssh: 'box', port: 80 }] }, 'port'],
   ])('reports a configuration with %s in one line naming the file and the key', async (_name, config, key) => {
     host.writeConfig({ port: host.port, ...config });
     const hub = host.wtd(['hub']);
@@ -181,7 +195,7 @@ describe('wtd hub', () => {
       roots: ['~', '~/src', '/srv'],
       hosts: [
         { name: 'box', ssh: 'box', repos: ['/srv/app'], roots: ['~/GitHub'] },
-        { name: 'gpu.lab-1', ssh: 'user@gpu' },
+        { name: 'gpu.lab-1', ssh: 'user@gpu', port: 9000 },
       ],
     });
     const hub = await host.startHub();
@@ -228,6 +242,42 @@ describe('wtd hub', () => {
     expect((await waitExit(hub)).code).toBe(2);
   });
 });
+
+/** Serves a hub of version 0.0.0-old on the port, recorded under a bystander's pid; returns the shutdowns it answered and that pid. */
+const fakeOldHub = async (): Promise<{ shutdowns: string[]; pid: number }> => {
+  prepareStateDirs();
+  const token = 'c'.repeat(64);
+  writeFileSync(host.tokenPath, token, { mode: 0o600 });
+  const shutdowns: string[] = [];
+  const fake: HttpServer = createHttpServer((req: IncomingMessage, res) => {
+    const authorized = req.headers.authorization === `Bearer ${token}`;
+    if (!authorized) {
+      res.writeHead(401).end();
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/api/identity') {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ version: '0.0.0-old', instance: 'old_hub' }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/shutdown') {
+      shutdowns.push(req.headers.authorization ?? '');
+      res.writeHead(200).end('{}', () => {
+        fake.close();
+        fake.closeAllConnections();
+      });
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => fake.listen(host.port, '127.0.0.1', resolve));
+  cleanups.push(() => {
+    fake.closeAllConnections();
+    fake.close();
+  });
+  const pidHolder = bystander();
+  writeFileSync(host.recordPath, JSON.stringify({ pid: pidHolder.pid, port: host.port, instance: 'old_hub' }), { mode: 0o600 });
+  return { shutdowns, pid: pidHolder.pid ?? 0 };
+};
 
 describe('wtd ui', () => {
   /** Runs `wtd ui` to completion. */
@@ -284,42 +334,12 @@ describe('wtd ui', () => {
   });
 
   it('replaces a running hub of another version', async () => {
-    prepareStateDirs();
     const token = 'c'.repeat(64);
-    writeFileSync(host.tokenPath, token, { mode: 0o600 });
-    const shutdowns: string[] = [];
-    const fake: HttpServer = createHttpServer((req: IncomingMessage, res) => {
-      const authorized = req.headers.authorization === `Bearer ${token}`;
-      if (!authorized) {
-        res.writeHead(401).end();
-        return;
-      }
-      if (req.method === 'GET' && req.url === '/api/identity') {
-        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ version: '0.0.0-old', instance: 'old_hub' }));
-        return;
-      }
-      if (req.method === 'POST' && req.url === '/api/shutdown') {
-        shutdowns.push(req.headers.authorization ?? '');
-        res.writeHead(200).end('{}', () => {
-          fake.close();
-          fake.closeAllConnections();
-        });
-        return;
-      }
-      res.writeHead(404).end();
-    });
-    await new Promise<void>((resolve) => fake.listen(host.port, '127.0.0.1', resolve));
-    cleanups.push(() => {
-      fake.closeAllConnections();
-      fake.close();
-    });
-    const pidHolder = bystander();
-    writeFileSync(host.recordPath, JSON.stringify({ pid: pidHolder.pid, port: host.port, instance: 'old_hub' }), { mode: 0o600 });
-
+    const { shutdowns, pid } = await fakeOldHub();
     const { exit } = await ui();
     expect(exit).toEqual({ code: 0, signal: null });
     expect(shutdowns).toEqual([`Bearer ${token}`]);
-    expect(alive(pidHolder.pid ?? 0)).toBe(true);
+    expect(alive(pid)).toBe(true);
     const identity = await host.identity();
     expect(identity.version).toBe(packageVersion());
     expect(identity.instance).not.toBe('old_hub');
@@ -357,5 +377,116 @@ describe('wtd ui', () => {
     expectOneLine(run.stderr);
     expect(host.browserCalls()).toEqual([]);
     expect(existsSync(host.recordPath)).toBe(false);
+  });
+});
+
+describe('wtd ui <host>', () => {
+  const run = async (args: readonly string[]): Promise<{ exit: Exit; process: WtdProcess }> => {
+    const process_ = host.wtd(['ui', ...args]).captureStdout();
+    return { exit: await waitExit(process_, 20_000), process: process_ };
+  };
+
+  it('opens the browser on the home page asking it to open the host’s hub', async () => {
+    host.writeConfig({ port: host.port, hosts: [{ name: 'box', ssh: 'box.example.org' }] });
+    const { exit, process: ui } = await run(['box']);
+    expect(exit).toEqual({ code: 0, signal: null });
+    expect(ui.stderr).toBe('');
+    await waitUntil(() => host.browserCalls().length === 1, 'the browser');
+    const [call] = host.browserCalls();
+    expect(call?.args).toEqual([
+      expect.stringMatching(new RegExp(`^--app=http://127\\.0\\.0\\.1:${String(host.port)}/#code=[0-9a-f]{64}&hub=box$`)),
+    ]);
+    expect(call?.args.join(' ')).not.toContain(host.token());
+    const code = /#code=([0-9a-f]{64})/.exec(call?.args[0] ?? '')?.[1] ?? '';
+    const client = await host.open(['wtd', `wtd.code.${code}`]);
+    expect(await client.waitFor('token')).toEqual({ t: 'token', token: host.token() });
+  });
+
+  it('fails without touching a hub when no host has the name', async () => {
+    host.writeConfig({ port: host.port, hosts: [{ name: 'box', ssh: 'box' }] });
+    const { exit, process: ui } = await run(['nope']);
+    expect(exit).toEqual({ code: 1, signal: null });
+    expect(ui.stderr).toBe(`wtd ui: no host named nope in ${host.configPath}\n`);
+    expect(ui.stdout).toBe('');
+    await sleep(300);
+    expect(host.hubPids()).toEqual([]);
+    expect(host.record()).toBeNull();
+    expect(host.browserCalls()).toEqual([]);
+  });
+
+  it('refuses the local host’s name, which is no remote host', async () => {
+    host.writeConfig({ port: host.port });
+    const { exit, process: ui } = await run(['local']);
+    expect(exit).toEqual({ code: 1, signal: null });
+    expect(ui.stderr).toBe(`wtd ui: no host named local in ${host.configPath}\n`);
+    expect(host.hubPids()).toEqual([]);
+  });
+
+  it.each([
+    ['a host and --print-code', ['box', '--print-code']],
+    ['two hosts', ['a', 'b']],
+  ])('exits 2 for %s, starting nothing', async (_name, args) => {
+    host.writeConfig({ port: host.port, hosts: [{ name: 'box', ssh: 'box' }] });
+    const { exit, process: ui } = await run(args);
+    expect(exit).toEqual({ code: 2, signal: null });
+    expect(ui.stdout).toBe('');
+    expect(host.hubPids()).toEqual([]);
+    expect(host.browserCalls()).toEqual([]);
+  });
+});
+
+describe('wtd ui --print-code', () => {
+  const printCode = async (): Promise<{ exit: Exit; process: WtdProcess }> => {
+    const process_ = host.wtd(['ui', '--print-code']).captureStdout();
+    return { exit: await waitExit(process_, 20_000), process: process_ };
+  };
+
+  it('starts a hub and prints one line with its port and a code it accepts once, opening no browser', async () => {
+    const { exit, process: run } = await printCode();
+    expect(exit).toEqual({ code: 0, signal: null });
+    expect(run.stderr).toBe('');
+    expect(run.stdout.endsWith('\n')).toBe(true);
+    expect(run.stdout.slice(0, -1)).not.toContain('\n');
+    expect(run.stdout).not.toContain(host.token());
+    const line = decodePrintCode(run.stdout);
+    expect(line.port).toBe(host.port);
+    const record = host.record();
+    expect(record?.port).toBe(host.port);
+    expect(host.hubPids()).toEqual([record?.pid]);
+    const client = await host.open(['wtd', `wtd.code.${line.code}`]);
+    expect(client.protocol).toBe('wtd');
+    await expect(host.open(['wtd', `wtd.code.${line.code}`])).rejects.toBeInstanceOf(UpgradeRefused);
+    await sleep(300);
+    expect(host.browserCalls()).toEqual([]);
+  });
+
+  it('reuses a running hub of the same version', async () => {
+    const hub = await host.startHub();
+    const { exit, process: run } = await printCode();
+    expect(exit).toEqual({ code: 0, signal: null });
+    expect(decodePrintCode(run.stdout).port).toBe(host.port);
+    expect(host.hubPids()).toEqual([hub.pid]);
+  });
+
+  it('replaces a running hub of another version and prints the new hub’s line', async () => {
+    const { shutdowns } = await fakeOldHub();
+    const { exit, process: run } = await printCode();
+    expect(exit).toEqual({ code: 0, signal: null });
+    expect(shutdowns).toHaveLength(1);
+    const identity = await host.identity();
+    expect(identity.version).toBe(packageVersion());
+    expect(identity.instance).not.toBe('old_hub');
+    const line = decodePrintCode(run.stdout);
+    expect(line.port).toBe(host.port);
+    expect((await host.open(['wtd', `wtd.code.${line.code}`])).protocol).toBe('wtd');
+    expect(host.browserCalls()).toEqual([]);
+  });
+
+  it('reports a hub that cannot start in one line, printing nothing', async () => {
+    await holdPort(host.port);
+    const { exit, process: run } = await printCode();
+    expect(exit).toEqual({ code: 1, signal: null });
+    expectOneLine(run.stderr);
+    expect(run.stdout).toBe('');
   });
 });

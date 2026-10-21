@@ -42,7 +42,11 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 /** Installs `body` as the SSH program; `$D` is the test directory, `$@` the SSH arguments. */
 const fakeSsh = (body: string): void => {
   const program = join(dir, 'ssh');
-  writeFileSync(program, `#!/bin/sh\nD='${dir}'\nfor a in "$@"; do printf '%s\\0' "$a"; done > "$D/args"\necho $$ >> "$D/pids"\n${body}\n`);
+  // `args` appears whole, through a rename, so a reader never sees part of it.
+  writeFileSync(
+    program,
+    `#!/bin/sh\nD='${dir}'\nfor a in "$@"; do printf '%s\\0' "$a"; done > "$D/args.tmp"\nmv "$D/args.tmp" "$D/args"\necho $$ >> "$D/pids"\n${body}\n`,
+  );
   chmodSync(program, 0o755);
   vi.stubEnv('WTD_SSH', program);
 };

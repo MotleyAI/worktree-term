@@ -81,6 +81,21 @@ test.describe('Hubs menu', () => {
     await expect(page.locator(byTestId(TID.hubsMenu))).toBeFocused();
   });
 
+  test('a press outside the menu closes it; the Hubs button toggles it', async ({ hub, page, ssh }) => {
+    ssh.failHost('box', RESOLVE_ERROR);
+    const repo = await home(hub, page, [{ name: 'box', ssh: 'box' }]);
+    const button = page.locator(byTestId(TID.hubsMenu));
+    const list = page.locator(byTestId(TID.hubsList));
+    await button.click();
+    await expect(list).toBeVisible();
+    await page.locator(repoTab(repo)).click();
+    await expect(list).toHaveCount(0);
+    await button.click();
+    await expect(list).toBeVisible();
+    await button.click();
+    await expect(list).toHaveCount(0);
+  });
+
   test('the open menu has a thin border', async ({ hub, page, ssh }) => {
     ssh.failHost('box', RESOLVE_ERROR);
     await home(hub, page, [{ name: 'box', ssh: 'box' }]);

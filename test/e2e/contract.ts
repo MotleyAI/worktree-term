@@ -58,7 +58,7 @@ export const TID = {
   addRepoPath: 'add-repo-path',
   /** In the add-repo dialog after a failed `addRepo`; text holds the error code. */
   addRepoError: 'add-repo-error',
-  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting. */
+  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting, except on the main worktree, which has none. */
   worktree: 'worktree',
   /** The label inside a sidebar entry; Enter or Space on it selects the worktree. */
   worktreeLabel: 'worktree-label',
@@ -132,7 +132,7 @@ export const TID = {
   terminal: 'terminal',
   /** Header button "Hubs", present only while there is a remote host; opens the list of `hubsEntry`; coloured like the selected repo tab, hovered or not. */
   hubsMenu: 'hubs-menu',
-  /** The open Hubs menu holding the `hubsEntry` items, with a thin border. */
+  /** The open Hubs menu holding the `hubsEntry` items, with a thin border; Escape or a pointer press outside it and the Hubs button closes it. */
   hubsList: 'hubs-list',
   /** One per hub in the open Hubs menu, in order: text = "This machine" or the host name; `aria-current="true"` on the page's own hub. */
   hubsEntry: 'hubs-entry',

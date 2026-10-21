@@ -116,6 +116,17 @@ const Hubs = ({ client }: { client: HubClient }) => {
   const [open, setOpen] = useState(false);
   const stateRef = useRef(state);
   const menuButton = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const outside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && menu.current?.contains(event.target) !== true) setOpen(false);
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+    };
+  }, [open]);
   const hosts = client.store.hosts.value;
   const dispatch = (action: HubAction): void => {
     const { state: next, effect } = hubStep(stateRef.current, action);
@@ -174,7 +185,7 @@ const Hubs = ({ client }: { client: HubClient }) => {
         />
       )}
       {entries !== null && (
-        <span class="hubs">
+        <span class="hubs" ref={menu}>
           <button
             type="button"
             ref={menuButton}

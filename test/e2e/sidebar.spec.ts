@@ -17,7 +17,6 @@ import {
   openPage,
   openUi,
   ready,
-  selectedTabColour,
   selectRepo,
   selectWorktree,
   test,
@@ -26,6 +25,8 @@ import {
   watcher,
 } from './fixture.js';
 
+/** `--danger`, as computed. */
+const DANGER = 'rgb(241, 76, 76)';
 const label = (path: string): string => `${worktreeEntry(path)} ${byTestId(TID.worktreeLabel)}`;
 const checkbox = (path: string): string => `${worktreeEntry(path)} input[type="checkbox"]`;
 const boxOf = async (locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> => {
@@ -471,7 +472,7 @@ test.describe('worktree status and deletion', () => {
     expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test("the deletion dialog is framed 3px in the selected tab's colour; a repo removal's is not", async ({ hub, page }) => {
+  test("the deletion dialog is framed 3px in red; a repo removal's is not", async ({ hub, page }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
     const feat = worktrees[0] ?? '';
     withOrigin(hub, repo);
@@ -482,13 +483,12 @@ test.describe('worktree status and deletion', () => {
     await page.locator(worktreeEntry(feat)).click({ button: 'right' });
     await page.locator(byTestId(TID.deleteWorktree)).click();
     await expect(dialog).toBeVisible();
-    const blue = await selectedTabColour(page);
-    expect(await borderOf(dialog)).toEqual(Array(4).fill(`3px ${blue}`));
+    expect(await borderOf(dialog)).toEqual(Array(4).fill(`3px ${DANGER}`));
     await dialog.locator(byTestId(TID.confirmCancel)).click();
 
     await page.locator(repoTab(repo)).locator(byTestId(TID.removeRepo)).click();
     await expect(dialog).toBeVisible();
-    expect((await borderOf(dialog)).every((side) => side.startsWith('1px ') && !side.endsWith(blue))).toBe(true);
+    expect((await borderOf(dialog)).every((side) => side.startsWith('1px ') && !side.endsWith(DANGER))).toBe(true);
   });
 
   test('deleting a detached worktree with commits says they become unreachable and names its head', async ({ hub, page }) => {

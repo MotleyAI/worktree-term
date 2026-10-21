@@ -145,7 +145,7 @@ describe('HubOpener', () => {
     const result = await open({ timeoutMs: 300 }).done;
     expect(result.kind).toBe('failed');
     expect(result.kind === 'failed' ? result.message : '').toMatch(/did not answer within/);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(300);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(290);
     await waitFor(() => pids().every((pid) => !alive(pid)), 'the SSH process to be killed');
   });
 

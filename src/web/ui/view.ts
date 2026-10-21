@@ -570,8 +570,10 @@ export class View {
     this.confirmation.value = null;
   }
 
+  /** Opens the worktree menu at `x`, `y`; the main worktree has none, its only item being deletion. */
   openWorktreeMenu(worktree: string, x: number, y: number): void {
-    this.worktreeMenu.value = { worktree, x, y };
+    const main = this.repo.value?.worktrees.find((w) => w.path === worktree)?.main === true;
+    this.worktreeMenu.value = main ? null : { worktree, x, y };
   }
 
   closeWorktreeMenu(): void {

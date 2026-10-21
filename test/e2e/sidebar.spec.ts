@@ -510,14 +510,24 @@ test.describe('worktree status and deletion', () => {
     );
   });
 
-  test('the main worktree cannot be deleted, and Escape closes the menu', async ({ hub, page }) => {
-    const { repo } = makeRepoWith(hub, 'app', []);
+  test('right-clicking the main worktree opens no menu and closes an open one', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
     hub.writeRepos([repo]);
     await openUi(hub, page);
     await page.locator(worktreeEntry(repo)).click({ button: 'right' });
-    const item = page.locator(byTestId(TID.deleteWorktree));
-    await expect(item).toBeDisabled();
-    await expect(item).toHaveAttribute('title', 'The main worktree cannot be deleted');
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
+    await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toBeVisible();
+    await page.locator(worktreeEntry(repo)).click({ button: 'right' });
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
+  });
+
+  test('Escape closes the worktree menu', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.locator(worktreeEntry(worktrees[0] ?? '')).click({ button: 'right' });
     await page.locator(byTestId(TID.worktreeMenu)).press('Escape');
     await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
   });

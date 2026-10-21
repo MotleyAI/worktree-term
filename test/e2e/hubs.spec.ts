@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { join } from 'node:path';
 import { makeRepo } from '../support/daemon-host.js';
 import { freePort, type HubHost } from '../support/hub-host.js';
@@ -12,7 +12,6 @@ import {
   nodeRemote,
   openUi,
   runUi,
-  selectedTabColour,
   test,
   writeHubConfig,
   type HostConfig,
@@ -82,12 +81,28 @@ test.describe('Hubs menu', () => {
     await expect(page.locator(byTestId(TID.hubsMenu))).toBeFocused();
   });
 
-  test("is framed 3px in the selected tab's colour", async ({ hub, page, ssh }) => {
+  test('the open menu has a thin border', async ({ hub, page, ssh }) => {
     ssh.failHost('box', RESOLVE_ERROR);
     await home(hub, page, [{ name: 'box', ssh: 'box' }]);
     await page.locator(byTestId(TID.hubsMenu)).click();
-    const blue = await selectedTabColour(page);
-    expect(await borderOf(page.locator(byTestId(TID.hubsList)))).toEqual(Array(4).fill(`3px ${blue}`));
+    expect((await borderOf(page.locator(byTestId(TID.hubsList)))).every((side) => side.startsWith('1px '))).toBe(true);
+  });
+
+  test('the Hubs button is coloured like the selected tab, hovered or not', async ({ hub, page, ssh }) => {
+    ssh.failHost('box', RESOLVE_ERROR);
+    await home(hub, page, [{ name: 'box', ssh: 'box' }]);
+    const button = page.locator(byTestId(TID.hubsMenu));
+    const selected = page.locator(`${byTestId(TID.repoTab)}[aria-selected="true"]`);
+    const colours = (locator: Locator): Promise<string[]> =>
+      locator.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return [style.backgroundColor, style.borderTopColor, style.color];
+      });
+    await page.mouse.move(0, 0);
+    const tab = await colours(selected);
+    await expect.poll(() => colours(button)).toEqual(tab);
+    await button.hover();
+    await expect.poll(() => colours(button)).toEqual(tab);
   });
 
   test('is absent without remote hosts', async ({ hub, page }) => {

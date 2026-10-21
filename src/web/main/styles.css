@@ -10,6 +10,7 @@
   --accent: #4c8dff;
   --accent-soft: #233b61;
   --star: #f5c451;
+  --danger: #f14c4c;
   font-family:
     Inter,
     ui-sans-serif,
@@ -85,8 +86,10 @@ input:focus-visible,
 
 .repo-tab.active,
 .term-tab.active,
+.hubs-menu,
 .repo-tab.active:hover,
-.term-tab.active:hover {
+.term-tab.active:hover,
+.hubs-menu:hover:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
@@ -512,10 +515,8 @@ input:focus-visible,
   box-shadow: 0 12px 36px rgb(0 0 0 / 55%);
 }
 
-/* Framed thick in the selected tab's blue. */
-.hubs-list,
 .confirm-dialog.delete-worktree {
-  border: 3px solid var(--accent);
+  border: 3px solid var(--danger);
 }
 
 /* Undo the user agent's centring and colours of an open dialog. */
@@ -670,7 +671,7 @@ dialog.add-repo-dialog {
 }
 
 .mark-failed {
-  background: #f14c4c;
+  background: var(--danger);
 }
 
 .mark-exited {

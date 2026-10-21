@@ -108,10 +108,6 @@ export const borderOf = (locator: Locator): Promise<string[]> =>
     });
   });
 
-/** The computed background colour of the selected repo tab. */
-export const selectedTabColour = (page: Page): Promise<string> =>
-  page.locator(`${byTestId(TID.repoTab)}[aria-selected="true"]`).evaluate((el) => getComputedStyle(el).backgroundColor);
-
 /** Confirms the open confirmation dialog. */
 export const confirmAction = async (page: Page): Promise<void> => {
   const dialog = page.locator(byTestId(TID.confirmDialog));

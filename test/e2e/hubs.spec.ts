@@ -4,7 +4,19 @@ import { makeRepo } from '../support/daemon-host.js';
 import { freePort, type HubHost } from '../support/hub-host.js';
 import { remoteHub } from '../support/remote-hub.js';
 import { byTestId, hubsEntry, repoTab, TID } from './contract.js';
-import { expect, hubRequests, makeRepoWith, nodeRemote, openUi, runUi, test, writeHubConfig, type HostConfig } from './fixture.js';
+import {
+  borderOf,
+  expect,
+  hubRequests,
+  makeRepoWith,
+  nodeRemote,
+  openUi,
+  runUi,
+  selectedTabColour,
+  test,
+  writeHubConfig,
+  type HostConfig,
+} from './fixture.js';
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box: Name or service not known';
 
@@ -70,6 +82,14 @@ test.describe('Hubs menu', () => {
     await expect(page.locator(byTestId(TID.hubsMenu))).toBeFocused();
   });
 
+  test("is framed 3px in the selected tab's colour", async ({ hub, page, ssh }) => {
+    ssh.failHost('box', RESOLVE_ERROR);
+    await home(hub, page, [{ name: 'box', ssh: 'box' }]);
+    await page.locator(byTestId(TID.hubsMenu)).click();
+    const blue = await selectedTabColour(page);
+    expect(await borderOf(page.locator(byTestId(TID.hubsList)))).toEqual(Array(4).fill(`3px ${blue}`));
+  });
+
   test('is absent without remote hosts', async ({ hub, page }) => {
     await home(hub, page, []);
     await expect(page.locator(byTestId(TID.hubsMenu))).toHaveCount(0);
@@ -103,6 +123,8 @@ test.describe('Hubs menu', () => {
     ]);
     await pick(page, 'box');
     await landedOn(page, originOf(port));
+    // The fragment goes before the code is exchanged; a reload before the token arrives has no credential.
+    await expect(page.locator(repoTab(box.repo))).toBeVisible();
 
     await page.reload();
     await expect(page).toHaveTitle('worktree-term — box');

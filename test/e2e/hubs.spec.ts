@@ -123,6 +123,8 @@ test.describe('Hubs menu', () => {
     ]);
     await pick(page, 'box');
     await landedOn(page, originOf(port));
+    // The fragment goes before the code is exchanged; a reload before the token arrives has no credential.
+    await expect(page.locator(repoTab(box.repo))).toBeVisible();
 
     await page.reload();
     await expect(page).toHaveTitle('worktree-term — box');

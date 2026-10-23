@@ -557,19 +557,6 @@ dialog.add-repo-dialog {
   color: var(--muted);
 }
 
-/* A confirmation asks before something is lost, so it stands out in the active tabs' blue. */
-.confirm-dialog {
-  border: 2px solid var(--accent);
-  box-shadow:
-    0 0 0 4px rgb(76 141 255 / 25%),
-    0 12px 36px rgb(0 0 0 / 70%);
-}
-
-.confirm-dialog .title {
-  color: var(--text);
-  font-weight: 600;
-}
-
 .preset-list {
   display: flex;
   flex-direction: column;

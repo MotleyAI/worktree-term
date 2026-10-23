@@ -456,6 +456,9 @@ test.describe('worktree status and deletion', () => {
       `Running terminals will be closed: probe ${String(ticker)}.`,
     ]);
     await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText('Its branch is kept.');
+    const activeBlue = await page.locator(`${byTestId(TID.repoTab)}.active`).evaluate((tab) => getComputedStyle(tab).backgroundColor);
+    await expect(dialog).toHaveCSS('border-top-color', activeBlue);
+    await expect(dialog).toHaveCSS('border-top-width', '2px');
     await dialog.locator(byTestId(TID.confirmCancel)).click();
     await expect(dialog).toHaveCount(0);
     expect(existsSync(feat)).toBe(true);

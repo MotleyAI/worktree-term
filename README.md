@@ -86,3 +86,24 @@ pnpm test:integration   # opt-in real-SSH tests
 pnpm lint               # tsc -b and ESLint
 pnpm format             # Prettier
 ```
+
+`scripts/wtd-dev-restart` runs the app from the checkout: it rebuilds, restarts the hub and the daemon, starts Vite and opens the page in a Chrome app window. Restarting the daemon kills its terminals; `--keep-daemon` restarts only the hub and Vite. To run it from anywhere, link it onto `PATH`:
+
+```sh
+ln -s "$PWD/scripts/wtd-dev-restart" ~/.local/bin/wtd-dev-restart
+```
+
+The dev window gets its own taskbar icon only from a launcher that claims its window class. Chrome names an app window's class after the opened URL's host and path, without the port: `wtd ui` opens `/`, so its window is `chrome-127.0.0.1__-Default`, the class the installed launcher claims, while the script opens `/login`, so its window is `chrome-127.0.0.1__login-Default`. Without a launcher claiming that class, the window is grouped under Chrome. Save this as `~/.local/share/applications/worktree-term-dev.desktop`, with your checkout's path:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=worktree-term (dev)
+Exec=/home/you/.local/bin/wtd-dev-restart --keep-daemon
+Icon=/path/to/worktree-term/src/web/public/icon.svg
+Terminal=false
+StartupWMClass=chrome-127.0.0.1__login-Default
+Categories=Development;
+```
+
+The window opened next gets the icon, which can then be pinned; clicking it when no window is open runs the script and keeps the terminals.

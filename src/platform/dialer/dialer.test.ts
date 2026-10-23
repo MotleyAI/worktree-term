@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostPaths, type HostPaths } from '../files/index.js';
-import { dial, spawnDetached, sshCommand } from './index.js';
+import { dial, spawnDetached, sshCommand, sshForwardCommand } from './index.js';
 
 /** Stand-in daemon: logs to stdout and stderr, records its pid, serves its pid to every connection. */
 const FAKE_DAEMON = `
@@ -284,6 +284,22 @@ describe('sshCommand', () => {
   it('refuses a control path that does not fit a unix socket address', () => {
     const long = hostPaths({ env: { XDG_STATE_HOME: '/' + 'a'.repeat(44) }, home: '/nonexistent', host: 'b' });
     expect(() => sshCommand(long, 'box', REMOTE)).toThrow(`${long.runDir}/ssh-%C`);
+  });
+
+  describe('sshForwardCommand', () => {
+    it('puts the options, -W to the loopback port, -- and the alias, in that order', () => {
+      vi.stubEnv('WTD_SSH', undefined);
+      expect(sshForwardCommand(paths, 'box', 7420)).toEqual(['ssh', ...options(), '-W', '127.0.0.1:7420', '--', 'box']);
+    });
+
+    it('runs WTD_SSH when set', () => {
+      vi.stubEnv('WTD_SSH', '/opt/fake ssh');
+      expect(sshForwardCommand(paths, 'box', 7420)[0]).toBe('/opt/fake ssh');
+    });
+
+    it('refuses an option-like alias, naming it', () => {
+      expect(() => sshForwardCommand(paths, '-oProxyCommand=x', 7420)).toThrow('-oProxyCommand=x');
+    });
   });
 });
 

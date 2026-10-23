@@ -87,12 +87,29 @@ export const checkSshAlias = (alias: string): void => {
   }
 };
 
-/** The SSH command line running `remote` on `alias`, sharing a control master per host. */
-export const sshCommand = (paths: Pick<HostPaths, 'runDir'>, alias: string, remote: string): string[] => {
+/** The SSH program and its options, sharing a control master per host. */
+const sshPrefix = (paths: Pick<HostPaths, 'runDir'>, alias: string): string[] => {
   checkSshAlias(alias);
   const options = [...SSH_OPTIONS, `ControlPath=${sshControlPath(paths)}`, 'ServerAliveInterval=15'].flatMap((o) => ['-o', o]);
-  return [nonEmpty(process.env['WTD_SSH']) ?? 'ssh', ...options, '--', alias, remote];
+  return [nonEmpty(process.env['WTD_SSH']) ?? 'ssh', ...options];
 };
+
+/** The SSH command line running `remote` on `alias`, sharing a control master per host. */
+export const sshCommand = (paths: Pick<HostPaths, 'runDir'>, alias: string, remote: string): string[] => [
+  ...sshPrefix(paths, alias),
+  '--',
+  alias,
+  remote,
+];
+
+/** The SSH command line relaying its standard input and output to `127.0.0.1:<port>` on `alias` (`ssh -W`). */
+export const sshForwardCommand = (paths: Pick<HostPaths, 'runDir'>, alias: string, port: number): string[] => [
+  ...sshPrefix(paths, alias),
+  '-W',
+  `127.0.0.1:${String(port)}`,
+  '--',
+  alias,
+];
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -137,4 +154,5 @@ export const stopProcess = (child: ChildProcess, graceMs: number): void => {
   }, graceMs).unref();
 };
 
+export { LineScanner, tailscaleLoginUrl } from './login.js';
 export { StderrTail } from './tail.js';

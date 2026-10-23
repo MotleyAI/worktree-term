@@ -28,11 +28,13 @@ export const TID = {
   removeRepo: 'remove-repo',
   /** In the selected repo's area when its watch failed; text holds the error code and the path. */
   repoError: 'repo-error',
-  /** One per `down` or `outdated` host, none for other statuses; `data-host` = host index; text names the host, its status and its reason when present. */
+  /** One per `down`, `outdated` or `needs-login` host, none for other statuses; `data-host` = host index; text names the host, its status and its reason when present. */
   hostBanner: 'host-banner',
+  /** "Open login link" inside a `needs-login` host's banner: `href` = the host's login URL, `target="_blank"`, `rel` with `noopener` and `noreferrer`. */
+  hostLogin: 'host-login',
   /** Button inside a host banner: "Restart daemon" (outdated local), "Reinstall & restart" (outdated remote) or "Install" (down remote); opens the confirmation dialog, then sends `restartDaemon` or `reinstallDaemon`. */
   hostAction: 'host-action',
-  /** In-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed; text says every running terminal on the host will be killed when it lists none. */
+  /** In-page confirmation of a host action or a repo removal; nothing is sent before it is confirmed; text says every running terminal on the host will be killed when it lists none; for a worktree deletion only, framed 3px in red. */
   confirmDialog: 'confirm-dialog',
   /** One running terminal the page last saw on the daemon instance the host reports; text holds its worktree label and preset. */
   confirmTarget: 'confirm-target',
@@ -56,7 +58,7 @@ export const TID = {
   addRepoPath: 'add-repo-path',
   /** In the add-repo dialog after a failed `addRepo`; text holds the error code. */
   addRepoError: 'add-repo-error',
-  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting. */
+  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting, except on the main worktree, which has none. */
   worktree: 'worktree',
   /** The label inside a sidebar entry; Enter or Space on it selects the worktree. */
   worktreeLabel: 'worktree-label',
@@ -128,6 +130,20 @@ export const TID = {
   notice: 'notice',
   /** Terminal container, `data-host` and `data-term`; holds the `.xterm` element; hidden ones are not visible. */
   terminal: 'terminal',
+  /** Header button "Hubs", present only while there is a remote host; opens the list of `hubsEntry`; coloured like the selected repo tab, hovered or not. */
+  hubsMenu: 'hubs-menu',
+  /** The open Hubs menu holding the `hubsEntry` items, with a thin border; Escape or a pointer press outside it and the Hubs button closes it. */
+  hubsList: 'hubs-list',
+  /** One per hub in the open Hubs menu, in order: text = "This machine" or the host name; `aria-current="true"` on the page's own hub. */
+  hubsEntry: 'hubs-entry',
+  /** Status line beside the Hubs menu for the latest hub opening: `Opening <host>…`, `<host> needs Tailscale login`, `<host>: <message>`, `Installing on <host>…` or `no host named <name>`. */
+  hubStatus: 'hub-status',
+  /** "Open login link" anchor inside the status line: `href` = the login URL, `target="_blank"`, `rel` with `noopener` and `noreferrer`. */
+  hubLogin: 'hub-login',
+  /** "Reinstall on <host>" button inside the status line of an outdated remote; sends `installHub`, then opens the hub again. */
+  hubReinstall: 'hub-reinstall',
+  /** × inside the status line of a failed opening; clears the line. */
+  hubDismiss: 'hub-dismiss',
 } as const;
 
 /** Mark names in rank order, as `data-mark` values. */
@@ -154,6 +170,8 @@ export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)
 export const termTab = (termId: number): string => `${byTestId(TID.termTab)}[data-term="${String(termId)}"]`;
 
 export const pane = (termId: number): string => `${byTestId(TID.pane)}[data-term="${String(termId)}"]`;
+
+export const hubsEntry = (label: string): string => `${byTestId(TID.hubsEntry)}:text-is("${label}")`;
 
 export const terminalBox = (host: number, termId: number): string =>
   `${byTestId(TID.terminal)}[data-host="${String(host)}"][data-term="${String(termId)}"]`;

@@ -6,7 +6,7 @@ The wire contract between the browser UI, the hub and every daemon: which messag
 ## Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 6, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 8, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 6, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 10, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -27,6 +27,10 @@ The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal
 #### Scenario: Shared constant needs both versions
 - **WHEN** `MAX_FRAME` changes and only one of the two versions is raised
 - **THEN** the wire golden check fails
+
+#### Scenario: Frozen print-code and fragment shapes
+- **WHEN** the print-code line or a page fragment schema accepts or rejects a sample differently from the frozen golden
+- **THEN** the frozen golden check fails
 
 ### Requirement: Strict control-message decoding
 A control message SHALL be one UTF-8 JSON object whose `t` names a message of the decoding direction and whose fields are exactly those of that message. Decoding SHALL reject, with a protocol error and without coercion or repair: invalid UTF-8, invalid JSON, a non-object, an unknown `t`, a message of the opposite direction, a missing field, an extra field, a value of the wrong type, and a value outside its bounds. Encoding SHALL reject any value that would not decode.
@@ -89,9 +93,9 @@ A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Browser-link message catalogue
-Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63.
-Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable; `reposDiscovered{req, host, repos}`.
-A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instance, repos}` with `status` one of `connecting`, `connected`, `reconnecting`, `down`, `outdated`, and `reason`, `daemonVersion` and `instance` nullable; `instance` SHALL be the `hello.instance` of the daemon the host is `connected` to or found `outdated`, and null in every other status. A preset SHALL be `{name, command}` with `command` nullable.
+Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `openHub{req, host}`; `installHub{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63.
+Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable and `code` a hub error code; `reposDiscovered{req, host, repos}`; `hubLogin{req, login}` with `login` a login URL as in a host entry; `hubOpened{req, url}`.
+A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instance, login, repos}` with `status` one of `connecting`, `connected`, `reconnecting`, `down`, `outdated`, `needs-login`, and `reason`, `daemonVersion`, `instance` and `login` nullable; `instance` SHALL be the `hello.instance` of the daemon the host is `connected` to or found `outdated`, and null in every other status. `login` SHALL be a string of at most 1024 characters starting with `https://login.tailscale.com/`, non-null exactly when `status` is `needs-login`; decoding SHALL reject any other `login`. A preset SHALL be `{name, command}` with `command` nullable. A `hubOpened` `url` SHALL be `http://127.0.0.1:<port>/#` with `<port>` from 1024 to 65535 without leading zeros, followed by a remote page fragment; decoding SHALL reject any other `url`.
 
 #### Scenario: Envelope cannot carry a handshake message
 - **WHEN** a browser `host` envelope whose `m` is a `hello` or a `shutdown` is decoded
@@ -129,6 +133,30 @@ A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instan
 - **WHEN** a `movePreset` with `to` −1, 64 or 0.5 is decoded
 - **THEN** decoding fails with a protocol error
 
+#### Scenario: Needs-login host carries its login URL
+- **WHEN** a `hosts` entry with `status` "needs-login" and `login` "https://login.tailscale.com/a/abc123" is decoded
+- **THEN** decoding succeeds and yields that URL
+
+#### Scenario: Login URL outside Tailscale rejected
+- **WHEN** a `hosts` entry with `status` "needs-login" whose `login` is "http://login.tailscale.com/a/x", "https://login.tailscale.com.evil/a/x", "javascript:alert(1)" or 1025 characters long is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Login present exactly while needs-login
+- **WHEN** a `hosts` entry with `status` "needs-login" and a null `login`, or with `status` "connecting" and a non-null `login`, is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Hub opening messages only in their direction
+- **WHEN** an `openHub` is decoded as a hub-to-browser message, or a `hubOpened` as a browser-to-hub message
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Opened URL must be a loopback page
+- **WHEN** a `hubOpened` whose `url` is "http://evil.example:7418/#code=…", "https://127.0.0.1:7418/#…", "http://127.0.0.1:80/#…", "http://127.0.0.1:7418/x#…" or "javascript:alert(1)" is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Hub login URL outside Tailscale rejected
+- **WHEN** a `hubLogin` whose `login` is "https://login.tailscale.com.evil/a/x" is decoded
+- **THEN** decoding fails with a protocol error
+
 ### Requirement: Request correlation
 Every message that asks a peer to act and can fail SHALL carry `req`, an integer from 1 to 2^32−1, and its outcome SHALL be correlated by that `req`: `termCreated` for `createTerm`, `reposDiscovered` for `discoverRepos`, `worktreeAtRisk` or `done` for `removeWorktree`, `done` for every other request, `error` for any failed request. A `termCreated` or `error` with `req` null SHALL correlate with no request. `resize`, `ack`, `setVisible`, input frames, `hello` and `shutdown` SHALL carry no `req`.
 
@@ -149,7 +177,7 @@ Every message that asks a peer to act and can fail SHALL carry `req`, an integer
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Value limits
-Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; discovery roots are absolute paths, `~`, or `~/` followed by at least one character, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names and tab ids are 1–64 characters; preset names are 1–64 characters with at least one non-whitespace character; `branch` and `command` are null or at most 4096 characters, and a preset's `command` is null or 1–4096 characters; `signal` is null or at most 32 characters; `version` is 1–64 characters; tokens and one-time codes are exactly 64 lowercase hex digits; error messages and host reasons are at most 1024 characters; error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `not-a-repo`, `host-unavailable`, `internal`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
+Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; discovery roots are absolute paths, `~`, or `~/` followed by at least one character, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names and tab ids are 1–64 characters; preset names are 1–64 characters with at least one non-whitespace character; `branch` and `command` are null or at most 4096 characters, and a preset's `command` is null or 1–4096 characters; `signal` is null or at most 32 characters; `version` is 1–64 characters; tokens and one-time codes are exactly 64 lowercase hex digits; error messages and host reasons are at most 1024 characters; daemon error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `not-a-repo`, `host-unavailable`, `internal`; hub error codes, used only by the hub-to-browser `error`, are the daemon error codes and `hub-outdated` and `hub-failed`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
 
 #### Scenario: Relative path rejected
 - **WHEN** a `watchRepo` whose `repo` is "repo/a" is decoded
@@ -182,6 +210,10 @@ Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters
 #### Scenario: Host-unavailable error code accepted
 - **WHEN** a hub `error` whose `code` is "host-unavailable" is decoded
 - **THEN** decoding succeeds
+
+#### Scenario: Hub error codes only from the hub
+- **WHEN** a hub `error` whose `code` is "hub-outdated" or "hub-failed" is decoded, and a daemon `error` with either code is decoded
+- **THEN** the hub error decodes, and the daemon error fails with a protocol error
 
 #### Scenario: Malformed token rejected
 - **WHEN** a `token` message whose `token` has 63 hex digits, or contains an uppercase digit, is decoded
@@ -265,7 +297,7 @@ On a stream, an output or snapshot payload SHALL be a 4-byte terminal id, an 8-b
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Shared constants
-The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 6; `BROWSER_PROTOCOL_VERSION` = 8; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
+The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 6; `BROWSER_PROTOCOL_VERSION` = 10; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
 
 #### Scenario: Constants hold their values
 - **WHEN** the exported constants are read
@@ -280,4 +312,34 @@ The protocol SHALL define the hub's one-time code response as the JSON object `{
 
 #### Scenario: Extra field rejected
 - **WHEN** a code response carrying an additional field `token` is decoded
+- **THEN** decoding fails with a protocol error
+
+### Requirement: Print-code line
+The protocol SHALL define the print-code line as the JSON object `{port, code}` — `port` an integer from 1024 to 65535, `code` a one-time code — followed by one newline, decoded strictly like a control message from text that SHALL hold nothing else but optional trailing whitespace.
+
+#### Scenario: Print-code line round-trips
+- **WHEN** a print-code line with `port` 7417 and a valid code is encoded and decoded
+- **THEN** the decoded value equals the original and the encoded text ends with exactly one newline
+
+#### Scenario: Extra field or text rejected
+- **WHEN** a print-code line carrying an additional field `token`, or preceded by a line `motd`, is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Port out of range rejected
+- **WHEN** a print-code line with `port` 80 or 7417.5 is decoded
+- **THEN** decoding fails with a protocol error
+
+### Requirement: Page fragments
+The protocol SHALL define two page fragments, each the text after `#` in a page URL, written as `application/x-www-form-urlencoded` parameters with no parameter repeated and no other parameter. A home fragment SHALL hold `code` (a one-time code), `hub` (a host name of 1–64 characters from `[A-Za-z0-9._-]`), or both. A remote fragment SHALL hold all of `code`, `host` (a host name), `home` (an integer port from 1024 to 65535 without leading zeros) and `hubs` (1 to 63 distinct host names joined by `,`, one of which is `host`). Decoding SHALL reject any other text.
+
+#### Scenario: Home fragment forms
+- **WHEN** `code=<64 hex>`, `hub=box` and `code=<64 hex>&hub=box` are decoded as home fragments
+- **THEN** each decodes to the given values
+
+#### Scenario: Remote fragment decoded
+- **WHEN** `code=<64 hex>&host=box&home=7417&hubs=box,gpu` is decoded as a remote fragment
+- **THEN** it yields that code, host `box`, home 7417 and hubs `box` and `gpu` in that order
+
+#### Scenario: Malformed fragments rejected
+- **WHEN** a home fragment `hub=a b`, `hub=box&hub=gpu` or `code=x`, or a remote fragment lacking `home`, with `home=0080`, with `hubs=gpu` while `host=box`, or with an extra parameter `token`, is decoded
 - **THEN** decoding fails with a protocol error

@@ -1,6 +1,22 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as hubMain from '../hub/main/index.js';
 import { runCli } from './run.js';
+
+const PRINTED = '{"port":7417,"code":"' + 'a'.repeat(64) + '"}\n';
+
+const ui = vi.hoisted(() => ({ openUi: vi.fn<typeof hubMain.openUi>(), printCode: vi.fn<typeof hubMain.printCode>() }));
+
+vi.mock('../hub/main/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof hubMain>()),
+  openUi: ui.openUi,
+  printCode: ui.printCode,
+}));
+
+beforeEach(() => {
+  ui.openUi.mockReset().mockResolvedValue(undefined);
+  ui.printCode.mockReset().mockResolvedValue(PRINTED);
+});
 
 interface Result {
   code: number;
@@ -48,7 +64,7 @@ describe('wtd --version', () => {
   it('prints the package and both protocol versions', async () => {
     expect(await wtd('--version')).toEqual({
       code: 0,
-      stdout: `wtd ${packageVersion()} (daemon protocol 6, browser protocol 8)\n`,
+      stdout: `wtd ${packageVersion()} (daemon protocol 6, browser protocol 10)\n`,
       stderr: '',
     });
   });
@@ -64,6 +80,39 @@ describe('wtd --help', () => {
     }
     expect(stdout).toContain('install-local [--systemd]');
     expect(stdout).toContain('install-remote <alias> [--node <path>]');
+    expect(stdout).toContain('ui [<host>] [--print-code]');
+  });
+});
+
+describe('wtd ui', () => {
+  it('opens the UI for this machine without a host', async () => {
+    expect(await wtd('ui')).toEqual({ code: 0, stdout: '', stderr: '' });
+    expect(ui.openUi).toHaveBeenCalledOnce();
+    expect(ui.openUi.mock.calls[0]?.[0]).toMatchObject({ host: null });
+    expect(ui.printCode).not.toHaveBeenCalled();
+  });
+
+  it('opens the UI switched to the named host', async () => {
+    expect(await wtd('ui', 'box')).toEqual({ code: 0, stdout: '', stderr: '' });
+    expect(ui.openUi).toHaveBeenCalledOnce();
+    expect(ui.openUi.mock.calls[0]?.[0]).toMatchObject({ host: 'box' });
+  });
+
+  it('prints the code line with --print-code, opening no browser', async () => {
+    expect(await wtd('ui', '--print-code')).toEqual({ code: 0, stdout: PRINTED, stderr: '' });
+    expect(ui.printCode).toHaveBeenCalledOnce();
+    expect(ui.printCode.mock.calls[0]?.[0]).not.toHaveProperty('browser');
+    expect(ui.openUi).not.toHaveBeenCalled();
+  });
+
+  it('reports an unknown host on one line and exits 1', async () => {
+    ui.openUi.mockRejectedValue(new Error('no host named nope in /c/config.json'));
+    expect(await wtd('ui', 'nope')).toEqual({ code: 1, stdout: '', stderr: 'wtd ui: no host named nope in /c/config.json\n' });
+  });
+
+  it('reports a failed print on one line and exits 1', async () => {
+    ui.printCode.mockRejectedValue(new Error('the hub did not start; see /s/hub.log'));
+    expect(await wtd('ui', '--print-code')).toEqual({ code: 1, stdout: '', stderr: 'wtd ui: the hub did not start; see /s/hub.log\n' });
   });
 });
 
@@ -84,8 +133,36 @@ describe('usage errors', () => {
     await expectUsageError(await wtd('--frob'), /--frob/);
   });
 
-  it.each(['ui', 'hub'])('rejects an argument to %s', async (verb) => {
-    await expectUsageError(await wtd(verb, 'extra'), /extra/);
+  it('rejects an argument to hub', async () => {
+    await expectUsageError(await wtd('hub', 'extra'), /extra/);
+  });
+
+  it('rejects a second host for ui, naming it', async () => {
+    await expectUsageError(await wtd('ui', 'a', 'b'), /'b'/);
+    expect(ui.openUi).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ui', 'box', '--print-code'],
+    ['ui', '--print-code', 'box'],
+  ])('refuses a host combined with --print-code: %s %s %s', async (...argv) => {
+    await expectUsageError(await wtd(...argv), /cannot be combined/);
+    const result = await wtd(...argv);
+    expect(result.stderr).toContain('--print-code');
+    expect(ui.openUi).not.toHaveBeenCalled();
+    expect(ui.printCode).not.toHaveBeenCalled();
+  });
+
+  it.each([['hub'], ['daemon'], ['connect'], ['install-local'], ['install-remote', 'box']])(
+    'names --print-code as unknown for %s',
+    async (...argv) => {
+      await expectUsageError(await wtd(...argv, '--print-code'), /--print-code/);
+    },
+  );
+
+  it('refuses --print-code with a value', async () => {
+    await expectUsageError(await wtd('ui', '--print-code=x'), /--print-code/);
+    expect(ui.printCode).not.toHaveBeenCalled();
   });
 
   it('requires an alias for install-remote', async () => {

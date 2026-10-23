@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import type { HubHost } from '../support/hub-host.js';
 import { fakeWorktrees, git } from '../support/daemon-host.js';
 import { COMMANDS, runIn } from './attention-helpers.js';
-import { byTestId, termTab, TID, worktreeEntry } from './contract.js';
+import { byTestId, repoTab, termTab, TID, worktreeEntry } from './contract.js';
 import {
+  borderOf,
   confirmClose,
   detachedWorktree,
   expect,
@@ -24,6 +25,8 @@ import {
   watcher,
 } from './fixture.js';
 
+/** `--danger`, as computed. */
+const DANGER = 'rgb(241, 76, 76)';
 const label = (path: string): string => `${worktreeEntry(path)} ${byTestId(TID.worktreeLabel)}`;
 const checkbox = (path: string): string => `${worktreeEntry(path)} input[type="checkbox"]`;
 const boxOf = async (locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> => {
@@ -472,6 +475,25 @@ test.describe('worktree status and deletion', () => {
     expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  test("the deletion dialog is framed 3px in red; a repo removal's is not", async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    withOrigin(hub, repo);
+    writeFileSync(join(feat, 'untracked'), 'new');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const dialog = page.locator(byTestId(TID.confirmDialog));
+    await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+    await page.locator(byTestId(TID.deleteWorktree)).click();
+    await expect(dialog).toBeVisible();
+    expect(await borderOf(dialog)).toEqual(Array(4).fill(`3px ${DANGER}`));
+    await dialog.locator(byTestId(TID.confirmCancel)).click();
+
+    await page.locator(repoTab(repo)).locator(byTestId(TID.removeRepo)).click();
+    await expect(dialog).toBeVisible();
+    expect((await borderOf(dialog)).every((side) => side.startsWith('1px ') && !side.endsWith(DANGER))).toBe(true);
+  });
+
   test('deleting a detached worktree with commits says they become unreachable and names its head', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     withOrigin(hub, repo);
@@ -491,14 +513,24 @@ test.describe('worktree status and deletion', () => {
     );
   });
 
-  test('the main worktree cannot be deleted, and Escape closes the menu', async ({ hub, page }) => {
-    const { repo } = makeRepoWith(hub, 'app', []);
+  test('right-clicking the main worktree opens no menu and closes an open one', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
     hub.writeRepos([repo]);
     await openUi(hub, page);
     await page.locator(worktreeEntry(repo)).click({ button: 'right' });
-    const item = page.locator(byTestId(TID.deleteWorktree));
-    await expect(item).toBeDisabled();
-    await expect(item).toHaveAttribute('title', 'The main worktree cannot be deleted');
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
+    await page.locator(worktreeEntry(feat)).click({ button: 'right' });
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toBeVisible();
+    await page.locator(worktreeEntry(repo)).click({ button: 'right' });
+    await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
+  });
+
+  test('Escape closes the worktree menu', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.locator(worktreeEntry(worktrees[0] ?? '')).click({ button: 'right' });
     await page.locator(byTestId(TID.worktreeMenu)).press('Escape');
     await expect(page.locator(byTestId(TID.worktreeMenu))).toHaveCount(0);
   });

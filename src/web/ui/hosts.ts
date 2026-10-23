@@ -16,7 +16,11 @@ export const hostAction = (host: Pick<HostEntry, 'remote' | 'status'>): HostActi
 };
 
 /** Whether `host` gets a banner. */
-export const hasBanner = (host: Pick<HostEntry, 'status'>): boolean => host.status === 'down' || host.status === 'outdated';
+export const hasBanner = (host: Pick<HostEntry, 'status'>): boolean =>
+  host.status === 'down' || host.status === 'outdated' || host.status === 'needs-login';
+
+/** A host status as its repo tabs show it. */
+export const statusText = (status: HostEntry['status']): string => (status === 'needs-login' ? 'needs login' : status);
 
 /** Discovered repos the host does not list yet, narrowed to those whose path contains `filter`. */
 export const offeredRepos = (discovered: readonly string[], listed: readonly string[], filter: string): string[] =>

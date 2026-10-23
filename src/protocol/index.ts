@@ -20,6 +20,17 @@ export {
   type DataFrame,
   type Frame,
 } from './frames.js';
+export {
+  decodeHomeFragment,
+  decodePrintCode,
+  decodeRemoteFragment,
+  encodeHomeFragment,
+  encodePrintCode,
+  encodeRemoteFragment,
+  type HomeFragment,
+  type PrintCode,
+  type RemoteFragment,
+} from './hub.js';
 export { layout as layoutSchema, type Layout } from './layout.js';
 export { root as discoveryRootSchema } from './values.js';
 export {

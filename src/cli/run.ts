@@ -4,7 +4,7 @@ import type { Duplex } from 'node:stream';
 import { parseArgs } from 'node:util';
 import pkg from '../../package.json' with { type: 'json' };
 import { AlreadyRunningError, runDaemon } from '../daemon/main/index.js';
-import { HubAlreadyRunningError, openUi, runHub } from '../hub/main/index.js';
+import { HubAlreadyRunningError, openUi, printCode, runHub } from '../hub/main/index.js';
 import { dial } from '../platform/dialer/index.js';
 import { currentHostPaths } from '../platform/files/index.js';
 import { installLocal, installRemote } from '../platform/install/index.js';
@@ -18,7 +18,10 @@ export interface CliIo {
 const USAGE = `Usage: wtd <command> [options]
 
 Commands:
-  ui                      Start the hub and open the UI in Chrome
+  ui [<host>] [--print-code]
+                          Start the hub and open the UI in Chrome; with <host>, switched to
+                          that remote host's hub; --print-code prints the hub's port and a
+                          one-time code instead of opening a browser
   hub                     Run the hub in the foreground
   daemon                  Run this host's daemon in the foreground
   connect                 Bridge stdio to this host's daemon, starting it if needed
@@ -38,21 +41,29 @@ const OPTIONS = {
   version: { type: 'boolean' },
   systemd: { type: 'boolean' },
   node: { type: 'string' },
+  'print-code': { type: 'boolean' },
 } as const;
 
 /** Options a command was given. */
 interface CommandOptions {
   systemd: boolean;
   node: string | null;
+  printCode: boolean;
 }
 
 interface Command {
   /** Positional arguments after the verb. */
   args: readonly string[];
+  /** Optional positional arguments after those. */
+  optional?: readonly string[];
   /** Options the command takes besides `--help` and `--version`. */
   options: readonly (keyof CommandOptions)[];
   /** Runs the command and resolves with its exit code. */
   run: (io: CliIo, args: readonly string[], options: CommandOptions) => Promise<number>;
+}
+
+class UsageError extends Error {
+  override readonly name = 'UsageError';
 }
 
 const message = (error: unknown): string =>
@@ -68,7 +79,14 @@ const wtdCommand = (): string[] => {
 const hub = async (io: CliIo): Promise<number> => {
   try {
     const wtd = wtdCommand();
-    await runHub({ version: pkg.version, paths: currentHostPaths(), wtd, webDir: join(dirname(wtd[1] ?? ''), 'web'), home: homedir() });
+    await runHub({
+      version: pkg.version,
+      paths: currentHostPaths(),
+      wtd,
+      webDir: join(dirname(wtd[1] ?? ''), 'web'),
+      home: homedir(),
+      env: process.env,
+    });
     return 0;
   } catch (error) {
     io.stderr(`wtd hub: ${error instanceof HubAlreadyRunningError ? 'already running' : message(error)}\n`);
@@ -76,10 +94,17 @@ const hub = async (io: CliIo): Promise<number> => {
   }
 };
 
-const ui = async (io: CliIo): Promise<number> => {
+const ui = async (io: CliIo, [named]: readonly string[], { printCode: print }: CommandOptions): Promise<number> => {
+  const host = named ?? null;
+  if (host !== null && print) throw new UsageError('ui: a host and --print-code cannot be combined');
   try {
+    const run = { version: pkg.version, paths: currentHostPaths(), wtd: wtdCommand(), home: homedir() };
+    if (print) {
+      io.stdout(await printCode(run));
+      return 0;
+    }
     const browser = process.env['WTD_BROWSER'] ?? 'google-chrome';
-    await openUi({ version: pkg.version, paths: currentHostPaths(), wtd: wtdCommand(), home: homedir(), browser });
+    await openUi({ ...run, browser, host });
     return 0;
   } catch (error) {
     io.stderr(`wtd ui: ${message(error)}\n`);
@@ -166,17 +191,13 @@ const installRemoteCommand = async (io: CliIo, [alias = '']: readonly string[], 
 };
 
 const COMMANDS: ReadonlyMap<string, Command> = new Map<string, Command>([
-  ['ui', { args: [], options: [], run: ui }],
+  ['ui', { args: [], optional: ['host'], options: ['printCode'], run: ui }],
   ['hub', { args: [], options: [], run: hub }],
   ['daemon', { args: [], options: [], run: daemon }],
   ['connect', { args: [], options: [], run: connect }],
   ['install-local', { args: [], options: ['systemd'], run: installLocalCommand }],
   ['install-remote', { args: ['alias'], options: ['node'], run: installRemoteCommand }],
 ]);
-
-class UsageError extends Error {
-  override readonly name = 'UsageError';
-}
 
 interface Invocation {
   help: boolean;
@@ -187,7 +208,8 @@ interface Invocation {
   given: { name: keyof CommandOptions; rawName: string }[];
 }
 
-const isCommandOption = (name: string): name is keyof CommandOptions => name === 'systemd' || name === 'node';
+/** The command option an option name sets, if it is one. */
+const COMMAND_OPTIONS: Readonly<Record<string, keyof CommandOptions>> = { systemd: 'systemd', node: 'node', 'print-code': 'printCode' };
 
 /** Records one option in `invocation`; throws UsageError for a misused or unknown one. */
 const applyOption = (
@@ -198,16 +220,23 @@ const applyOption = (
     if (value === undefined) throw new UsageError(`option ${rawName} needs a value`);
     invocation.options.node = value;
   } else if (value !== undefined) throw new UsageError(`option ${rawName} takes no value`);
+  const option = Object.hasOwn(COMMAND_OPTIONS, name) ? COMMAND_OPTIONS[name] : undefined;
   if (name === 'help') invocation.help = true;
   else if (name === 'version') invocation.version = true;
-  else if (name === 'systemd') invocation.options.systemd = true;
-  else if (!isCommandOption(name)) throw new UsageError(`unknown option ${rawName}`);
-  if (isCommandOption(name)) invocation.given.push({ name, rawName });
+  else if (option === 'systemd' || option === 'printCode') invocation.options[option] = true;
+  else if (option === undefined) throw new UsageError(`unknown option ${rawName}`);
+  if (option !== undefined) invocation.given.push({ name: option, rawName });
 };
 
 const parse = (argv: readonly string[]): Invocation => {
   const { tokens, positionals } = parseArgs({ args: [...argv], options: OPTIONS, allowPositionals: true, strict: false, tokens: true });
-  const invocation: Invocation = { help: false, version: false, positionals, options: { systemd: false, node: null }, given: [] };
+  const invocation: Invocation = {
+    help: false,
+    version: false,
+    positionals,
+    options: { systemd: false, node: null, printCode: false },
+    given: [],
+  };
   for (const token of tokens) if (token.kind === 'option') applyOption(invocation, token);
   return invocation;
 };
@@ -232,7 +261,7 @@ const dispatch = async (argv: readonly string[], io: CliIo): Promise<number> => 
   if (foreign !== undefined) throw new UsageError(`${verb} takes no option ${foreign.rawName}`);
   const missing = command.args[args.length];
   if (missing !== undefined) throw new UsageError(`${verb}: ${missing} is required`);
-  const extra = args[command.args.length];
+  const extra = args[command.args.length + (command.optional?.length ?? 0)];
   if (extra !== undefined) throw new UsageError(`${verb}: unexpected argument '${extra}'`);
   return command.run(io, args, options);
 };

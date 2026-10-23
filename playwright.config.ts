@@ -5,7 +5,8 @@ export default defineConfig({
   testDir: 'test/e2e',
   globalSetup: './test/e2e/global-setup.ts',
   // Each worker runs a Chrome, a hub and a daemon; more than 8 exhausts the default 128 inotify instances per user.
-  workers: Math.min(8, Math.max(1, Math.floor(availableParallelism() / 2))),
+  // CI uses every CPU; local runs leave half for the rest of the machine.
+  workers: Math.min(8, process.env['CI'] ? availableParallelism() : Math.max(1, Math.floor(availableParallelism() / 2))),
   timeout: 60_000,
   use: {
     channel: 'chrome',

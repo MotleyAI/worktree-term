@@ -1,9 +1,9 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { makeRepo, waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
-import { installRemote, type FakeRemote } from '../support/fake-ssh.js';
+import { installRemote } from '../support/fake-ssh.js';
 import { byTestId, hostBanner, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
 import {
   confirmAction,
@@ -34,18 +34,11 @@ import {
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box';
 
-/** Replaces the remote's `wtd` with a shell script. */
-const plantWtd = (remote: FakeRemote, script: string): void => {
-  mkdirSync(dirname(remote.shim), { recursive: true });
-  writeFileSync(remote.shim, `#!/bin/sh\n${script}\n`);
-  chmodSync(remote.shim, 0o755);
-};
-
 test.describe('host status on repo tabs', () => {
   test('a remote tab is labelled with its host and shows a reconnecting host status, without a banner', async ({ hub, page, ssh }) => {
     const remote = ssh.addHost('box');
     // The first connect fails; the retry never answers, so the host stays reconnecting.
-    plantWtd(remote, 'if [ -e "$HOME/once" ]; then exec sleep 600; fi; : > "$HOME/once"; exit 1');
+    remote.plantWtd('if [ -e "$HOME/once" ]; then exec sleep 600; fi; : > "$HOME/once"; exit 1');
     const app = join(remote.home, 'srv', 'app');
     writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: [app] }] });
     await openUi(hub, page);
@@ -88,6 +81,34 @@ test.describe('host banners', () => {
     await installRemote(hub, ssh, 'box');
     await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0, { timeout: 30_000 });
     await expect(page.locator(repoTab('/srv/app')).locator(byTestId(TID.hostStatus))).toHaveCount(0);
+  });
+});
+
+test.describe('Tailscale login', () => {
+  test('a host blocked on a Tailscale check shows a banner with its login link, cleared once approved', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    nodeRemote(ssh, 'box');
+    await installRemote(hub, ssh, 'box');
+    ssh.loginHost('box');
+    writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: ['/srv/app'] }] });
+    await openUi(hub, page);
+    const banner = page.locator(hostBanner(REMOTE));
+    await expect(banner).toContainText('needs Tailscale login', { timeout: 15_000 });
+    await expect(banner).toContainText('box');
+    await expect(banner.locator(byTestId(TID.hostAction))).toHaveCount(0);
+    const link = banner.locator(byTestId(TID.hostLogin));
+    await expect(link).toHaveText('Open login link');
+    await expect(link).toHaveAttribute('href', /^https:\/\/login\.tailscale\.com\/a\/wtd\d+$/);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /\bnoopener\b/);
+    await expect(link).toHaveAttribute('rel', /\bnoreferrer\b/);
+    const tab = page.locator(repoTab('/srv/app'));
+    await expect(tab).toContainText('box:app');
+    await expect(tab.locator(byTestId(TID.hostStatus))).toHaveText('needs login');
+
+    ssh.approveLogin((await link.getAttribute('href')) ?? '');
+    await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0, { timeout: 30_000 });
+    await expect(tab.locator(byTestId(TID.hostStatus))).toHaveCount(0);
   });
 });
 

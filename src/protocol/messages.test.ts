@@ -10,12 +10,14 @@ import {
   type Preset,
 } from './index.js';
 import {
+  CODE,
   DIRECTIONS,
   featWorktree,
   hello,
   hosts,
   liveTerminal,
   MESSAGE_TYPES,
+  OPENED_URL,
   raw,
   REPO,
   samples,
@@ -262,6 +264,10 @@ describe('request correlation', () => {
     ['browserToHub', { t: 'addPreset', req: 1, preset: { name: 'p', command: null } }],
     ['browserToHub', { t: 'removePreset', req: 1, name: 'p' }],
     ['browserToHub', { t: 'movePreset', req: 1, name: 'p', to: 0 }],
+    ['browserToHub', { t: 'openHub', req: 1, host: 1 }],
+    ['browserToHub', { t: 'installHub', req: 1, host: 1 }],
+    ['hubToBrowser', { t: 'hubLogin', req: 1, login: 'https://login.tailscale.com/a/abc123' }],
+    ['hubToBrowser', { t: 'hubOpened', req: 1, url: OPENED_URL }],
   ];
 
   const fireAndForget: readonly (readonly [Direction, Record<string, unknown>])[] = [
@@ -630,6 +636,46 @@ describe('host entries and tokens', () => {
     expect(decodes('hubToBrowser', withEntry({ instance }))).toBe(ok);
   });
 
+  describe('login', () => {
+    const LOGIN = 'https://login.tailscale.com/a/abc123';
+    const needsLogin = (login: unknown): unknown => withEntry({ status: 'needs-login', login });
+
+    it('decodes a needs-login host entry carrying its login URL', () => {
+      const entry = { ...hosts[0], status: 'needs-login', daemonVersion: null, instance: null, login: LOGIN };
+      expect(decodeMessage('hubToBrowser', raw({ t: 'hosts', hosts: [entry] }))).toEqual({ t: 'hosts', hosts: [entry] });
+    });
+
+    it('accepts a login URL of 1024 characters', () => {
+      expect(decodes('hubToBrowser', needsLogin(LOGIN + 'x'.repeat(1024 - LOGIN.length)))).toBe(true);
+    });
+
+    it.each([
+      ['plain http', 'http://login.tailscale.com/a/x'],
+      ['a lookalike host', 'https://login.tailscale.com.evil/a/x'],
+      ['another host', 'https://example.com/a/x'],
+      ['a javascript: URL', 'javascript:alert(1)'],
+      ['1025 characters', LOGIN + 'x'.repeat(1025 - LOGIN.length)],
+      ['no path', 'https://login.tailscale.com'],
+      ['a number', 1],
+    ])('rejects a login URL that is %s', (_name, login) => {
+      expect(decodes('hubToBrowser', needsLogin(login))).toBe(false);
+    });
+
+    it('rejects a needs-login host entry with a null login', () => {
+      expect(decodes('hubToBrowser', needsLogin(null))).toBe(false);
+    });
+
+    it.each(['connecting', 'connected', 'reconnecting', 'down', 'outdated'])('rejects a %s host entry with a login', (status) => {
+      expect(decodes('hubToBrowser', withEntry({ status, login: LOGIN }))).toBe(false);
+      expect(decodes('hubToBrowser', withEntry({ status, login: null }))).toBe(true);
+    });
+
+    it('rejects a host entry without login', () => {
+      const withoutLogin = Object.fromEntries(Object.entries(entry ?? {}).filter(([key]) => key !== 'login'));
+      expectRejected('hubToBrowser', raw({ t: 'hosts', hosts: [withoutLogin] }));
+    });
+  });
+
   it('decodes a token message from the hub', () => {
     expect(decodeMessage('hubToBrowser', raw({ t: 'token', token: TOKEN }))).toEqual({ t: 'token', token: TOKEN });
   });
@@ -685,5 +731,98 @@ describe('hub code response', () => {
 
   it('refuses to encode a malformed code', () => {
     expect(() => encodeCodeResponse({ code: 'xyz' })).toThrow(ProtocolError);
+  });
+});
+
+describe('hub opening messages', () => {
+  const LOGIN = 'https://login.tailscale.com/a/abc123';
+  const opened = (url: unknown): unknown => ({ t: 'hubOpened', req: 1, url });
+  const FRAGMENT = `code=${CODE}&host=box&home=7417&hubs=box`;
+
+  it.each([
+    ['openHub', { t: 'openHub', req: 1, host: 1 }],
+    ['installHub', { t: 'installHub', req: 1, host: 1 }],
+  ])('accepts %s only from the browser', (_name, message) => {
+    expect(decodes('browserToHub', message)).toBe(true);
+    expectRejected('hubToBrowser', raw(message));
+    expectRejected('clientToDaemon', raw(message));
+  });
+
+  it.each([
+    ['hubLogin', { t: 'hubLogin', req: 1, login: LOGIN }],
+    ['hubOpened', { t: 'hubOpened', req: 1, url: OPENED_URL }],
+  ])('accepts %s only from the hub', (_name, message) => {
+    expect(decodes('hubToBrowser', message)).toBe(true);
+    expectRejected('browserToHub', raw(message));
+    expectRejected('daemonToClient', raw(message));
+  });
+
+  it.each([
+    ['a host index above 65535', { t: 'openHub', req: 1, host: 65536 }],
+    ['a negative host index', { t: 'installHub', req: 1, host: -1 }],
+    ['no host', { t: 'openHub', req: 1 }],
+    ['an extra field', { t: 'openHub', req: 1, host: 1, name: 'box' }],
+  ])('rejects a hub request with %s', (_name, message) => {
+    expectRejected('browserToHub', raw(message));
+  });
+
+  it('decodes a hubOpened URL to its value unchanged', () => {
+    expect(decodeMessage('hubToBrowser', raw(opened(OPENED_URL)))).toEqual({ t: 'hubOpened', req: 1, url: OPENED_URL });
+  });
+
+  it.each([1024, 7418, 65535])('accepts a hubOpened URL on port %i', (port) => {
+    expect(decodes('hubToBrowser', opened(`http://127.0.0.1:${String(port)}/#${FRAGMENT}`))).toBe(true);
+  });
+
+  it.each([
+    ['a foreign host', `http://evil.example:7418/#${FRAGMENT}`],
+    ['localhost', `http://localhost:7418/#${FRAGMENT}`],
+    ['https', `https://127.0.0.1:7418/#${FRAGMENT}`],
+    ['port 80', `http://127.0.0.1:80/#${FRAGMENT}`],
+    ['port 1023', `http://127.0.0.1:1023/#${FRAGMENT}`],
+    ['port 65536', `http://127.0.0.1:65536/#${FRAGMENT}`],
+    ['a leading-zero port', `http://127.0.0.1:07418/#${FRAGMENT}`],
+    ['no port', `http://127.0.0.1/#${FRAGMENT}`],
+    ['a path other than /', `http://127.0.0.1:7418/x#${FRAGMENT}`],
+    ['a query', `http://127.0.0.1:7418/?a=1#${FRAGMENT}`],
+    ['credentials', `http://u@127.0.0.1:7418/#${FRAGMENT}`],
+    ['no fragment', 'http://127.0.0.1:7418/'],
+    ['a home fragment', `http://127.0.0.1:7418/#code=${CODE}&hub=box`],
+    ['a malformed remote fragment', `http://127.0.0.1:7418/#code=${CODE}&host=box&home=7417&hubs=gpu`],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['a number', 7418],
+  ])('rejects a hubOpened URL with %s', (_name, url) => {
+    expect(decodes('hubToBrowser', opened(url))).toBe(false);
+  });
+
+  it.each([
+    ['a lookalike host', 'https://login.tailscale.com.evil/a/x'],
+    ['plain http', 'http://login.tailscale.com/a/x'],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['1025 characters', LOGIN + 'x'.repeat(1025 - LOGIN.length)],
+    ['null', null],
+  ])('rejects a hubLogin URL that is %s', (_name, login) => {
+    expect(decodes('hubToBrowser', { t: 'hubLogin', req: 1, login })).toBe(false);
+  });
+
+  it('accepts a hubLogin URL of 1024 characters', () => {
+    expect(decodes('hubToBrowser', { t: 'hubLogin', req: 1, login: LOGIN + 'x'.repeat(1024 - LOGIN.length) })).toBe(true);
+  });
+
+  it.each(['hub-outdated', 'hub-failed'])('accepts the hub error code %s from the hub only', (code) => {
+    expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 1, code, message: 'x' })).toBe(true);
+    expect(decodes('hubToBrowser', { t: 'error', req: null, host: null, code, message: 'x' })).toBe(true);
+    expectRejected('daemonToClient', raw({ t: 'error', req: 1, code, message: 'x' }));
+    expectRejected('hubToBrowser', raw({ t: 'host', host: 1, m: { t: 'error', req: 1, code, message: 'x' } }));
+  });
+
+  it('still accepts every daemon error code from the hub', () => {
+    for (const code of ['bad-message', 'unknown-host', 'busy', 'version-mismatch', 'host-unavailable', 'internal']) {
+      expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 0, code, message: 'x' })).toBe(true);
+    }
+  });
+
+  it('rejects an unknown hub error code', () => {
+    expectRejected('hubToBrowser', raw({ t: 'error', req: 1, host: 0, code: 'hub-gone', message: 'x' }));
   });
 });

@@ -10,6 +10,7 @@
   --accent: #4c8dff;
   --accent-soft: #233b61;
   --star: #f5c451;
+  --danger: #f14c4c;
   font-family:
     Inter,
     ui-sans-serif,
@@ -85,8 +86,10 @@ input:focus-visible,
 
 .repo-tab.active,
 .term-tab.active,
+.hubs-menu,
 .repo-tab.active:hover,
-.term-tab.active:hover {
+.term-tab.active:hover,
+.hubs-menu:hover:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
@@ -97,15 +100,75 @@ input:focus-visible,
   margin-right: 8px;
 }
 
+.hubs {
+  position: relative;
+}
+
+.hubs-list {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--panel-raised);
+  border: 1px solid #3a414c;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+}
+
+.hubs-entry {
+  text-align: left;
+}
+
+.hubs-entry.marked {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.hub-status {
+  margin-right: 8px;
+}
+
+.hub-status button,
+.hub-status a.button {
+  margin-left: 6px;
+  border-color: var(--text);
+}
+
+.hub-status a.button {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid var(--text);
+  padding: 5px 9px;
+  border-radius: 5px;
+}
+
 .banner {
   padding: 6px 10px;
   background: #5a1d1d;
   border-bottom: 1px solid var(--border);
 }
 
-.banner button {
+.banner button,
+.banner a.button {
   border-color: var(--text);
   margin-left: 6px;
+}
+
+.banner a.button {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid var(--text);
+  padding: 5px 9px;
+  border-radius: 5px;
+}
+
+.banner a.button:hover {
+  background: var(--hover);
 }
 
 .workspace {
@@ -452,6 +515,10 @@ input:focus-visible,
   box-shadow: 0 12px 36px rgb(0 0 0 / 55%);
 }
 
+.confirm-dialog.delete-worktree {
+  border: 3px solid var(--danger);
+}
+
 /* Undo the user agent's centring and colours of an open dialog. */
 dialog.preset-picker,
 dialog.close-dialog,
@@ -617,7 +684,7 @@ dialog.add-repo-dialog {
 }
 
 .mark-failed {
-  background: #f14c4c;
+  background: var(--danger);
 }
 
 .mark-exited {

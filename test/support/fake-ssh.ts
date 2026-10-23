@@ -11,9 +11,9 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { DaemonClient, type EventOf } from './daemon-client.js';
-import { alive, hostFileName, waitUntil, type DaemonHost, type Exit } from './daemon-host.js';
+import { alive, hostFileName, livePidsWhere, waitUntil, type DaemonHost, type Exit } from './daemon-host.js';
 
 const QUOTED_QUOTE = String.raw`'\''`;
 
@@ -76,8 +76,14 @@ const SSH_SCRIPT = (dir: string): string => String.raw`#!/bin/sh
 d=${shellQuote(dir)}
 f="$d/calls/$$"
 for a in "$@"; do printf '%s\0' "$a"; done > "$f.tmp" && mv "$f.tmp" "$f"
-while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
-if [ "$#" -ne 3 ]; then echo "fake ssh: expected -- <alias> <command>" >&2; exit 255; fi
+fwd=
+while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+  if [ "$1" = "-W" ]; then fwd=$2; shift; fi
+  shift
+done
+if [ -n "$fwd" ]; then
+  if [ "$#" -ne 2 ]; then echo "fake ssh: expected -W <host:port> -- <alias>" >&2; exit 255; fi
+elif [ "$#" -ne 3 ]; then echo "fake ssh: expected -- <alias> <command>" >&2; exit 255; fi
 alias=$2
 cmd=$3
 h="$d/hosts/$alias"
@@ -85,11 +91,41 @@ if [ ! -f "$h" ]; then echo "ssh: Could not resolve hostname $alias: Name or ser
 . "$h"
 if [ -n "$R_HANG" ]; then trap '' TERM; exec sleep 600; fi
 if [ -n "$R_GATE" ]; then while [ ! -e "$R_GATE" ]; do sleep 0.05; done; fi
+if [ -n "$R_LOGIN" ] && [ ! -e "$d/login/open-$alias" ]; then
+  printf '%s\n' '# Tailscale SSH requires an additional check.' "# To authenticate, visit: https://login.tailscale.com/a/wtd$$" >&2
+  date +%s%3N > "$d/login/$$.at"
+  while [ ! -e "$d/login/$$.ok" ]; do
+    if [ -e "$d/login/$$.fail" ]; then cat "$d/login/$$.fail" >&2; exit 255; fi
+    sleep 0.05
+  done
+fi
 if [ -n "$R_FAIL_LINE" ]; then printf '%s\n' "$R_FAIL_LINE" >&2; exit 255; fi
 if [ -n "$R_FAIL_BYTES" ]; then head -c "$R_FAIL_BYTES" /dev/zero | tr '\000' x >&2; exit 255; fi
 if [ -n "$R_NOISE_BYTES" ]; then head -c "$R_NOISE_BYTES" /dev/zero | tr '\000' x >&2; fi
+if [ -n "$fwd" ]; then
+  if [ -n "$R_NO_FORWARD" ]; then echo 'channel 0: open failed: administratively prohibited' >&2; exit 255; fi
+  exec ${shellQuote(process.execPath)} "$d/relay.cjs" "$fwd"
+fi
 cd "$R_HOME" || exit 255
 exec env -i HOME="$R_HOME" PATH="$R_PATH" SHELL="$R_SHELL" LANG=C.UTF-8 USER="$USER" /bin/sh -c "$cmd"
+`;
+
+/** Relays stdio to the TCP address in argv, as `ssh -W` does; a refused connect fails as OpenSSH reports it. */
+const RELAY_SCRIPT = String.raw`const net = require('node:net');
+const target = process.argv[2];
+const at = target.lastIndexOf(':');
+const socket = net.connect(Number(target.slice(at + 1)), target.slice(0, at));
+let open = false;
+socket.once('connect', () => {
+  open = true;
+  process.stdin.pipe(socket);
+  socket.pipe(process.stdout);
+});
+socket.once('error', () => {
+  if (!open) process.stderr.write('channel 0: open failed: connect failed: Connection refused\nstdio forwarding failed\n');
+  process.exit(255);
+});
+socket.once('close', () => process.exit(0));
 `;
 
 /** One run of the fake SSH program. */
@@ -98,8 +134,10 @@ export interface SshCall {
   /** Its arguments, without the program. */
   args: string[];
   alias: string;
-  /** The remote command, as one argument. */
+  /** The remote command, as one argument; empty for a forward. */
   command: string;
+  /** The `-W` target of a forward, else null. */
+  forward: string | null;
 }
 
 export interface RemoteOptions {
@@ -108,6 +146,13 @@ export interface RemoteOptions {
   /** The remote login shell. */
   shell?: string;
 }
+
+/** The pid of the fake SSH run that wrote the login URL `url`. */
+export const loginRun = (url: string): number => {
+  const match = /^https:\/\/login\.tailscale\.com\/a\/wtd(\d+)$/.exec(url);
+  if (match?.[1] === undefined) throw new Error(`not a fake SSH login URL: ${url}`);
+  return Number(match[1]);
+};
 
 /** A remote host reached through FakeSsh: its own temporary home, state and daemon. */
 export class FakeRemote {
@@ -148,14 +193,37 @@ export class FakeRemote {
     }
   }
 
+  /** Replaces the remote's `wtd` with a shell script. */
+  plantWtd(script: string): void {
+    mkdirSync(dirname(this.shim), { recursive: true });
+    writeFileSync(this.shim, `#!/bin/sh\n${script}\n`);
+    chmodSync(this.shim, 0o755);
+  }
+
+  /** Writes the remote hub's `config.json`. */
+  writeHubConfig(config: unknown): void {
+    const dir = join(this.home, '.config', 'worktree-term');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'config.json'), JSON.stringify(config));
+  }
+
   /** Pids of daemons running with this remote's home. */
   daemonPids(): number[] {
+    return this.pidsOf('daemon');
+  }
+
+  /** Pids of hubs running with this remote's home. */
+  hubPids(): number[] {
+    return this.pidsOf('hub');
+  }
+
+  private pidsOf(verb: string): number[] {
     const pids: number[] = [];
     for (const name of readdirSync('/proc')) {
       if (!/^\d+$/.test(name)) continue;
       try {
         const cmdline = readFileSync(`/proc/${name}/cmdline`, 'utf8').split('\0');
-        if (cmdline[2] !== 'daemon') continue;
+        if (cmdline[2] !== verb) continue;
         const environ = readFileSync(`/proc/${name}/environ`, 'utf8').split('\0');
         if (environ.includes(`HOME=${this.home}`) && alive(Number(name))) pids.push(Number(name));
       } catch {
@@ -183,14 +251,16 @@ export class FakeRemote {
 
   async cleanup(): Promise<void> {
     for (const client of this.clients) client.close();
-    for (const pid of this.daemonPids()) {
+    for (const pid of [...this.hubPids(), ...this.daemonPids()]) {
       try {
         process.kill(pid, 'SIGKILL');
       } catch {
         // Already gone.
       }
     }
-    await waitUntil(() => this.daemonPids().length === 0, 'remote daemons to exit').catch(() => undefined);
+    await waitUntil(() => this.hubPids().length === 0 && this.daemonPids().length === 0, 'remote hubs and daemons to exit').catch(
+      () => undefined,
+    );
   }
 }
 
@@ -202,6 +272,7 @@ export class FakeSsh {
   readonly program: string;
   private readonly hostsDir: string;
   private readonly callsDir: string;
+  private readonly loginDir: string;
   private readonly remotes: FakeRemote[] = [];
   private noNode: string | null = null;
 
@@ -209,9 +280,12 @@ export class FakeSsh {
     mkdirSync(dir, { recursive: true });
     this.hostsDir = join(dir, 'hosts');
     this.callsDir = join(dir, 'calls');
+    this.loginDir = join(dir, 'login');
     mkdirSync(this.hostsDir, { recursive: true });
     mkdirSync(this.callsDir, { recursive: true });
+    mkdirSync(this.loginDir, { recursive: true });
     this.program = join(dir, 'ssh');
+    writeFileSync(join(dir, 'relay.cjs'), RELAY_SCRIPT);
     writeFileSync(this.program, SSH_SCRIPT(dir));
     chmodSync(this.program, 0o755);
   }
@@ -261,6 +335,34 @@ export class FakeSsh {
     };
   }
 
+  /**
+   * Makes every later SSH run for `alias` write Tailscale's check banner, with a login URL naming the run
+   * (see `loginRun`), and wait until that run is approved or expired, or `skipLogin` was called before it started.
+   */
+  loginHost(alias: string): void {
+    appendFileSync(join(this.hostsDir, alias), 'R_LOGIN=1\n');
+  }
+
+  /** When, in ms since the epoch, the run behind `url` wrote its banner. */
+  loginWrittenAt(url: string): number {
+    return Number(readFileSync(join(this.loginDir, `${String(loginRun(url))}.at`), 'utf8').trim());
+  }
+
+  /** Lets the run behind `url` proceed. */
+  approveLogin(url: string): void {
+    writeFileSync(join(this.loginDir, `${String(loginRun(url))}.ok`), '');
+  }
+
+  /** Makes the run behind `url` write `line` to standard error and exit 255. */
+  expireLogin(url: string, line: string): void {
+    writeFileSync(join(this.loginDir, `${String(loginRun(url))}.fail`), `${line}\n`);
+  }
+
+  /** Lets SSH runs for `alias` that start from now on proceed without a banner. */
+  skipLogin(alias: string): void {
+    writeFileSync(join(this.loginDir, `open-${alias}`), '');
+  }
+
   /** Every run so far, in no particular order. */
   calls(): SshCall[] {
     return readdirSync(this.callsDir)
@@ -268,8 +370,22 @@ export class FakeSsh {
       .map((name) => {
         const args = readFileSync(join(this.callsDir, name), 'utf8').split('\0').slice(0, -1);
         const dash = args.indexOf('--');
-        return { pid: Number(name), args, alias: args[dash + 1] ?? '', command: args[dash + 2] ?? '' };
+        const w = args.indexOf('-W');
+        const forward = w >= 0 && w < dash ? (args[w + 1] ?? null) : null;
+        return { pid: Number(name), args, alias: args[dash + 1] ?? '', command: args[dash + 2] ?? '', forward };
       });
+  }
+
+  /** Makes every later forward (`-W`) run for `alias` print OpenSSH's refusal and exit 255; other runs are unaffected. */
+  refuseForwards(alias: string): void {
+    appendFileSync(join(this.hostsDir, alias), 'R_NO_FORWARD=1\n');
+  }
+
+  /** Pids of forward (`-W`) runs for `alias` still alive. */
+  forwardPids(alias: string): number[] {
+    return this.calls()
+      .filter((call) => call.alias === alias && call.forward !== null && alive(call.pid))
+      .map((call) => call.pid);
   }
 
   /** Pids of runs for `alias` still alive. */
@@ -280,15 +396,41 @@ export class FakeSsh {
   }
 
   async cleanup(): Promise<void> {
-    for (const call of this.calls()) {
+    this.killRuns();
+    await Promise.all(this.remotes.map((remote) => remote.cleanup()));
+    // rmSync empties a directory once and then retries only removing it, so a call recorded meanwhile fails it
+    // for good: retry the whole removal, killing runs that started since.
+    await waitUntil(
+      () => {
+        this.killRuns();
+        try {
+          rmSync(this.dir, { recursive: true, force: true });
+          return true;
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOTEMPTY') return false;
+          throw error;
+        }
+      },
+      'the fake SSH directory to go',
+      10_000,
+    );
+  }
+
+  /** Kills every live run, including those that have not recorded their call yet. */
+  private killRuns(): void {
+    let recorded: number[] = [];
+    try {
+      recorded = this.calls().map((call) => call.pid);
+    } catch {
+      // Removed while we read it.
+    }
+    for (const pid of [...recorded, ...livePidsWhere((cmdline) => cmdline[1] === this.program)]) {
       try {
-        if (alive(call.pid)) process.kill(call.pid, 'SIGKILL');
+        if (alive(pid)) process.kill(pid, 'SIGKILL');
       } catch {
         // Already gone.
       }
     }
-    await Promise.all(this.remotes.map((remote) => remote.cleanup()));
-    rmSync(this.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 
   private writeHost(alias: string, values: Record<string, string>): void {

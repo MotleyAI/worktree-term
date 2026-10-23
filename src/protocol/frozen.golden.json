@@ -21,5 +21,34 @@
     { "dirs": ["clientToDaemon"], "json": "{\"t\":\"shutdown\"}", "valid": true },
     { "dirs": ["clientToDaemon"], "json": "{\"t\":\"shutdown\",\"req\":1}", "valid": false },
     { "dirs": ["daemonToClient", "browserToHub", "hubToBrowser"], "json": "{\"t\":\"shutdown\"}", "valid": false }
+  ],
+  "printCode": [
+    { "text": "{\"port\":7417,\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}\n", "value": { "port": 7417, "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" } },
+    { "text": "{\"port\":65535,\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}\n", "value": { "port": 65535, "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" } },
+    { "text": "{\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\",\"port\":1024} \n", "value": { "port": 1024, "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" } },
+    { "text": "{\"port\":7417,\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\",\"token\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}\n", "value": null },
+    { "text": "motd\n{\"port\":7417,\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}\n", "value": null },
+    { "text": "{\"port\":80,\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}\n", "value": null },
+    { "text": "{\"port\":7417.5,\"code\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}\n", "value": null },
+    { "text": "{\"port\":7417,\"code\":\"x\"}\n", "value": null }
+  ],
+  "homeFragments": [
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "value": { "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "hub": null } },
+    { "text": "hub=box", "value": { "code": null, "hub": "box" } },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&hub=box", "value": { "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "hub": "box" } },
+    { "text": "hub=a b", "value": null },
+    { "text": "hub=box&hub=gpu", "value": null },
+    { "text": "code=x", "value": null },
+    { "text": "hub=box&token=x", "value": null },
+    { "text": "", "value": null }
+  ],
+  "remoteFragments": [
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box,gpu", "value": { "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "host": "box", "home": 7417, "hubs": ["box", "gpu"] } },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=gpu&home=65535&hubs=gpu", "value": { "code": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "host": "gpu", "home": 65535, "hubs": ["gpu"] } },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&hubs=box", "value": null },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=0080&hubs=box", "value": null },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=gpu", "value": null },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box&token=x", "value": null },
+    { "text": "code=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210&host=box&home=7417&hubs=box,box", "value": null }
   ]
 }

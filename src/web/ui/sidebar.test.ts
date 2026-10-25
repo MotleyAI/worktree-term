@@ -275,16 +275,24 @@ describe('matchesSearch', () => {
   });
 });
 
+const REASON = 'ssh: connect to host github.com port 22: No route to host';
+const BOTH = { local: 'main', remote: 'origin/main', fetchFailed: null };
+const LOCAL_ONLY = { local: 'main', remote: null, fetchFailed: null };
+const REMOTE_ONLY = { local: null, remote: 'origin/master', fetchFailed: null };
+const NO_BASE = { local: null, remote: null, fetchFailed: null };
+const FAILED = { ...BOTH, fetchFailed: { ref: 'origin/main', reason: REASON } };
+const FAILED_NO_REMOTE = { ...LOCAL_ONLY, fetchFailed: { ref: 'origin/main', reason: REASON } };
+
 describe('removalReasons', () => {
-  const safe = { base: 'origin/main', ahead: 0, changes: 0, running: [] };
+  const safe = { ...BOTH, ahead: 0, changes: 0, running: [] };
 
   it('gives no reason for a merged, clean worktree without running terminals', () => {
     expect(removalReasons(safe)).toEqual([]);
   });
 
   it('names every reason that applies, in order', () => {
-    expect(removalReasons({ base: 'origin/main', ahead: 3, changes: 2, running: ['claude 3', 'shell 4'] })).toEqual([
-      'It has 3 commits not in origin/main.',
+    expect(removalReasons({ ...BOTH, ahead: 3, changes: 2, running: ['claude 3', 'shell 4'] })).toEqual([
+      'It has 3 commits not in main or origin/main.',
       'It has 2 uncommitted changes, untracked files included.',
       'Running terminals will be closed: claude 3, shell 4.',
     ]);
@@ -292,27 +300,57 @@ describe('removalReasons', () => {
 
   it('uses the singular for one commit or change', () => {
     expect(removalReasons({ ...safe, ahead: 1, changes: 1 })).toEqual([
-      'It has 1 commit not in origin/main.',
+      'It has 1 commit not in main or origin/main.',
       'It has 1 uncommitted change, untracked files included.',
     ]);
   });
 
-  it('says when there is no origin/main to compare with', () => {
-    expect(removalReasons({ ...safe, base: null, ahead: null })).toEqual(['There is no origin/main to check that its commits are merged.']);
+  it.each([
+    ['the local branch', LOCAL_ONLY, 'It has 2 commits not in main.'],
+    ['the remote-tracking ref', REMOTE_ONLY, 'It has 2 commits not in origin/master.'],
+  ])('names only %s when it is the only base', (_name, bases, reason) => {
+    expect(removalReasons({ ...safe, ...bases, ahead: 2 })).toEqual([reason]);
+  });
+
+  it('says the remote is as last fetched and why the fetch failed', () => {
+    expect(removalReasons({ ...safe, ...FAILED, ahead: 1 })).toEqual([
+      `It has 1 commit not in main or origin/main as last fetched; couldn't compare with a fresh origin/main because the fetch failed: ${REASON}.`,
+    ]);
+  });
+
+  it('names the ref it failed to fetch when there was none before', () => {
+    expect(removalReasons({ ...safe, ...FAILED_NO_REMOTE, ahead: 1 })).toEqual([
+      `It has 1 commit not in main; couldn't compare with a fresh origin/main because the fetch failed: ${REASON}.`,
+    ]);
+  });
+
+  it('says when there is no main or origin/main to compare with', () => {
+    expect(removalReasons({ ...safe, ...NO_BASE, ahead: null })).toEqual([
+      'There is no main or origin/main to check that its commits are merged.',
+    ]);
   });
 });
 
 describe('keptNote', () => {
   const HEAD = '0123456789abcdef0123456789abcdef01234567';
+  const detached = { detached: true, head: HEAD };
 
-  it('says the branch is kept, or that a detached worktree leaves its commits unreachable, naming its head', () => {
-    expect(keptNote({ detached: false, head: HEAD }, 'origin/main')).toBe('Its branch is kept.');
-    expect(keptNote({ detached: true, head: HEAD }, 'origin/main')).toBe(
-      'It has no branch: once it is deleted, its commits not in origin/main become unreachable; its head is 0123456.',
-    );
+  it('says the branch is kept', () => {
+    expect(keptNote({ detached: false, head: HEAD }, BOTH)).toBe('Its branch is kept.');
   });
 
-  it('names the base the daemon compared with', () => {
-    expect(keptNote({ detached: true, head: HEAD }, 'origin/master')).toContain('its commits not in origin/master become');
+  it.each([
+    ['both bases', BOTH, 'its commits not in main or origin/main become unreachable'],
+    ['only the local branch', LOCAL_ONLY, 'its commits not in main become unreachable'],
+    ['only the remote-tracking ref', REMOTE_ONLY, 'its commits not in origin/master become unreachable'],
+    ['a failed fetch', FAILED, 'its commits not in main or origin/main as last fetched become unreachable'],
+    ['a failed fetch without a remote-tracking ref', FAILED_NO_REMOTE, 'its commits not in main become unreachable'],
+    ['no base', NO_BASE, 'its commits become unreachable'],
+  ])('says a detached worktree leaves its commits unreachable, naming its head, with %s', (_name, bases, lost) => {
+    expect(keptNote(detached, bases)).toBe(`It has no branch: once it is deleted, ${lost}; its head is 0123456.`);
+  });
+
+  it('ends the note without a head', () => {
+    expect(keptNote({ detached: true, head: null }, NO_BASE)).toBe('It has no branch: once it is deleted, its commits become unreachable.');
   });
 });

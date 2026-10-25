@@ -7,6 +7,7 @@ import {
   presetSchema,
   ProtocolError,
   type Direction,
+  type MessageOf,
   type Preset,
 } from './index.js';
 import {
@@ -26,6 +27,21 @@ import {
   utf8,
   WT,
 } from './test-samples.js';
+
+type Risk = Extract<MessageOf<'daemonToClient'>, { t: 'worktreeAtRisk' }>;
+
+const RISK: Risk = {
+  t: 'worktreeAtRisk',
+  req: 1,
+  worktree: WT,
+  local: 'main',
+  remote: 'origin/main',
+  ahead: 1,
+  fetchFailed: null,
+  changes: 0,
+  running: [2],
+};
+const FETCH_FAILED = { ref: 'origin/main', reason: 'ssh: connect to host github.com port 22: No route to host' };
 
 const decodes = (dir: Direction, value: unknown): boolean => {
   try {
@@ -50,7 +66,7 @@ describe('handshake', () => {
   });
 
   it('decodes a hello from another protocol version', () => {
-    expect(decodeMessage('daemonToClient', raw({ ...hello, protocol: 7 }))).toEqual({ ...hello, protocol: 7 });
+    expect(decodeMessage('daemonToClient', raw({ ...hello, protocol: 8 }))).toEqual({ ...hello, protocol: 8 });
   });
 
   it.each([
@@ -521,26 +537,65 @@ describe('value limits', () => {
     ['without force', 'clientToDaemon', { t: 'removeWorktree', req: 1, worktree: WT }],
     ['for a relative path', 'clientToDaemon', { t: 'removeWorktree', req: 1, worktree: 'wt', force: false }],
     ['from the daemon', 'daemonToClient', { t: 'removeWorktree', req: 1, worktree: WT, force: false }],
-    [
-      'with negative commits',
-      'daemonToClient',
-      { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: -1, changes: 0, running: [] },
-    ],
-    [
-      'with fractional changes',
-      'daemonToClient',
-      { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: 0, changes: 0.5, running: [] },
-    ],
-    ['with terminal id 0', 'daemonToClient', { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: 0, changes: 0, running: [0] }],
-    ['without req', 'daemonToClient', { t: 'worktreeAtRisk', worktree: WT, base: null, ahead: 0, changes: 0, running: [] }],
+    ['with negative commits', 'daemonToClient', { ...RISK, ahead: -1 }],
+    ['with fractional changes', 'daemonToClient', { ...RISK, changes: 0.5 }],
+    ['with terminal id 0', 'daemonToClient', { ...RISK, running: [0] }],
+    ['without req', 'daemonToClient', { ...RISK, req: undefined }],
+    ['without fetchFailed', 'daemonToClient', { ...RISK, fetchFailed: undefined }],
+    ['carrying base instead of local and remote', 'daemonToClient', { ...RISK, local: undefined, remote: undefined, base: 'origin/main' }],
+    ['with an extra fetchFailed field', 'daemonToClient', { ...RISK, fetchFailed: { ...FETCH_FAILED, code: 128 } }],
+    ['with fetchFailed without a reason', 'daemonToClient', { ...RISK, fetchFailed: { ref: 'origin/main' } }],
   ] as const)('rejects a worktree removal message %s', (_name, dir, message) => {
     expectRejected(dir, raw(message));
   });
 
   it('carries worktree removal through the browser envelopes', () => {
     expect(decodes('browserToHub', { t: 'host', host: 0, m: { t: 'removeWorktree', req: 1, worktree: WT, force: true } })).toBe(true);
-    const risk = { t: 'worktreeAtRisk', req: 1, worktree: WT, base: 'origin/main', ahead: 1, changes: 0, running: [2] };
-    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: risk })).toBe(true);
+    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: { ...RISK, fetchFailed: FETCH_FAILED } })).toBe(true);
+  });
+
+  it('round-trips a failed fetch in worktreeAtRisk', () => {
+    const risk: Risk = { ...RISK, fetchFailed: FETCH_FAILED };
+    expect(decodeMessage('daemonToClient', encodeMessage('daemonToClient', risk))).toEqual(risk);
+  });
+
+  /** Whether `risk` both encodes and decodes; throws when only one of them accepts it. */
+  const riskValid = (risk: MessageOf<'daemonToClient'>): boolean => {
+    const decoded = decodes('daemonToClient', risk);
+    let encoded = true;
+    try {
+      encodeMessage('daemonToClient', risk);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProtocolError);
+      encoded = false;
+    }
+    expect(encoded).toBe(decoded);
+    return decoded;
+  };
+
+  it.each([
+    ['ahead null with local', { ...RISK, ahead: null, remote: null }, false],
+    ['ahead null with remote', { ...RISK, ahead: null, local: null }, false],
+    ['ahead 0 without a base', { ...RISK, ahead: 0, local: null, remote: null }, false],
+    ['ahead null without a base', { ...RISK, ahead: null, local: null, remote: null }, true],
+    ['only local', { ...RISK, remote: null }, true],
+    ['only remote', { ...RISK, local: null }, true],
+    ['4096-char local', { ...RISK, local: 'l'.repeat(4096) }, true],
+    ['4097-char local', { ...RISK, local: 'l'.repeat(4097) }, false],
+    ['4096-char remote', { ...RISK, remote: 'r'.repeat(4096) }, true],
+    ['4097-char remote', { ...RISK, remote: 'r'.repeat(4097) }, false],
+    ['4096-char fetchFailed.ref', { ...RISK, fetchFailed: { ...FETCH_FAILED, ref: 'f'.repeat(4096) } }, true],
+    ['4097-char fetchFailed.ref', { ...RISK, fetchFailed: { ...FETCH_FAILED, ref: 'f'.repeat(4097) } }, false],
+    ['1024-char fetchFailed.reason', { ...RISK, fetchFailed: { ...FETCH_FAILED, reason: 'r'.repeat(1024) } }, true],
+    ['1025-char fetchFailed.reason', { ...RISK, fetchFailed: { ...FETCH_FAILED, reason: 'r'.repeat(1025) } }, false],
+  ] as const)('worktreeAtRisk with %s', (_name, risk, ok) => {
+    expect(riskValid(risk)).toBe(ok);
+  });
+
+  it('refuses to encode a worktreeAtRisk without fetchFailed', () => {
+    const risk: Partial<Risk> = { ...RISK };
+    delete risk.fetchFailed;
+    expect(() => encodeMessage('daemonToClient', risk as Risk)).toThrow(ProtocolError);
   });
 
   it('rejects a blank preset name', () => {

@@ -166,6 +166,10 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'movePreset', req: 1, name: 'p', to: 64 },
   { t: 'removeWorktree', req: 1, worktree: WT },
   { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: -1, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, base: 'origin/main', ahead: 1, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: null, remote: null, ahead: -1, fetchFailed: null, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: null, ahead: null, fetchFailed: null, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: null, ahead: 1, changes: 0, running: [] },
   {
     t: 'hosts',
     hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [] }],

@@ -1,8 +1,8 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
 import { join } from 'node:path';
 import type { HubHost } from '../support/hub-host.js';
-import { fakeWorktrees, git } from '../support/daemon-host.js';
+import { extOrigin, fakeWorktrees, git } from '../support/daemon-host.js';
 import { COMMANDS, runIn } from './attention-helpers.js';
 import { byTestId, repoTab, termTab, TID, worktreeEntry } from './contract.js';
 import {
@@ -389,13 +389,29 @@ test.describe('sidebar width', () => {
 });
 
 test.describe('worktree status and deletion', () => {
-  /** Gives `repo` a bare `origin` holding its `main`, with `origin/HEAD` pointing at it. */
-  const withOrigin = (hub: HubHost, repo: string): void => {
+  /** Gives `repo` a bare `origin` holding its `main`, with `origin/HEAD` pointing at it; returns the origin's path. */
+  const withOrigin = (hub: HubHost, repo: string): string => {
     const origin = join(hub.dir, 'origin.git');
     git(hub.dir, 'init', '-q', '--bare', '-b', 'main', origin);
     git(repo, 'remote', 'add', 'origin', origin);
     git(repo, 'push', '-q', 'origin', 'main');
     git(repo, 'remote', 'set-head', 'origin', 'main');
+    return origin;
+  };
+
+  const commit = (cwd: string, file: string): void => {
+    writeFileSync(join(cwd, file), file);
+    git(cwd, 'add', file);
+    git(cwd, 'commit', '-q', '-m', file);
+  };
+
+  /** Asks to delete `path` and waits for the confirmation. */
+  const askToDelete = async (page: Page, path: string): Promise<Locator> => {
+    await page.locator(worktreeEntry(path)).click({ button: 'right' });
+    await page.locator(byTestId(TID.deleteWorktree)).click();
+    const dialog = page.locator(byTestId(TID.confirmDialog));
+    await expect(dialog).toBeVisible();
+    return dialog;
   };
 
   const titleOf = async (page: Page, path: string): Promise<string> =>
@@ -417,10 +433,9 @@ test.describe('worktree status and deletion', () => {
       .toBe(`${feat}\nprobe ${String(ticker)}: running\nprobe ${String(failing)}: exited with code 1`);
   });
 
-  test('deleting a merged, clean worktree without running terminals asks nothing', async ({ hub, page }) => {
+  test('deleting a clean worktree in the local main without running terminals asks nothing', async ({ hub, page }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
     const feat = worktrees[0] ?? '';
-    withOrigin(hub, repo);
     hub.writeRepos([repo]);
     await openUi(hub, page);
     await page.locator(worktreeEntry(feat)).click({ button: 'right' });
@@ -454,7 +469,7 @@ test.describe('worktree status and deletion', () => {
 
     await remove();
     await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText([
-      'It has 1 commit not in origin/main.',
+      'It has 1 commit not in main or origin/main.',
       'It has 1 uncommitted change, untracked files included.',
       `Running terminals will be closed: probe ${String(ticker)}.`,
     ]);
@@ -503,11 +518,43 @@ test.describe('worktree status and deletion', () => {
     await page.locator(worktreeEntry(detached.path)).click({ button: 'right' });
     await page.locator(byTestId(TID.deleteWorktree)).click();
     const dialog = page.locator(byTestId(TID.confirmDialog));
-    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText(['It has 1 commit not in origin/main.']);
+    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText(['It has 1 commit not in main or origin/main.']);
     const head = git(detached.path, 'rev-parse', '--short=7', 'HEAD');
     await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText(
-      `It has no branch: once it is deleted, its commits not in origin/main become unreachable; its head is ${head}.`,
+      `It has no branch: once it is deleted, its commits not in main or origin/main become unreachable; its head is ${head}.`,
     );
+  });
+
+  test("deleting a worktree whose remote cannot be reached says the fetch failed and git's reason", async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    const origin = withOrigin(hub, repo);
+    commit(feat, 'a');
+    rmSync(origin, { recursive: true });
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const dialog = await askToDelete(page, feat);
+    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText([
+      "It has 1 commit not in main or origin/main as last fetched; couldn't compare with a fresh origin/main because the fetch failed: " +
+        `fatal: '${origin}' does not appear to be a git repository.`,
+    ]);
+    await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText('Its branch is kept.');
+  });
+
+  test("a failed fetch's reason is shown as text, not markup", async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    withOrigin(hub, repo);
+    extOrigin(repo, hub.dir, "echo '<b>denied</b> by <i>remote</i>' >&2; exit 1");
+    commit(feat, 'a');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const reason = (await askToDelete(page, feat)).locator(byTestId(TID.confirmReason));
+    await expect(reason).toHaveText([
+      "It has 1 commit not in main or origin/main as last fetched; couldn't compare with a fresh origin/main because the fetch failed: " +
+        '<b>denied</b> by <i>remote</i>.',
+    ]);
+    await expect(reason.locator('b, i')).toHaveCount(0);
   });
 
   test('right-clicking the main worktree opens no menu and closes an open one', async ({ hub, page }) => {

@@ -16,8 +16,8 @@
 - **THEN** no fetch is attempted, and the worktree is removed and the requester receives `done`
 
 #### Scenario: Commits split between main and origin/main
-- **WHEN** a worktree's branch has two commits, one reachable only from the local `main` and the other only from `origin/main` as last fetched, and it is removed without `force`
-- **THEN** no fetch is attempted, and the worktree is removed
+- **WHEN** a worktree's head merges two commits, one reachable only from the local `main` and the other only from `origin/main` as last fetched, the remote cannot be reached, and it is removed without `force`
+- **THEN** the requester receives `worktreeAtRisk` with `ahead` 1, counting only the merge commit
 
 #### Scenario: Merged since the last fetch
 - **WHEN** a worktree's branch was merged into the remote's `main` after the repo last fetched, is not in the local `main`, and the worktree is removed without `force`

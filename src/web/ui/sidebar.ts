@@ -87,9 +87,15 @@ export const visibleWorktrees = (
 export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
   (visibleWorktrees(entries, filter, '', null)[0] ?? entries[0])?.path ?? null;
 
+/** The bases the daemon compared a worktree's commits with, and the fetch that failed, if any. */
+export interface RemovalBases {
+  local: string | null;
+  remote: string | null;
+  fetchFailed: { ref: string; reason: string } | null;
+}
+
 /** What the daemon reported deleting a worktree would lose. */
-export interface RemovalRisks {
-  base: string | null;
+export interface RemovalRisks extends RemovalBases {
   ahead: number | null;
   changes: number;
   /** Labels of the running terminals that would be closed. */
@@ -98,11 +104,22 @@ export interface RemovalRisks {
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
+/** The bases joined by "or", the remote marked as last fetched after a failed fetch; null without either. */
+const basesPhrase = ({ local, remote, fetchFailed }: RemovalBases): string | null => {
+  const names = [local, remote !== null && fetchFailed !== null ? `${remote} as last fetched` : remote].filter((n) => n !== null);
+  return names.length === 0 ? null : names.join(' or ');
+};
+
 /** Every reason to confirm deleting a worktree, one sentence each. */
 export const removalReasons = (risks: RemovalRisks): string[] => {
   const reasons: string[] = [];
-  if (risks.ahead === null) reasons.push('There is no origin/main to check that its commits are merged.');
-  else if (risks.ahead > 0) reasons.push(`It has ${plural(risks.ahead, 'commit', 'commits')} not in ${risks.base ?? 'origin/main'}.`);
+  const bases = basesPhrase(risks);
+  if (risks.ahead === null || bases === null) reasons.push('There is no main or origin/main to check that its commits are merged.');
+  else if (risks.ahead > 0) {
+    const failed = risks.fetchFailed;
+    const why = failed === null ? '' : `; couldn't compare with a fresh ${failed.ref} because the fetch failed: ${failed.reason}`;
+    reasons.push(`It has ${plural(risks.ahead, 'commit', 'commits')} not in ${bases}${why}.`);
+  }
   if (risks.changes > 0)
     reasons.push(`It has ${plural(risks.changes, 'uncommitted change', 'uncommitted changes')}, untracked files included.`);
   if (risks.running.length > 0) reasons.push(`Running terminals will be closed: ${risks.running.join(', ')}.`);
@@ -110,8 +127,9 @@ export const removalReasons = (risks: RemovalRisks): string[] => {
 };
 
 /** What happens to a deleted worktree's commits: kept on its branch, or, detached, unreachable. */
-export const keptNote = (worktree: Pick<Worktree, 'detached' | 'head'>, base: string | null): string => {
+export const keptNote = (worktree: Pick<Worktree, 'detached' | 'head'>, bases: RemovalBases): string => {
   if (!worktree.detached) return 'Its branch is kept.';
-  const lost = `It has no branch: once it is deleted, its commits not in ${base ?? 'origin/main'} become unreachable`;
+  const phrase = basesPhrase(bases);
+  const lost = `It has no branch: once it is deleted, its commits ${phrase === null ? '' : `not in ${phrase} `}become unreachable`;
   return worktree.head === null ? `${lost}.` : `${lost}; its head is ${worktree.head.slice(0, SHORT_HEAD)}.`;
 };

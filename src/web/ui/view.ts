@@ -615,7 +615,7 @@ export class View {
           worktree,
           label,
           reasons: removalReasons({ ...reply, running }),
-          note: keptNote(listed, reply.base),
+          note: keptNote(listed, reply),
         };
       })
       .catch((error: unknown) => {

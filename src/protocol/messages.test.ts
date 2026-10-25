@@ -595,7 +595,8 @@ describe('value limits', () => {
   it('refuses to encode a worktreeAtRisk without fetchFailed', () => {
     const risk: Partial<Risk> = { ...RISK };
     delete risk.fetchFailed;
-    expect(() => encodeMessage('daemonToClient', risk as Risk)).toThrow(ProtocolError);
+    // @ts-expect-error -- fetchFailed is deliberately missing
+    expect(() => encodeMessage('daemonToClient', risk)).toThrow(ProtocolError);
   });
 
   it('rejects a blank preset name', () => {

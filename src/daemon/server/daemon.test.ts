@@ -18,6 +18,7 @@ const worktrees: Worktree[] = [
   { path: REPO, head: null, branch: 'main', detached: false, locked: false, prunable: false, bare: false, main: true },
   { path: WT, head: null, branch: 'feat', detached: false, locked: false, prunable: false, bare: false, main: false },
 ];
+const ANY_REQ: unknown = expect.any(Number);
 const NO_RISK: WorktreeRisks = { local: 'main', remote: 'origin/main', ahead: 0, fetchFailed: null, changes: 0 };
 
 interface PendingSpawn {
@@ -234,7 +235,7 @@ it('sends the risks it was given unchanged, failed fetch included', async () => 
   await client.watch(REPO);
   expect(await client.request({ t: 'removeWorktree', worktree: WT, force: false })).toEqual({
     t: 'worktreeAtRisk',
-    req: expect.any(Number),
+    req: ANY_REQ,
     worktree: WT,
     ...at,
     running: [],

@@ -22,7 +22,7 @@ import {
   watcher,
   xtermOf,
 } from './fixture.js';
-import { createTerms, leaf, split, storeTabs } from './panes.js';
+import { createsSent, createTerms, leaf, split, storeTabs } from './panes.js';
 import { installStreamCheck } from './stream.js';
 
 /** Where the page's first session is cut: when the hub answers its `createTerm`, or when it sends the `setLayout` that follows. */
@@ -143,19 +143,89 @@ test.describe('terminal tabs', () => {
     await expect(page.locator(termTab(term.termId))).toBeVisible();
   });
 
-  test('an exited terminal says so and its screen stays readable', async ({ hub, page }) => {
+  test('a terminal whose shell exits with code 1 says so and its screen stays readable', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const term = await newTerminal(page);
     await ready(page, term);
-    await typeLine(page, term, "echo BYE''-MARK; exit");
+    await typeLine(page, term, "echo BYE''-MARK; exit 1");
     await expect(page.locator(termTab(term))).toContainText('exited');
-    await expect.poll(() => markOf(page, termTab(term))).toBe('exited');
+    await expect.poll(() => markOf(page, termTab(term))).toBe('failed');
     // A lone pane has no header: its tab carries the mark.
     expect(await markOf(page, pane(term))).toBeNull();
     await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
     expect(await screenOf(page, term)).toContain('BYE-MARK');
+  });
+
+  test('a shell exiting cleanly drops its tab from every page and the remaining tab is shown', async ({ hub, page, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const first = await newTerminal(page);
+    await ready(page, first);
+    const second = await newTerminal(page);
+    await ready(page, second);
+    const other = await openPage(hub, context);
+    await expect(other.page.locator(termTab(second))).toBeVisible();
+
+    await typeLine(page, second, 'exit');
+    for (const p of [page, other.page]) {
+      await expect(p.locator(termTab(second))).toHaveCount(0);
+      await expect(p.locator(byTestId(TID.termTab))).toHaveCount(1);
+      await expect(p.locator(termTab(first))).toHaveAttribute('aria-selected', 'true');
+      await expect(p.locator(terminalBox(LOCAL, first))).toBeVisible();
+    }
+  });
+
+  test('after `exit` in the only terminal, the choices are shown and 1 starts the first preset there', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+
+    await typeLine(page, term, 'exit');
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await expect(options).toHaveText(PRESETS.map((p) => p.name));
+    await expect(page.locator(termTab(term))).toHaveCount(0);
+    await expect(options.nth(0)).toBeFocused();
+    const mark = wire.markSent();
+    await page.keyboard.press('1');
+    await expect.poll(() => createsSent(wire, mark)).toEqual([expect.objectContaining({ worktree: repo, preset: PRESETS[0].name })]);
+    await expect.poll(() => activeTerm(page)).not.toBe(term);
+  });
+
+  test('after the only running terminal is closed and confirmed, 1 starts the first preset there', async ({ hub, page, wire }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+
+    await page.locator(termTab(term)).locator(byTestId(TID.termTabClose)).click();
+    await confirmClose(page);
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await expect(options.nth(0)).toBeFocused();
+    const mark = wire.markSent();
+    await page.keyboard.press('1');
+    await expect.poll(() => createsSent(wire, mark)).toEqual([expect.objectContaining({ worktree: repo, preset: PRESETS[0].name })]);
+  });
+
+  test('the choices shown after a clean exit leave the keyboard focus in the worktree search', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const term = await client.create(repo, { command: 'read -r _; exit 0' });
+    await expect(page.locator(terminalBox(LOCAL, term.termId))).toBeVisible();
+    const search = page.locator(byTestId(TID.worktreeSearch));
+    await search.focus();
+
+    client.sendInput(term.termId, '\r');
+    await expect(page.locator(byTestId(TID.presetChoices))).toBeVisible();
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(search).toBeFocused();
   });
 
   for (const at of ['setLayout', 'termCreated'] as const) {

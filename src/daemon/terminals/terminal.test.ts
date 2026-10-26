@@ -169,8 +169,8 @@ describe('attention signals in the output', () => {
     expect(events.filter(([, state]) => state === 'input')).toEqual([[true, 'input']]);
   });
 
-  it('sets unseen when the process exits while hidden without further output', async () => {
-    const { term, events, exited } = await run('exec sleep 1');
+  it('sets unseen when the process fails while hidden without further output', async () => {
+    const { term, events, exited } = await run("exec sh -c 'sleep 1; exit 1'");
     term.setVisible(true);
     await sleep(500);
     term.setVisible(false);
@@ -178,5 +178,17 @@ describe('attention signals in the output', () => {
     await exited;
     await waitUntil(() => term.unseen, 'unseen', 2000);
     expect(events.slice(before)).toEqual([[true, term.state]]);
+  });
+
+  it('leaves unseen clear when the process exits cleanly while hidden without further output', async () => {
+    const { term, events, exited } = await run('exec sleep 1');
+    term.setVisible(true);
+    await sleep(500);
+    term.setVisible(false);
+    const before = events.length;
+    await exited;
+    await sleep(200);
+    expect(term.unseen).toBe(false);
+    expect(events.slice(before)).toEqual([]);
   });
 });

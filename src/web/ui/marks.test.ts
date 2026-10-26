@@ -22,14 +22,14 @@ const clean = { code: 0, signal: null };
 
 const input = terminal({ state: 'input' });
 const failed = terminal({ exit: failedCode, unseen: true });
-const exited = terminal({ exit: clean, unseen: true });
+const killed = terminal({ exit: failedSignal, unseen: true });
 const done = terminal({ unseen: true, state: 'idle' });
 const output = terminal({ unseen: true, state: 'working' });
 const quiet = terminal({ state: 'working' });
 
 describe('mark', () => {
   it('ranks marks in the specified order', () => {
-    expect(MARK_ORDER).toEqual(['input', 'failed', 'exited', 'done', 'output']);
+    expect(MARK_ORDER).toEqual(['input', 'failed', 'done', 'output']);
   });
 
   it.each<[string, Partial<Terminal>, Mark | null]>([
@@ -38,8 +38,8 @@ describe('mark', () => {
     ['failed with a non-zero code', { exit: failedCode }, 'failed'],
     ['failed with a signal', { exit: failedSignal }, 'failed'],
     ['failed rather than done', { exit: { code: 2, signal: null }, unseen: true, state: 'idle' }, 'failed'],
-    ['exited cleanly', { exit: clean }, 'exited'],
-    ['exited rather than new output', { exit: clean, unseen: true, state: 'working' }, 'exited'],
+    ['failed rather than new output', { exit: failedCode, unseen: true, state: 'working' }, 'failed'],
+    ['exited with code 0, which only a failure leaves visible', { exit: clean }, 'failed'],
     ['done when unseen and idle', { unseen: true, state: 'idle' }, 'done'],
     ['new output when unseen and working', { unseen: true, state: 'working' }, 'output'],
     ['nothing when seen and idle', { state: 'idle' }, null],
@@ -62,19 +62,19 @@ describe('aggregate', () => {
   });
 
   it('counts a seen exited terminal on a tab', () => {
-    const seen = terminal({ exit: clean });
     const seenFailed = terminal({ exit: failedCode });
-    expect(aggregate([output, seen], 'tab')).toEqual({ mark: 'exited', counts: { output: 1, exited: 1 } });
-    expect(aggregate([seenFailed, seen], 'tab')).toEqual({ mark: 'failed', counts: { failed: 1, exited: 1 } });
+    const seenKilled = terminal({ exit: failedSignal });
+    expect(aggregate([output, seenFailed], 'tab')).toEqual({ mark: 'failed', counts: { output: 1, failed: 1 } });
+    expect(aggregate([seenFailed, seenKilled], 'tab')).toEqual({ mark: 'failed', counts: { failed: 2 } });
   });
 
   it('counts an exited terminal on a worktree row or repo tab only while it is unseen', () => {
-    const seen = terminal({ exit: clean });
     const seenFailed = terminal({ exit: failedCode });
-    const seenWaiting = terminal({ exit: clean, state: 'input' });
-    expect(aggregate([output, seen, seenFailed, seenWaiting], 'group')).toEqual({ mark: 'output', counts: { output: 1 } });
-    expect(aggregate([seen, seenFailed], 'group')).toEqual({ mark: null, counts: {} });
-    expect(aggregate([output, failed, exited], 'group')).toEqual({ mark: 'failed', counts: { output: 1, failed: 1, exited: 1 } });
+    const seenKilled = terminal({ exit: failedSignal });
+    const seenWaiting = terminal({ exit: failedCode, state: 'input' });
+    expect(aggregate([output, seenFailed, seenKilled, seenWaiting], 'group')).toEqual({ mark: 'output', counts: { output: 1 } });
+    expect(aggregate([seenFailed, seenKilled], 'group')).toEqual({ mark: null, counts: {} });
+    expect(aggregate([output, failed, killed], 'group')).toEqual({ mark: 'failed', counts: { output: 1, failed: 2 } });
   });
 
   it('shows a group’s first-ranked mark with the number of terminals per mark', () => {
@@ -96,7 +96,7 @@ describe('terminalStatus', () => {
     ['running', { state: 'working', unseen: true }],
     ['done', { state: 'idle', unseen: true }],
     ['idle', { state: 'idle', unseen: false }],
-    ['exited', { exit: clean }],
+    ['exited with code 0', { exit: clean }],
     ['exited with code 1', { exit: failedCode }],
     ['killed by SIGKILL', { exit: failedSignal }],
   ] as const)('says %s', (status, fields) => {

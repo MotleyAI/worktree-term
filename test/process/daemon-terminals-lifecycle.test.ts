@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Layout } from '../../src/protocol/index.js';
 import type { DaemonClient, Event, RequestBody } from '../support/daemon-client.js';
 import { addWorktree, alive, git, sleep, waitUntil } from '../support/daemon-host.js';
-import { fx, MiB, restart, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
+import { fx, restart, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonTerminalsHost();
@@ -21,12 +21,6 @@ const pidIn = (dir: string, name: string): Promise<number> =>
     const text = readFileSync(file, 'utf8');
     return text.endsWith('\n') ? Number(text) : undefined;
   }, `pid file ${name}`);
-
-const countByte = (data: Uint8Array, byte: number): number => {
-  let n = 0;
-  for (const b of data) if (b === byte) n++;
-  return n;
-};
 
 const stateFile = (): unknown => JSON.parse(readFileSync(fx.host.statePath, 'utf8'));
 
@@ -168,17 +162,6 @@ describe('terminal lifetime', () => {
     expect((await fx.b.watch(fx.repo)).terminals.map((t) => t.termId)).toEqual([term.termId]);
   });
 
-  it('delivers a final burst before termExited', async () => {
-    const term = await started(fx.a, "read go; head -c 1048576 /dev/zero | tr '\\0' x; exit 0");
-    fx.a.sendInput(term.termId, 'go\r');
-    await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 30_000 });
-    const exitedAt = fx.a.received.findIndex((r) => r.kind === 'message' && r.message.t === 'termExited');
-    const before = fx.a.received
-      .slice(0, exitedAt)
-      .reduce((n, r) => n + (r.kind === 'output' && r.termId === term.termId ? countByte(r.data, 0x78) : 0), 0);
-    expect(before).toBe(MiB);
-  });
-
   it('reports the exit code to every watcher and keeps the terminal until closed', async () => {
     const term = await fx.a.create(fx.wt, { command: 'exit 3' });
     const expected = { t: 'termExited', termId: term.termId, code: 3, signal: null };
@@ -192,6 +175,31 @@ describe('terminal lifetime', () => {
   it('reports the name of a fatal signal', async () => {
     const term = await fx.a.create(fx.wt, { command: 'kill -KILL $$' });
     expect(await fx.a.waitFor('termExited', (m) => m.termId === term.termId)).toMatchObject({ signal: 'SIGKILL' });
+  });
+
+  it('keeps a terminal killed by SIGTERM from outside the daemon, reporting the signal', async () => {
+    const term = await fx.a.create(fx.wt, { command: 'echo $$ > sh.pid; exec sleep 600' });
+    process.kill(await pidIn(fx.wt, 'sh.pid'), 'SIGTERM');
+    expect(await fx.a.waitFor('termExited', (m) => m.termId === term.termId)).toMatchObject({ signal: 'SIGTERM' });
+    const state = await (await fx.host.client()).watch(fx.repo);
+    expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toMatchObject({ signal: 'SIGTERM' });
+    await fx.a.ok({ t: 'closeTerm', termId: term.termId });
+  });
+
+  it('closes a terminal whose shell exits cleanly, telling every watcher, without termExited', async () => {
+    const term = await started(fx.a, null);
+    const from = fx.a.mark();
+    const fromB = fx.b.mark();
+    fx.a.sendInput(term.termId, 'exit\r');
+    expect(await fx.a.waitFor('termClosed', (m) => m.termId === term.termId, { from })).toEqual({ t: 'termClosed', termId: term.termId });
+    expect(await fx.b.waitFor('termClosed', (m) => m.termId === term.termId, { from: fromB })).toEqual({
+      t: 'termClosed',
+      termId: term.termId,
+    });
+    await sleep(300);
+    expect(fx.a.messages.slice(from).filter((m) => m.t === 'termExited')).toEqual([]);
+    expect((await (await fx.host.client()).watch(fx.repo)).terminals).toEqual([]);
+    expect(await fx.a.fails({ t: 'closeTerm', termId: term.termId })).toBe('unknown-term');
   });
 
   it('ends the shell and its background job on close, then reports termClosed before done', async () => {
@@ -289,6 +297,24 @@ describe('checked state and layouts', () => {
     });
   });
 
+  it('replaces a split by its other half, then sends termClosed, when a terminal in it exits cleanly', async () => {
+    const one = await fx.a.create(fx.wt, { command: 'read -r _; exit 0' });
+    const two = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const fromSet = fx.b.mark();
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout: twoPanes(one.termId, two.termId) });
+    await fx.b.waitFor('layoutChanged', () => true, { from: fromSet });
+    const from = fx.b.mark();
+    fx.a.sendInput(one.termId, '\r');
+    await fx.b.waitFor('termClosed', (m) => m.termId === one.termId, { from });
+    expect(repliesFrom(fx.b, from)).toEqual([
+      { t: 'layoutChanged', worktree: fx.wt, layout: { tabs: [{ id: 'main', root: { term: two.termId } }], active: 0 } },
+      { t: 'termClosed', termId: one.termId },
+    ]);
+    expect((await (await fx.host.client()).watch(fx.repo)).layouts).toEqual([
+      { worktree: fx.wt, layout: { tabs: [{ id: 'main', root: { term: two.termId } }], active: 0 } },
+    ]);
+  });
+
   it('removes a tab left empty when its last terminal is closed', async () => {
     const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
     const fromSet = fx.b.mark();
@@ -361,6 +387,20 @@ describe('persistence and pruning', () => {
     const state = await (await fx.host.client()).watch(fx.repo);
     expect(state.terminals.map((t) => t.worktree)).toEqual([gone]);
     await fx.a.ok({ t: 'closeTerm', termId: term.termId });
+    await waitUntil(() => !stateMentions(gone), 'the entry to be pruned', 2000);
+  });
+
+  it('prunes a removed worktree once its terminal exits cleanly', async () => {
+    const gone = addWorktree(fx.repo, join(fx.host.dir, 'gone'), 'gone');
+    await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
+    const term = await fx.a.create(gone, { command: 'read -r _; exit 0' });
+    await fx.a.ok({ t: 'setChecked', worktree: gone, checked: true });
+    git(fx.repo, 'worktree', 'remove', '--force', gone);
+    await fx.a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
+    await sleep(500);
+    expect(stateMentions(gone)).toBe(true);
+    fx.a.sendInput(term.termId, '\r');
+    await fx.a.waitFor('termClosed', (m) => m.termId === term.termId);
     await waitUntil(() => !stateMentions(gone), 'the entry to be pruned', 2000);
   });
 

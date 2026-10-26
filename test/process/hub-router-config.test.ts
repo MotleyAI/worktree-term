@@ -262,7 +262,7 @@ describe('removing repos', () => {
 
   it('refuses a repo with an exited terminal not yet closed, and removes it once closed', async () => {
     const client = await watching();
-    const term = await client.create(0, fx.repo, { command: 'exit 0' });
+    const term = await client.create(0, fx.repo, { command: 'exit 1' });
     await client.waitEvent(0, 'termExited', (m) => m.termId === term.termId, { timeout: 10_000 });
     expect((await client.hubRequest({ t: 'removeRepo', host: 0, repo: fx.repo })).m).toMatchObject({ t: 'error', code: 'busy' });
     await client.ok(0, { t: 'closeTerm', termId: term.termId });

@@ -512,6 +512,25 @@ test.describe('pane focus', () => {
     await waitScreen(page, left, 'FOCUS-OK');
   });
 
+  test('`exit` in the focused pane of a two-pane split focuses the other, which receives typed input', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const left = await newTerminal(page);
+    await ready(page, left);
+    const right = await splitPane(page, 'right');
+    await ready(page, right);
+    await expect.poll(() => focusedPane(page)).toBe(right);
+
+    await page.keyboard.type('exit');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => paneIds(page)).toEqual([left]);
+    await expect.poll(() => focusedPane(page)).toBe(left);
+    await page.keyboard.type("echo FOCUS''-OK");
+    await page.keyboard.press('Enter');
+    await waitScreen(page, left, 'FOCUS-OK');
+  });
+
   test('closing a focused pane focuses the first pane of the subtree that took its place', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);

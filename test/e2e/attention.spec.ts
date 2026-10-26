@@ -1,4 +1,4 @@
-import { COMMANDS, expectCounts, expectMark, runIn } from './attention-helpers.js';
+import { COMMANDS, expectCounts, expectMark, markTitle, runIn } from './attention-helpers.js';
 import { pane, repoTab, terminalBox, termTab, worktreeEntry } from './contract.js';
 import { expect, LOCAL, makeRepoWith, openUi, selectRepo, selectWorktree, test, watcher } from './fixture.js';
 import { leaf, split, storeTabs } from './panes.js';
@@ -90,6 +90,21 @@ test.describe('attention marks', () => {
     await expectMark(page, pane(failing), null);
   });
 
+  test('a terminal killed by a signal marks its tab failed', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const killed = await runIn(client, repo, 'read -r _; kill -KILL $$');
+    await storeTabs(client, repo, [leaf(killed)]);
+    await expect(page.locator(terminalBox(LOCAL, killed))).toBeVisible();
+
+    client.sendInput(killed, '\r');
+    expect(await client.waitFor('termExited', (m) => m.termId === killed, { timeout: 10_000 })).toMatchObject({ signal: 'SIGKILL' });
+    await expectMark(page, termTab(killed), 'failed');
+    await expect(page.locator(termTab(killed))).toContainText('exited');
+  });
+
   test('a hidden terminal that printed and then stayed quiet for 3 s is marked done', async ({ hub, page }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
     const feat = worktrees[0] ?? '';
@@ -117,23 +132,21 @@ test.describe('attention marks', () => {
     await runIn(client, feat, COMMANDS.oneLine);
     await runIn(client, feat, COMMANDS.ticker);
     await client.waitFor('termExited', (m) => m.termId === failing, { timeout: 10_000 });
-    await client.waitFor('termExited', (m) => m.termId === succeeding, { timeout: 10_000 });
+    await client.waitFor('termClosed', (m) => m.termId === succeeding, { timeout: 10_000 });
 
-    const all = { input: 1, failed: 1, exited: 1, done: 1, output: 1 };
+    const all = { input: 1, failed: 1, done: 1, output: 1 };
     await expectMark(page, worktreeEntry(feat), 'input');
     await expectCounts(page, worktreeEntry(feat), all);
     await expectMark(page, repoTab(repo), 'input');
     await expectCounts(page, repoTab(repo), all);
+    expect(await markTitle(page, worktreeEntry(feat))).not.toContain('exited');
 
     // Typing clears `input`; the echoed `y` is new output.
     client.sendInput(ringing, 'y');
     await expectMark(page, worktreeEntry(feat), 'failed');
-    await expectCounts(page, worktreeEntry(feat), { failed: 1, exited: 1 });
+    await expectCounts(page, worktreeEntry(feat), { failed: 1 });
 
     await client.ok({ t: 'closeTerm', termId: failing });
-    await expectMark(page, worktreeEntry(feat), 'exited');
-    await expectMark(page, repoTab(repo), 'exited');
-    await client.ok({ t: 'closeTerm', termId: succeeding });
     await expectMark(page, worktreeEntry(feat), 'done');
     await expectMark(page, repoTab(repo), 'done');
   });

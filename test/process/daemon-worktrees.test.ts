@@ -418,7 +418,7 @@ describe('removeWorktree', () => {
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
     const client = await host.client();
     await client.watch(repo);
-    const exited = await client.create(wt, { command: 'true' });
+    const exited = await client.create(wt, { command: 'exit 1' });
     await client.waitFor('termExited', (m) => m.termId === exited.termId);
     const from = client.mark();
     expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toEqual(DONE);

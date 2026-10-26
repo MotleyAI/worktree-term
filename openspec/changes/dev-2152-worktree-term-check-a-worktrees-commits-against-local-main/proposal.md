@@ -6,7 +6,7 @@ Deleting a worktree whose PR was just merged warns that its commits are not in `
 
 - A worktree's commits count as safe when reachable from the local default branch or its `origin` remote-tracking ref as last fetched; only when some are in neither does the daemon fetch the default branch and count again against the fresh ref.
 - A failed fetch is reported with its reason instead of being dropped; the confirmation says the commits are not in local `main` (or `origin/main` as last fetched) and that the fresh comparison failed, and why.
-- **BREAKING** (wire): `worktreeAtRisk` replaces `base` with `local`, `remote` and `fetchFailed`; `DAEMON_PROTOCOL_VERSION` 6 → 7 and `BROWSER_PROTOCOL_VERSION` 10 → 11.
+- **BREAKING** (wire): `worktreeAtRisk` replaces `base` with `local`, `remote` and `fetchFailed`; `DAEMON_PROTOCOL_VERSION` 7 → 8 and `BROWSER_PROTOCOL_VERSION` 10 → 11.
 - The fetch targets the remote-tracking ref explicitly, and every process failure (exit, timeout, signal, spawn) is a typed failure.
 
 ## Capabilities

@@ -66,7 +66,7 @@ describe('handshake', () => {
   });
 
   it('decodes a hello from another protocol version', () => {
-    expect(decodeMessage('daemonToClient', raw({ ...hello, protocol: 8 }))).toEqual({ ...hello, protocol: 8 });
+    expect(decodeMessage('daemonToClient', raw({ ...hello, protocol: 9 }))).toEqual({ ...hello, protocol: 9 });
   });
 
   it.each([

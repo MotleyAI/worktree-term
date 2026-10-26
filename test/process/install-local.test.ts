@@ -103,7 +103,7 @@ describe('wtd install-local', () => {
     expect(readdirSync(join(dir, PTY_PACKAGE, 'prebuilds')).length).toBeGreaterThan(0);
     expect(shim(host.home, ['--version'])).toEqual({
       status: 0,
-      stdout: `wtd ${version} (daemon protocol 7, browser protocol 11)\n`,
+      stdout: `wtd ${version} (daemon protocol 8, browser protocol 11)\n`,
       stderr: '',
     });
   });
@@ -150,7 +150,7 @@ describe('wtd install-local', () => {
     await shimDaemon(host.home);
     const pid = await waitUntil(() => daemonPidsOf(host.stateHome)[0], 'the shim daemon');
     expect(readlinkSync(`/proc/${String(pid)}/exe`)).toBe(node);
-    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 7, browser protocol 11)\n`);
+    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 8, browser protocol 11)\n`);
   });
 });
 
@@ -179,7 +179,7 @@ describe('launcher', () => {
     expectInstalled(await installLocal([], { HOME: home }));
     const [program, ...args] = desktopExec(iniGroup(readFileSync(installPaths(home).launcher, 'utf8'), 'Desktop Entry').get('Exec') ?? '');
     const result = spawnSync(program ?? '', [...args.slice(0, -1), '--version'], { env: host.env({ HOME: home }), encoding: 'utf8' });
-    expect(result.stdout).toBe(`wtd ${packageVersion()} (daemon protocol 7, browser protocol 11)\n`);
+    expect(result.stdout).toBe(`wtd ${packageVersion()} (daemon protocol 8, browser protocol 11)\n`);
   });
 
   it('writes no unit file without --systemd', async () => {
@@ -206,7 +206,7 @@ describe('--systemd', () => {
       ['--user', 'start', UNIT_NAME],
     ]);
     await waitUntil(() => canConnect(host.socket), 'the daemon the unit started', 10_000);
-    expect((await (await client()).waitFor('hello')).protocol).toBe(7);
+    expect((await (await client()).waitFor('hello')).protocol).toBe(8);
   });
 
   it('writes an owner-only unit running the shim with daemon, restarting on failure, for default.target', async () => {
@@ -316,7 +316,7 @@ describe('reinstalling', () => {
     await after.attach(term.termId);
     after.sendInput(term.termId, '\r');
     await after.waitOutput(term.termId, 'after-reinstall');
-    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 7, browser protocol 11)\n`);
+    expect(shim(host.home, ['--version']).stdout).toBe(`wtd ${packageVersion()} (daemon protocol 8, browser protocol 11)\n`);
   });
 
   it('runs the newest release through the shim after a reinstall', async () => {

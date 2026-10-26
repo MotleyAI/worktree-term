@@ -22,7 +22,7 @@ describe('shared constants', () => {
       ACK_EVERY,
       LAG_EVICT_MS,
     }).toEqual({
-      DAEMON_PROTOCOL_VERSION: 7,
+      DAEMON_PROTOCOL_VERSION: 8,
       BROWSER_PROTOCOL_VERSION: 11,
       MAX_FRAME: 16 * 1024 * 1024,
       MAX_INPUT: 64 * 1024,

@@ -1,7 +1,7 @@
 ## 1. Protocol
 
 - [x] 1.1 Replace `base` with `local`, `remote`, `fetchFailed` in `worktreeAtRisk` (`src/protocol/messages.ts`), with the `ahead` ⇔ bases refinement (design D8); verify `src/protocol/messages.test.ts` covers the coupling both ways, oversized `local`/`remote`/`fetchFailed.ref`/`fetchFailed.reason`, missing `fetchFailed`, the old `base` shape rejected, and the `fetchFailed` round trip — on encode and decode
-- [x] 1.2 Raise `DAEMON_PROTOCOL_VERSION` to 7 and `BROWSER_PROTOCOL_VERSION` to 11; update `test-samples.ts` (samples with and without `fetchFailed`, with a null base) and re-bless `wire.golden.json`; move the "hello from another version" sample from 7 to 8; verify `wire.golden.test.ts` and the constants test pass
+- [x] 1.2 Raise `DAEMON_PROTOCOL_VERSION` to 8 and `BROWSER_PROTOCOL_VERSION` to 11; update `test-samples.ts` (samples with and without `fetchFailed`, with a null base) and re-bless `wire.golden.json`; move the "hello from another version" sample from 8 to 9; verify `wire.golden.test.ts` and the constants test pass
 
 ## 2. Daemon
 

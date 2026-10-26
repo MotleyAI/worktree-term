@@ -1,3 +1,4 @@
+format: 0.4.0
 tracker: linear # detected: Linear MCP + egor/dev-NNNN-<slug> branches
 openspec: true # detected: openspec/
 architecture: true # detected: architecture/index.yaml

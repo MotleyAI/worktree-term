@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Restarts worktree-term from its checkout for development: rebuilds, restarts the hub and the daemon,
+# serves the page through Vite with hot reload, and opens it. Restarting the daemon kills its terminals.
+set -euo pipefail
+
+# The checkout this script lives in, also when run through a symlink.
+REPO="${WTD_REPO:-$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/worktree-term"
+VITE_PORT="${WTD_VITE_PORT:-5173}"
+BROWSER="${WTD_BROWSER:-google-chrome}"
+
+usage() {
+  cat <<EOF
+Usage: wtd-dev-restart [--keep-daemon] [--no-browser]
+
+Rebuilds $REPO, restarts the hub and the daemon (which kills its terminals),
+starts the Vite dev server on http://127.0.0.1:$VITE_PORT and opens it signed in.
+
+  --keep-daemon  restart only the hub and Vite; the daemon and its terminals keep running
+  --no-browser   do not open a browser window
+EOF
+}
+
+keep_daemon=0
+open_browser=1
+for arg in "$@"; do
+  case $arg in
+    --keep-daemon) keep_daemon=1 ;;
+    --no-browser) open_browser=0 ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "wtd-dev-restart: unknown option $arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+log() { printf 'wtd-dev-restart: %s\n' "$*"; }
+
+# Terminals started under this hub must not look like children of a Claude Code session.
+for var in $(compgen -e); do
+  case $var in CLAUDE*) unset "$var" ;; esac
+done
+
+# SIGTERMs pid $1 (named $2) and waits up to 10 s for it to exit.
+stop_pid() {
+  local pid=$1 what=$2
+  kill -0 "$pid" 2>/dev/null || return 0
+  log "stopping the $what (pid $pid)"
+  kill -TERM "$pid"
+  for _ in $(seq 100); do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+  done
+  echo "wtd-dev-restart: the $what (pid $pid) did not stop" >&2
+  exit 1
+}
+
+listening() { ss -Hltn "sport = :$1" | grep -q .; }
+
+# Pid of a process listening on TCP port $1, if any.
+port_pid() { ss -Hltnp "sport = :$1" | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true; }
+
+hub_record() { [[ -f $STATE/run/hub.json ]] && sed -n "s/.*\"$1\":\"\{0,1\}\([A-Za-z0-9_-]*\).*/\1/p" "$STATE/run/hub.json" || true; }
+
+# Calls $1 /api/$2 on the hub on port $3 with the hub token, which stays off the command line.
+hub_api() {
+  local token
+  token=$(cat "$STATE/hub-token" 2>/dev/null) || return 1
+  printf 'Authorization: Bearer %s\n' "$token" | curl -sf --max-time 2 -X "$1" -H @- "http://127.0.0.1:$3/api/$2"
+}
+
+# The instance of the hub that answers for its record, if any.
+hub_instance() {
+  local port instance
+  port=$(hub_record port) instance=$(hub_record instance)
+  [[ -n $port && -n $instance ]] || return 0
+  hub_api GET identity "$port" 2>/dev/null | grep -qF "\"instance\":\"$instance\"" && echo "$instance"
+  return 0
+}
+
+cd "$REPO"
+mkdir -p "$STATE"
+log "building (log: $STATE/build.log)"
+if ! pnpm build >"$STATE/build.log" 2>&1; then
+  cat "$STATE/build.log" >&2
+  exit 1
+fi
+
+# Only a Vite serving a worktree-term checkout is ours to stop.
+vite_pid=$(port_pid "$VITE_PORT")
+if [[ -n $vite_pid ]]; then
+  vite_cwd=$(readlink "/proc/$vite_pid/cwd" || true)
+  if ! tr '\0' ' ' <"/proc/$vite_pid/cmdline" 2>/dev/null | grep -q vite || [[ ! -f $vite_cwd/scripts/wtd-dev-restart ]]; then
+    echo "wtd-dev-restart: port $VITE_PORT is taken by pid $vite_pid, which is not worktree-term's Vite" >&2
+    exit 1
+  fi
+  stop_pid "$vite_pid" "Vite dev server"
+fi
+
+# The hub is stopped through its authenticated API, never by a pid from its record, which may be stale.
+old_hub=$(hub_instance)
+if [[ -n $old_hub ]]; then
+  old_port=$(hub_record port)
+  log "stopping the hub (port $old_port)"
+  hub_api POST shutdown "$old_port" >/dev/null
+  for _ in $(seq 100); do
+    listening "$old_port" || break
+    sleep 0.1
+  done
+  if listening "$old_port"; then
+    echo "wtd-dev-restart: the hub on port $old_port did not stop" >&2
+    exit 1
+  fi
+fi
+
+if ((!keep_daemon)); then
+  # Daemons of this user's state directory, not the test daemons under /tmp nor SSH control masters.
+  for pid in $(ss -Hxlp | grep -F "$STATE/run/" | grep -E '/[^/ ]+\.sock ' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true); do
+    stop_pid "$pid" daemon
+  done
+fi
+
+log "starting the hub (log: $STATE/hub.log)"
+setsid node dist/wtd.mjs hub >>"$STATE/hub.log" 2>&1 </dev/null &
+for _ in $(seq 100); do
+  hub=$(hub_instance)
+  [[ -n $hub && $hub != "$old_hub" ]] && break
+  sleep 0.1
+done
+if [[ -z $hub || $hub == "$old_hub" ]]; then
+  echo "wtd-dev-restart: the hub did not start; see $STATE/hub.log" >&2
+  exit 1
+fi
+
+log "starting Vite (log: $STATE/vite.log)"
+setsid pnpm dev >"$STATE/vite.log" 2>&1 </dev/null &
+vite_session=$!
+# Ready once a process of the new Vite's session listens on the port.
+for _ in $(seq 200); do
+  pid=$(port_pid "$VITE_PORT")
+  [[ -n $pid && $(ps -o sid= -p "$pid" | tr -d ' ') == "$vite_session" ]] && break
+  pid=
+  kill -0 "$vite_session" 2>/dev/null || break
+  sleep 0.1
+done
+if [[ -z $pid ]]; then
+  echo "wtd-dev-restart: Vite did not start; see $STATE/vite.log" >&2
+  exit 1
+fi
+
+url="http://127.0.0.1:$VITE_PORT/login"
+if ((open_browser)); then
+  setsid "$BROWSER" --app="$url" >/dev/null 2>&1 </dev/null &
+fi
+log "ready: $url (hub on port $(hub_record port); the daemon starts with the first page)"

@@ -1,4 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
+import type { DaemonClient } from '../support/daemon-client.js';
+import type { HubHost } from '../support/hub-host.js';
 import { byTestId, pane, termTab, TID } from './contract.js';
 import {
   confirmClose,
@@ -38,6 +40,23 @@ const twoPanes = async (page: Page, preset: 'shell' | 'cat' = 'shell'): Promise<
   await ready(page, left);
   const right = await splitPane(page, 'right', preset);
   return { left, right };
+};
+
+/** Opens the close dialog on a fresh two-pane tab; `mark` precedes the click. */
+const twoPaneDialog = async (
+  hub: HubHost,
+  page: Page,
+  wire: WireRecorder,
+): Promise<{ client: DaemonClient; left: number; right: number; mark: number }> => {
+  const { repo } = makeRepoWith(hub, 'app', []);
+  hub.writeRepos([repo]);
+  await openUi(hub, page);
+  const client = await watcher(hub, repo);
+  const { left, right } = await twoPanes(page);
+  const mark = wire.markSent();
+  await page.locator(termTab(left)).locator(byTestId(TID.termTabClose)).click();
+  await expect(dialogOf(page)).toBeVisible();
+  return { client, left, right, mark };
 };
 
 test.describe('closing terminals', () => {
@@ -136,7 +155,7 @@ test.describe('closing terminals', () => {
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const { left, right } = await twoPanes(page);
-    await typeLine(page, right, 'exit');
+    await typeLine(page, right, 'exit 1');
     await exited(wire, right);
     const mark = wire.markSent();
 
@@ -151,7 +170,7 @@ test.describe('closing terminals', () => {
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const { left, right } = await twoPanes(page);
-    await typeLine(page, right, 'exit');
+    await typeLine(page, right, 'exit 1');
     await exited(wire, right);
     const mark = wire.markSent();
 
@@ -167,15 +186,7 @@ test.describe('closing terminals', () => {
   });
 
   test('the dialog closes by itself when its terminals are closed elsewhere', async ({ hub, page, wire }) => {
-    const { repo } = makeRepoWith(hub, 'app', []);
-    hub.writeRepos([repo]);
-    await openUi(hub, page);
-    const client = await watcher(hub, repo);
-    const { left, right } = await twoPanes(page);
-    const mark = wire.markSent();
-
-    await page.locator(termTab(left)).locator(byTestId(TID.termTabClose)).click();
-    await expect(dialogOf(page)).toBeVisible();
+    const { client, left, right, mark } = await twoPaneDialog(hub, page, wire);
     await client.ok({ t: 'closeTerm', termId: left });
     await client.ok({ t: 'closeTerm', termId: right });
     await expect(dialogOf(page)).toHaveCount(0);
@@ -183,16 +194,26 @@ test.describe('closing terminals', () => {
     expect(closesSent(wire, mark)).toEqual([]);
   });
 
-  test('confirming after one target was closed elsewhere closes only the one still live', async ({ hub, page, wire }) => {
+  test('the dialog closes by itself when its only terminal exits cleanly', async ({ hub, page, wire }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const client = await watcher(hub, repo);
-    const { left, right } = await twoPanes(page);
+    const term = await newTerminal(page);
+    await ready(page, term);
     const mark = wire.markSent();
 
-    await page.locator(termTab(left)).locator(byTestId(TID.termTabClose)).click();
+    await page.keyboard.press('Control+Shift+KeyW');
     await expect(dialogOf(page)).toBeVisible();
+    client.sendInput(term, 'exit\r');
+    await expect(dialogOf(page)).toHaveCount(0);
+    await expect(page.locator(termTab(term))).toHaveCount(0);
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(closesSent(wire, mark)).toEqual([]);
+  });
+
+  test('confirming after one target was closed elsewhere closes only the one still live', async ({ hub, page, wire }) => {
+    const { client, left, right, mark } = await twoPaneDialog(hub, page, wire);
     await client.ok({ t: 'closeTerm', termId: right });
     await expect.poll(() => paneIds(page)).toEqual([left]);
     await confirmClose(page);

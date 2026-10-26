@@ -1,6 +1,7 @@
 import { chmodSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import type { DaemonClient } from '../support/daemon-client.js';
+import type { HubHost } from '../support/hub-host.js';
 import { byTestId, pane, terminalBox, termTab, TID } from './contract.js';
 import {
   confirmClose,
@@ -494,22 +495,40 @@ test.describe('pane limit and concurrent splits', () => {
 });
 
 test.describe('pane focus', () => {
-  test('closing the focused pane of a two-pane split focuses the other, which receives typed input', async ({ hub, page }) => {
+  /** A two-pane split whose new right pane has the focus. */
+  const focusedSplit = async (hub: HubHost, page: Page): Promise<{ left: number; right: number }> => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const left = await newTerminal(page);
     await ready(page, left);
     const right = await splitPane(page, 'right');
+    await ready(page, right);
     await expect.poll(() => focusedPane(page)).toBe(right);
+    return { left, right };
+  };
 
-    await page.locator(pane(right)).locator(byTestId(TID.paneClose)).click();
-    await confirmClose(page);
+  /** Waits until only `left` remains, focused and taking typed input. */
+  const leftTakesFocus = async (page: Page, left: number): Promise<void> => {
     await expect.poll(() => paneIds(page)).toEqual([left]);
     await expect.poll(() => focusedPane(page)).toBe(left);
     await page.keyboard.type("echo FOCUS''-OK");
     await page.keyboard.press('Enter');
     await waitScreen(page, left, 'FOCUS-OK');
+  };
+
+  test('closing the focused pane of a two-pane split focuses the other, which receives typed input', async ({ hub, page }) => {
+    const { left, right } = await focusedSplit(hub, page);
+    await page.locator(pane(right)).locator(byTestId(TID.paneClose)).click();
+    await confirmClose(page);
+    await leftTakesFocus(page, left);
+  });
+
+  test('`exit` in the focused pane of a two-pane split focuses the other, which receives typed input', async ({ hub, page }) => {
+    const { left } = await focusedSplit(hub, page);
+    await page.keyboard.type('exit');
+    await page.keyboard.press('Enter');
+    await leftTakesFocus(page, left);
   });
 
   test('closing a focused pane focuses the first pane of the subtree that took its place', async ({ hub, page }) => {

@@ -11,7 +11,6 @@ model {
     protocol = node 'Protocol' {
       metadata {
         package 'src/protocol'
-        arc42 'architecture/protocol.arc42.md'
         specs ['protocol']
       }
     }
@@ -19,7 +18,6 @@ model {
     platform = node 'Platform' {
       metadata {
         package 'src/platform'
-        arc42 'architecture/platform.arc42.md'
         specs ['platform']
       }
       files = component 'Files'
@@ -30,7 +28,6 @@ model {
     daemon = node 'Daemon' {
       metadata {
         package 'src/daemon'
-        arc42 'architecture/daemon.arc42.md'
         specs ['daemon']
       }
       worktrees = component 'Worktrees'
@@ -43,7 +40,6 @@ model {
     hub = node 'Hub' {
       metadata {
         package 'src/hub'
-        arc42 'architecture/hub.arc42.md'
         specs ['hub']
       }
       server = component 'Server'
@@ -56,7 +52,6 @@ model {
     cli = node 'CLI' {
       metadata {
         package 'src/cli'
-        arc42 'architecture/cli.arc42.md'
         specs ['cli']
       }
     }
@@ -64,7 +59,6 @@ model {
     web = node 'Web' {
       metadata {
         package 'src/web'
-        arc42 'architecture/web.arc42.md'
         specs ['web']
       }
       client = component 'Client'

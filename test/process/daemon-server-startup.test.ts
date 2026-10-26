@@ -120,7 +120,7 @@ describe('single instance', () => {
 });
 
 describe('handshake', () => {
-  it('greets every connection with hello for protocol 6, the package version and one instance id', async () => {
+  it('greets every connection with hello for protocol 7, the package version and one instance id', async () => {
     await fx.host.start();
     const a = await fx.host.rawClient();
     const b = await fx.host.rawClient();
@@ -128,7 +128,7 @@ describe('handshake', () => {
     const helloB = await b.waitFor('hello');
     expect(a.received[0]).toEqual({ kind: 'message', message: helloA });
     expect(helloA.protocol).toBe(DAEMON_PROTOCOL_VERSION);
-    expect(helloA.protocol).toBe(6);
+    expect(helloA.protocol).toBe(7);
     expect(helloA.version).toBe(packageVersion());
     expect(helloA.instance).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
     expect(helloB.instance).toBe(helloA.instance);

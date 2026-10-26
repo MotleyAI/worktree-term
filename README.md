@@ -15,7 +15,7 @@ Three running components, all started from the one `wtd` binary:
 | Page | The browser | Rendering (xterm.js) and view preferences in `localStorage`: selected repo, selected worktree per repo, "checked only" filter, name search, sidebar width |
 
 - **The browser talks only to the hub**: the hub serves the page and one WebSocket per page, on `127.0.0.1` only.
-- **The daemon manages the terminals.** A terminal lives until it is closed or its worktree removed; closing the page or restarting the hub does not end it.
+- **The daemon manages the terminals.** A terminal lives until it is closed, its worktree is removed, or its program exits cleanly; one that fails stays open, marked, until closed. Closing the page or restarting the hub does not end it.
 - **Tabs and splits are persisted by the daemon** of the host the worktree is on, so every page sees the same layout. View preferences stay in each browser.
 - For each page, the hub holds one link per host: the daemon's owner-only unix socket locally, `ssh <alias> "$HOME/.local/bin/wtd" connect` remotely. `wtd connect` only bridges SSH's stdio to the remote daemon's socket, starting the daemon if needed.
 
@@ -142,7 +142,7 @@ The preset picker takes 1–9, the arrow keys and Enter, and Escape cancels it.
 
 ## Attention marks
 
-Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of their terminals: needs input, exited with failure, exited, done (quiet after unseen output) and new output. A terminal needs input when its program rings the bell or sends a desktop notification (OSC 9, OSC 777 `notify` or OSC 99). Claude Code does so only when told to; put this in `~/.claude/settings.json`:
+Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of their terminals: needs input, exited with failure, done (quiet after unseen output) and new output. A terminal needs input when its program rings the bell or sends a desktop notification (OSC 9, OSC 777 `notify` or OSC 99). Claude Code does so only when told to; put this in `~/.claude/settings.json`:
 
 ```json
 { "preferredNotifChannel": "terminal_bell" }
@@ -150,7 +150,7 @@ Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of t
 
 ## Development
 
-Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`uv tool install living-architecture==0.3.1`), which `pnpm test` runs.
+Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`npm install -g living-architecture@0.4.1`), which `pnpm test` runs.
 
 ```sh
 pnpm install
@@ -161,3 +161,24 @@ pnpm test:integration   # opt-in real-SSH tests
 pnpm lint               # tsc -b and ESLint
 pnpm format             # Prettier
 ```
+
+`scripts/wtd-dev-restart` runs the app from the checkout: it rebuilds, restarts the hub and the daemon, starts Vite and opens the page in a Chrome app window. Restarting the daemon kills its terminals; `--keep-daemon` restarts only the hub and Vite. To run it from anywhere, link it onto `PATH`:
+
+```sh
+ln -s "$PWD/scripts/wtd-dev-restart" ~/.local/bin/wtd-dev-restart
+```
+
+The dev window gets its own taskbar icon only from a launcher that claims its window class. Chrome names an app window's class after the opened URL's host and path, without the port: `wtd ui` opens `/`, so its window is `chrome-127.0.0.1__-Default`, the class the installed launcher claims, while the script opens `/login`, so its window is `chrome-127.0.0.1__login-Default`. Without a launcher claiming that class, the window is grouped under Chrome. Save this as `~/.local/share/applications/worktree-term-dev.desktop`, with your checkout's path:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=worktree-term (dev)
+Exec=/home/you/.local/bin/wtd-dev-restart --keep-daemon
+Icon=/path/to/worktree-term/src/web/public/icon.svg
+Terminal=false
+StartupWMClass=chrome-127.0.0.1__login-Default
+Categories=Development;
+```
+
+The window opened next gets the icon, which can then be pinned; clicking it when no window is open runs the script and keeps the terminals.

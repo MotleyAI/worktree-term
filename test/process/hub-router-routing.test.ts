@@ -119,7 +119,7 @@ describe('routing', () => {
 
   it('relays a snapshot near the frame limit intact', async () => {
     const client = await watching();
-    const awk = `awk 'BEGIN { for (l = 0; l < 5100; l++) { s = ""; for (c = 0; c < 500; c++) s = s "\\033[31ma\\033[32mb"; print s } }'; echo BIG-DONE`;
+    const awk = `awk 'BEGIN { for (l = 0; l < 5100; l++) { s = ""; for (c = 0; c < 500; c++) s = s "\\033[31ma\\033[32mb"; print s } }'; echo BIG-DONE; exit 1`;
     const term = await client.create(0, fx.wt, { command: awk, cols: 1000, rows: 50 });
     await client.waitEvent(0, 'termExited', (m) => m.termId === term.termId, { timeout: 90_000 });
     const view = await client.attach(0, term.termId, 60_000);

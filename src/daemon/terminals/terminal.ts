@@ -349,7 +349,8 @@ export class TerminalProcess {
     this.mirror.write('', () => {
       if (this.closing) return;
       this.attention.exit();
-      if (!this.visible && !this.unseen) {
+      const failed = status.code !== 0 || status.signal !== null;
+      if (failed && !this.visible && !this.unseen) {
         this.unseen = true;
         this.report();
       }

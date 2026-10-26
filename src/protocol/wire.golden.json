@@ -1,6 +1,6 @@
 {
   "protocolVersions": {
-    "daemon": 6,
+    "daemon": 7,
     "browser": 10
   },
   "constants": {

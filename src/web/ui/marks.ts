@@ -1,7 +1,7 @@
 import type { Terminal } from '../../protocol/index.js';
 
 /** Attention marks in rank order. */
-export const MARK_ORDER = ['input', 'failed', 'exited', 'done', 'output'] as const;
+export const MARK_ORDER = ['input', 'failed', 'done', 'output'] as const;
 
 export type Mark = (typeof MARK_ORDER)[number];
 
@@ -13,10 +13,10 @@ export interface Aggregate {
   counts: Partial<Record<Mark, number>>;
 }
 
-/** The terminal's mark: the first of needs input, failed, exited, done and new output that applies. */
+/** The terminal's mark: the first of needs input, failed (any exit), done and new output that applies. */
 export const mark = (t: Terminal): Mark | null => {
   if (t.state === 'input') return 'input';
-  if (t.exit !== null) return t.exit.code !== 0 || t.exit.signal !== null ? 'failed' : 'exited';
+  if (t.exit !== null) return 'failed';
   if (!t.unseen) return null;
   return t.state === 'idle' ? 'done' : 'output';
 };
@@ -39,8 +39,7 @@ export const markTitle = (counts: Aggregate['counts']): string =>
 /** What a terminal is doing, in words: waiting for input, running, done, idle, or how it exited. */
 export const terminalStatus = (t: Terminal): string => {
   if (t.exit !== null) {
-    if (t.exit.signal !== null) return `killed by ${t.exit.signal}`;
-    return t.exit.code === 0 ? 'exited' : `exited with code ${String(t.exit.code)}`;
+    return t.exit.signal === null ? `exited with code ${String(t.exit.code)}` : `killed by ${t.exit.signal}`;
   }
   if (t.state === 'input') return 'waiting for input';
   if (t.state === 'working') return 'running';

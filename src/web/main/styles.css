@@ -674,10 +674,6 @@ dialog.add-repo-dialog {
   background: var(--danger);
 }
 
-.mark-exited {
-  background: var(--muted);
-}
-
 .mark-done {
   background: #23d18b;
 }

@@ -367,7 +367,12 @@ export class Daemon {
           this.broadcast(repo, { t: 'activity', termId, unseen, state });
         },
         exited: (code, signal) => {
-          this.broadcast(repo, { t: 'termExited', termId, code, signal });
+          if (code !== 0 || signal !== null) {
+            this.broadcast(repo, { t: 'termExited', termId, code, signal });
+            return;
+          }
+          const term = this.terminals.get(termId);
+          if (term !== undefined) void this.retire([term]);
         },
       },
     );
@@ -425,9 +430,33 @@ export class Daemon {
   }
 
   private async closeTerm(peer: Peer, termId: number): Promise<void> {
-    const term = this.access(peer, termId);
-    this.closeTerminal(term);
-    const { repo, worktree } = term;
+    const failure = await this.retire([this.access(peer, termId)]);
+    if (failure !== null) throw new RequestError('internal', `terminal closed, but its layout could not be saved: ${failure.message}`);
+  }
+
+  /**
+   * Closes `terms`, drops them from their worktrees' layouts, then sends `termClosed` for each. Resolves
+   * with a layout write failure, already reported, or null.
+   */
+  private async retire(terms: readonly TermEntry[]): Promise<Error | null> {
+    for (const term of terms) this.closeTerminal(term);
+    let failure: Error | null = null;
+    const worktrees = new Map(terms.map((t) => [t.worktree, t.repo]));
+    for (const [worktree, repo] of worktrees) {
+      try {
+        await this.pruneLayoutOf(repo, worktree);
+      } catch (error) {
+        this.options.report(error);
+        failure ??= error instanceof Error ? error : new Error(String(error));
+      }
+    }
+    for (const term of terms) this.broadcast(term.repo, { t: 'termClosed', termId: term.termId });
+    for (const repo of new Set(worktrees.values())) void this.prune(repo);
+    return failure;
+  }
+
+  /** Removes terminals that are no longer live from `worktree`'s layout. */
+  private async pruneLayoutOf(repo: string, worktree: string): Promise<void> {
     const layout = this.options.store.layout(repo, worktree);
     const live = new Set(
       this.terminalsOf(repo)
@@ -435,19 +464,9 @@ export class Daemon {
         .map((t) => t.termId),
     );
     const pruned = pruneLayout(layout, live);
-    let failure: Error | null = null;
-    if (JSON.stringify(pruned) !== JSON.stringify(layout)) {
-      try {
-        await this.options.store.setLayout(repo, worktree, pruned);
-        this.broadcast(repo, { t: 'layoutChanged', worktree, layout: pruned });
-      } catch (error) {
-        this.options.report(error);
-        failure = error instanceof Error ? error : new Error(String(error));
-      }
-    }
-    this.broadcast(repo, { t: 'termClosed', termId });
-    void this.prune(repo);
-    if (failure !== null) throw new RequestError('internal', `terminal closed, but its layout could not be saved: ${failure.message}`);
+    if (JSON.stringify(pruned) === JSON.stringify(layout)) return;
+    await this.options.store.setLayout(repo, worktree, pruned);
+    this.broadcast(repo, { t: 'layoutChanged', worktree, layout: pruned });
   }
 
   /**
@@ -483,11 +502,8 @@ export class Daemon {
       }
     }
     await this.options.services.removeWorktree(repo, worktree, m.force);
-    for (const term of this.terminalsOf(repo).filter((t) => t.worktree === m.worktree)) {
-      this.closeTerminal(term);
-      this.broadcast(repo, { t: 'termClosed', termId: term.termId });
-    }
-    void this.prune(repo);
+    // A failed layout write is reported; the removed worktree's entry is pruned anyway.
+    await this.retire(this.terminalsOf(repo).filter((t) => t.worktree === m.worktree));
     return true;
   }
 

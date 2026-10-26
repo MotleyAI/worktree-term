@@ -1,26 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Terminal } from '../../src/protocol/index.js';
-import type { DaemonClient, EventOf } from '../support/daemon-client.js';
 import { sleep, waitUntil } from '../support/daemon-host.js';
-import { fx, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
+import { activityOf, entryOf, fx, isInput, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonTerminalsHost();
 
 describe('activity', () => {
-  /** Activity messages about `termId` that `client` received from index `from`. */
-  const activityOf = (client: DaemonClient, termId: number, from: number): EventOf<'activity'>[] =>
-    client.messages.slice(from).filter((m): m is EventOf<'activity'> => m.t === 'activity' && m.termId === termId);
-
-  const isInput =
-    (termId: number): ((m: EventOf<'activity'>) => boolean) =>
-    (m) =>
-      m.termId === termId && m.state === 'input';
-
-  /** The terminal entry a fresh watcher of the repo receives. */
-  const entryOf = async (termId: number): Promise<Terminal | undefined> =>
-    (await (await fx.host.client()).watch(fx.repo)).terminals.find((t) => t.termId === termId);
-
   it('sets input on a bell, also in the terminal entry', async () => {
     const term = await fx.a.create(fx.wt, { command: String.raw`sleep 0.3; printf '\a'; exec sleep 60` });
     expect(await fx.a.waitFor('activity', isInput(term.termId))).toEqual({

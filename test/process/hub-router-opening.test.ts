@@ -1,4 +1,3 @@
-import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
 import { join } from 'node:path';
@@ -581,7 +580,11 @@ describe('hub tunnels', () => {
       // observed on a connection it accepted.
       const old = await tcp(oldPort);
       old.on('error', () => undefined);
-      const oldClosed = once(old, 'close').then(() => true);
+      const oldClosed = new Promise<boolean>((resolve) => {
+        old.once('close', () => {
+          resolve(true);
+        });
+      });
       configure([{ name: 'box', ssh: 'box', port: newPort }]);
       const { port, fragment } = opened(await openHub(client, 1));
       expect(port).toBe(newPort);

@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { Layout } from '../../src/protocol/index.js';
+import type { Layout, Terminal } from '../../src/protocol/index.js';
 import type { DaemonClient, Event, RequestBody } from '../support/daemon-client.js';
 import { addWorktree, alive, git, sleep, waitUntil } from '../support/daemon-host.js';
 import { fx, restart, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
@@ -375,15 +375,21 @@ describe('persistence and pruning', () => {
     expect((await (await fx.host.client()).watch(fx.repo)).checked).toEqual([]);
   });
 
-  it('keeps a removed worktree with a live terminal until the terminal is closed', async () => {
+  /** A checked worktree with a terminal running `command`, removed with `--force`; its state entry is kept. */
+  const removedWithTerminal = async (command: string): Promise<{ gone: string; term: Terminal }> => {
     const gone = addWorktree(fx.repo, join(fx.host.dir, 'gone'), 'gone');
     await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
-    const term = await fx.a.create(gone, { command: 'exec sleep 600' });
+    const term = await fx.a.create(gone, { command });
     await fx.a.ok({ t: 'setChecked', worktree: gone, checked: true });
     git(fx.repo, 'worktree', 'remove', '--force', gone);
     await fx.a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
     await sleep(500);
     expect(stateMentions(gone)).toBe(true);
+    return { gone, term };
+  };
+
+  it('keeps a removed worktree with a live terminal until the terminal is closed', async () => {
+    const { gone, term } = await removedWithTerminal('exec sleep 600');
     const state = await (await fx.host.client()).watch(fx.repo);
     expect(state.terminals.map((t) => t.worktree)).toEqual([gone]);
     await fx.a.ok({ t: 'closeTerm', termId: term.termId });
@@ -391,14 +397,7 @@ describe('persistence and pruning', () => {
   });
 
   it('prunes a removed worktree once its terminal exits cleanly', async () => {
-    const gone = addWorktree(fx.repo, join(fx.host.dir, 'gone'), 'gone');
-    await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
-    const term = await fx.a.create(gone, { command: 'read -r _; exit 0' });
-    await fx.a.ok({ t: 'setChecked', worktree: gone, checked: true });
-    git(fx.repo, 'worktree', 'remove', '--force', gone);
-    await fx.a.waitFor('worktreesChanged', (m) => !m.worktrees.some((w) => w.path === gone));
-    await sleep(500);
-    expect(stateMentions(gone)).toBe(true);
+    const { gone, term } = await removedWithTerminal('read -r _; exit 0');
     fx.a.sendInput(term.termId, '\r');
     await fx.a.waitFor('termClosed', (m) => m.termId === term.termId);
     await waitUntil(() => !stateMentions(gone), 'the entry to be pruned', 2000);

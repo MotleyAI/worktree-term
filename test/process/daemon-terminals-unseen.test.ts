@@ -1,26 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Terminal } from '../../src/protocol/index.js';
-import type { DaemonClient, EventOf } from '../support/daemon-client.js';
 import { sleep } from '../support/daemon-host.js';
-import { fx, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
+import { activityOf, entryOf, fx, isInput, started, useDaemonTerminalsHost } from '../support/daemon-terminals.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonTerminalsHost();
 
+/** Creates a terminal running `command` once `fx.a` shows it and sends a line, then hides it; `from` marks `fx.b`. */
+const runThenHide = async (command: string): Promise<{ term: Terminal; from: number }> => {
+  const term = await fx.a.create(fx.wt, { command: `read -r _; ${command}` });
+  fx.a.send({ t: 'setVisible', termIds: [term.termId] });
+  await fx.a.attach(term.termId);
+  fx.a.sendInput(term.termId, '\r');
+  await sleep(400);
+  fx.a.send({ t: 'setVisible', termIds: [] });
+  return { term, from: fx.b.mark() };
+};
+
 describe('activity', () => {
-  /** Activity messages about `termId` that `client` received from index `from`. */
-  const activityOf = (client: DaemonClient, termId: number, from: number): EventOf<'activity'>[] =>
-    client.messages.slice(from).filter((m): m is EventOf<'activity'> => m.t === 'activity' && m.termId === termId);
-
-  const isInput =
-    (termId: number): ((m: EventOf<'activity'>) => boolean) =>
-    (m) =>
-      m.termId === termId && m.state === 'input';
-
-  /** The terminal entry a fresh watcher of the repo receives. */
-  const entryOf = async (termId: number): Promise<Terminal | undefined> =>
-    (await (await fx.host.client()).watch(fx.repo)).terminals.find((t) => t.termId === termId);
-
   it('flags output while hidden as unseen and working to every watcher', async () => {
     const term = await fx.a.create(fx.wt, { command: 'sleep 0.3; echo out; exec sleep 60' });
     for (const client of [fx.a, fx.b]) {
@@ -76,13 +73,7 @@ describe('activity', () => {
   });
 
   it('flags a failed exit while hidden as unseen', async () => {
-    const term = await fx.a.create(fx.wt, { command: "read -r _; exec sh -c 'sleep 1; exit 1'" });
-    fx.a.send({ t: 'setVisible', termIds: [term.termId] });
-    await fx.a.attach(term.termId);
-    fx.a.sendInput(term.termId, '\r');
-    await sleep(400);
-    fx.a.send({ t: 'setVisible', termIds: [] });
-    const from = fx.b.mark();
+    const { term, from } = await runThenHide("exec sh -c 'sleep 1; exit 1'");
     const position = fx.a.view(term.termId).position;
     await fx.b.waitFor('termExited', (m) => m.termId === term.termId, { from });
     expect(await fx.b.waitFor('activity', (m) => m.termId === term.termId && m.unseen, { from })).toEqual({
@@ -95,26 +86,14 @@ describe('activity', () => {
   });
 
   it('closes a terminal exiting cleanly while hidden without flagging it unseen', async () => {
-    const term = await fx.a.create(fx.wt, { command: 'read -r _; exec sleep 1' });
-    fx.a.send({ t: 'setVisible', termIds: [term.termId] });
-    await fx.a.attach(term.termId);
-    fx.a.sendInput(term.termId, '\r');
-    await sleep(400);
-    fx.a.send({ t: 'setVisible', termIds: [] });
-    const from = fx.b.mark();
+    const { term, from } = await runThenHide('exec sleep 1');
     await fx.b.waitFor('termClosed', (m) => m.termId === term.termId, { from });
     expect(activityOf(fx.b, term.termId, from).filter((m) => m.unseen)).toEqual([]);
     expect(fx.b.messages.slice(from).filter((m) => m.t === 'termExited')).toEqual([]);
   });
 
   it('flags output just before a clean exit while hidden as unseen, then closes the terminal', async () => {
-    const term = await fx.a.create(fx.wt, { command: "read -r _; exec sh -c 'sleep 1; echo last-words'" });
-    fx.a.send({ t: 'setVisible', termIds: [term.termId] });
-    await fx.a.attach(term.termId);
-    fx.a.sendInput(term.termId, '\r');
-    await sleep(400);
-    fx.a.send({ t: 'setVisible', termIds: [] });
-    const from = fx.b.mark();
+    const { term, from } = await runThenHide("exec sh -c 'sleep 1; echo last-words'");
     await fx.b.waitFor('termClosed', (m) => m.termId === term.termId, { from });
     const closedAt = fx.b.messages.findIndex((m, i) => i >= from && m.t === 'termClosed' && m.termId === term.termId);
     expect(fx.b.messages.slice(from, closedAt).some((m) => m.t === 'activity' && m.termId === term.termId && m.unseen)).toBe(true);

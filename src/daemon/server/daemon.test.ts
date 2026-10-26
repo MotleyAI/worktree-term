@@ -294,6 +294,25 @@ describe('ending terminals', () => {
     expect(reported).toContain(failure);
   });
 
+  it('closes a terminal on closeTerm whose layout cannot be saved, answering with the failure', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const term = await start(client, WT, 'exec sleep 60');
+    const staying = await start(client, WT, 'exec sleep 60');
+    await client.ok({ t: 'setLayout', worktree: WT, layout: twoPanes(term, staying) });
+    const failure = new Error('disk full');
+    vi.spyOn(store, 'setLayout').mockRejectedValue(failure);
+    const from = client.mark();
+    expect(await client.request({ t: 'closeTerm', termId: term })).toEqual({
+      t: 'error',
+      req: ANY_REQ,
+      code: 'internal',
+      message: 'terminal closed, but its layout could not be saved: disk full',
+    });
+    expect(client.messages.slice(from).filter((m) => m.t === 'termClosed')).toEqual([{ t: 'termClosed', termId: term }]);
+    expect(reported).toContain(failure);
+  });
+
   it('writes the layout of a removed worktree once, then sends termClosed for each of its terminals', async () => {
     const client = await connected();
     await client.watch(REPO);

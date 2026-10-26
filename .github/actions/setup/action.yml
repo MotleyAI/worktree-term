@@ -3,7 +3,7 @@ description: pnpm, Node, git identity and dependencies; optionally the living-ar
 
 inputs:
   arch-tools:
-    description: Install la-arch-check and its TypeScript twin, which the architecture tests run.
+    description: Install la-arch-check, which the architecture tests run.
     required: false
     default: 'false'
 
@@ -15,25 +15,10 @@ runs:
       with:
         node-version: 22
         cache: pnpm
-    - if: inputs.arch-tools == 'true'
-      uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-    # la-arch-check and its TypeScript twin, which is not on npm.
+    # The version must read the format that living-architecture.yaml records.
     - if: inputs.arch-tools == 'true'
       shell: bash
-      run: uv tool install --no-build living-architecture==0.3.1
-    - if: inputs.arch-tools == 'true'
-      shell: bash
-      run: |
-        twin="$RUNNER_TEMP/living-architecture"
-        git init -q "$twin"
-        git -C "$twin" fetch -q --depth 1 https://github.com/MotleyAI/living-architecture.git 15ed4263ccce08513535aae077c8e7ba7363571d # v0.3.1
-        git -C "$twin" checkout -q FETCH_HEAD
-        cd "$twin/node"
-        npm ci --ignore-scripts
-        npm run build
-        mkdir "$twin/bin"
-        for file in dist/bin/*.js; do ln -s "$PWD/$file" "$twin/bin/$(basename "$file" .js)"; done
-        echo "$twin/bin" >> "$GITHUB_PATH"
+      run: npm install -g --ignore-scripts living-architecture@0.4.1
     - shell: bash
       run: git config --global user.name ci && git config --global user.email ci@example.com
     - shell: bash

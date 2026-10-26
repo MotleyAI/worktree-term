@@ -440,15 +440,13 @@ export class Daemon {
    */
   private async retire(terms: readonly TermEntry[]): Promise<Error | null> {
     for (const term of terms) this.closeTerminal(term);
-    let failure: Error | null = null;
     const worktrees = new Map(terms.map((t) => [t.worktree, t.repo]));
-    for (const [worktree, repo] of worktrees) {
-      try {
-        await this.pruneLayoutOf(repo, worktree);
-      } catch (error) {
-        this.options.report(error);
-        failure ??= error instanceof Error ? error : new Error(String(error));
-      }
+    const pruned = await Promise.allSettled([...worktrees].map(([worktree, repo]) => this.pruneLayoutOf(repo, worktree)));
+    let failure: Error | null = null;
+    for (const result of pruned) {
+      if (result.status === 'fulfilled') continue;
+      this.options.report(result.reason);
+      failure ??= result.reason instanceof Error ? result.reason : new Error(String(result.reason));
     }
     for (const term of terms) this.broadcast(term.repo, { t: 'termClosed', termId: term.termId });
     for (const repo of new Set(worktrees.values())) void this.prune(repo);

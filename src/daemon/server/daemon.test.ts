@@ -204,6 +204,17 @@ it('waits for a terminal still starting in a worktree being removed, and reports
   await process.close();
 });
 
+it('prunes state of unlisted worktrees when removing a worktree without terminals', async () => {
+  const client = await connected();
+  await client.watch(REPO);
+  await store.setChecked(REPO, '/r.worktrees/gone', true);
+  await client.ok({ t: 'removeWorktree', worktree: WT, force: true });
+  await vi.waitFor(() => {
+    expect(store.paths(REPO)).not.toContain('/r.worktrees/gone');
+  });
+  expect(removed).toEqual([WT]);
+});
+
 it('refuses to start a terminal in a worktree while it is being removed', async () => {
   const client = await connected();
   await client.watch(REPO);

@@ -501,7 +501,9 @@ export class Daemon {
     }
     await this.options.services.removeWorktree(repo, worktree, m.force);
     // A failed layout write is reported; the removed worktree's entry is pruned anyway.
-    await this.retire(this.terminalsOf(repo).filter((t) => t.worktree === m.worktree));
+    const terms = this.terminalsOf(repo).filter((t) => t.worktree === m.worktree);
+    if (terms.length > 0) await this.retire(terms);
+    else void this.prune(repo);
     return true;
   }
 

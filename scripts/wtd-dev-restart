@@ -84,10 +84,12 @@ if ! pnpm build >"$STATE/build.log" 2>&1; then
   exit 1
 fi
 
+# Only a Vite serving a worktree-term checkout is ours to stop.
 vite_pid=$(port_pid "$VITE_PORT")
 if [[ -n $vite_pid ]]; then
-  if ! tr '\0' ' ' <"/proc/$vite_pid/cmdline" 2>/dev/null | grep -q vite; then
-    echo "wtd-dev-restart: port $VITE_PORT is taken by pid $vite_pid, which is not Vite" >&2
+  vite_cwd=$(readlink "/proc/$vite_pid/cwd" || true)
+  if ! tr '\0' ' ' <"/proc/$vite_pid/cmdline" 2>/dev/null | grep -q vite || [[ ! -f $vite_cwd/scripts/wtd-dev-restart ]]; then
+    echo "wtd-dev-restart: port $VITE_PORT is taken by pid $vite_pid, which is not worktree-term's Vite" >&2
     exit 1
   fi
   stop_pid "$vite_pid" "Vite dev server"

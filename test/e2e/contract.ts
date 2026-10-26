@@ -96,7 +96,7 @@ export const TID = {
   divider: 'divider',
   /** The preset picker over the terminal area. */
   presetPicker: 'preset-picker',
-  /** The preset list a worktree without terminals shows in its terminal area. */
+  /** The preset list a worktree without terminals shows in its terminal area; its first option takes the keyboard focus when the shown worktree's last terminal closed with the focus left on the page body. */
   presetChoices: 'preset-choices',
   /** One preset in a picker or in the choices, in configured order; text = preset name; `aria-selected="true"` on the highlighted one. */
   presetOption: 'preset-option',
@@ -124,7 +124,7 @@ export const TID = {
   closeConfirm: 'close-confirm',
   /** Cancels the close dialog. */
   closeCancel: 'close-cancel',
-  /** Attention mark inside a pane, terminal tab, worktree entry or repo tab, absent without a mark; `data-mark` = input|failed|exited|done|output; `title` gives the number of terminals per mark, one line `<mark>: <count>` per mark present, in rank order. */
+  /** Attention mark inside a pane, terminal tab, worktree entry or repo tab, absent without a mark; `data-mark` = input|failed|done|output; `title` gives the number of terminals per mark, one line `<mark>: <count>` per mark present, in rank order. */
   mark: 'mark',
   /** Banner for problems reported on the page, such as a failed copy, a failed host action or a repo that cannot be removed. */
   notice: 'notice',
@@ -147,7 +147,7 @@ export const TID = {
 } as const;
 
 /** Mark names in rank order, as `data-mark` values. */
-export const MARKS = ['input', 'failed', 'exited', 'done', 'output'] as const;
+export const MARKS = ['input', 'failed', 'done', 'output'] as const;
 
 /** Performance mark at the start of the worktree-switch input handler (design D13). */
 export const SWITCH_START = 'wtd:switch-start';

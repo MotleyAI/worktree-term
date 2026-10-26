@@ -75,8 +75,8 @@ describe('activity', () => {
     await fx.b.expectNone('activity', () => true, 400);
   });
 
-  it('flags an exit while hidden as unseen', async () => {
-    const term = await fx.a.create(fx.wt, { command: 'read -r _; exec sleep 1' });
+  it('flags a failed exit while hidden as unseen', async () => {
+    const term = await fx.a.create(fx.wt, { command: "read -r _; exec sh -c 'sleep 1; exit 1'" });
     fx.a.send({ t: 'setVisible', termIds: [term.termId] });
     await fx.a.attach(term.termId);
     fx.a.sendInput(term.termId, '\r');
@@ -92,6 +92,32 @@ describe('activity', () => {
       state: 'working',
     });
     expect(fx.a.view(term.termId).position).toBe(position);
+  });
+
+  it('closes a terminal exiting cleanly while hidden without flagging it unseen', async () => {
+    const term = await fx.a.create(fx.wt, { command: 'read -r _; exec sleep 1' });
+    fx.a.send({ t: 'setVisible', termIds: [term.termId] });
+    await fx.a.attach(term.termId);
+    fx.a.sendInput(term.termId, '\r');
+    await sleep(400);
+    fx.a.send({ t: 'setVisible', termIds: [] });
+    const from = fx.b.mark();
+    await fx.b.waitFor('termClosed', (m) => m.termId === term.termId, { from });
+    expect(activityOf(fx.b, term.termId, from).filter((m) => m.unseen)).toEqual([]);
+    expect(fx.b.messages.slice(from).filter((m) => m.t === 'termExited')).toEqual([]);
+  });
+
+  it('flags output just before a clean exit while hidden as unseen, then closes the terminal', async () => {
+    const term = await fx.a.create(fx.wt, { command: "read -r _; exec sh -c 'sleep 1; echo last-words'" });
+    fx.a.send({ t: 'setVisible', termIds: [term.termId] });
+    await fx.a.attach(term.termId);
+    fx.a.sendInput(term.termId, '\r');
+    await sleep(400);
+    fx.a.send({ t: 'setVisible', termIds: [] });
+    const from = fx.b.mark();
+    await fx.b.waitFor('termClosed', (m) => m.termId === term.termId, { from });
+    const closedAt = fx.b.messages.findIndex((m, i) => i >= from && m.t === 'termClosed' && m.termId === term.termId);
+    expect(fx.b.messages.slice(from, closedAt).some((m) => m.t === 'activity' && m.termId === term.termId && m.unseen)).toBe(true);
   });
 
   it('reports working, then idle 3 s after the last output', async () => {

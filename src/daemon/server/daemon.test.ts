@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../../../test/support/daemon-client.js';
 import { sleep } from '../../../test/support/daemon-host.js';
-import type { Worktree } from '../../protocol/index.js';
+import type { Layout, Worktree } from '../../protocol/index.js';
 import { StateStore } from '../state/index.js';
 import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalSpec } from '../terminals/index.js';
 import type { WorktreeHandlers, WorktreeRisks, WorktreeWatch } from '../worktrees/index.js';
@@ -19,6 +19,7 @@ const worktrees: Worktree[] = [
   { path: WT, head: null, branch: 'feat', detached: false, locked: false, prunable: false, bare: false, main: false },
 ];
 const NO_RISK: WorktreeRisks = { base: 'origin/main', ahead: 0, changes: 0 };
+const ANY_REQ: unknown = expect.any(Number);
 
 interface PendingSpawn {
   spec: TerminalSpec;
@@ -41,6 +42,7 @@ let watchHandlers: WorktreeHandlers[];
 /** What the risk check answers; a held promise keeps a removal in progress. */
 let risks: Promise<WorktreeRisks>;
 let removed: string[];
+let reported: unknown[];
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'wtd-daemon-'));
@@ -51,6 +53,7 @@ beforeEach(async () => {
   watchHandlers = [];
   risks = Promise.resolve(NO_RISK);
   removed = [];
+  reported = [];
   const services: DaemonServices = {
     watchWorktrees: async (_repo, handlers) => {
       watchHandlers.push(handlers);
@@ -81,7 +84,9 @@ beforeEach(async () => {
     store,
     env: process.env,
     shutdown: () => undefined,
-    report: () => undefined,
+    report: (error) => {
+      reported.push(error);
+    },
   });
   server = createServer((socket) => {
     daemon.accept(socket);
@@ -214,4 +219,99 @@ it('refuses to start a terminal in a worktree while it is being removed', async 
   release(NO_RISK);
   await client.waitFor('done', (m) => m.req === 1, { from });
   expect(removed).toEqual([WT]);
+});
+
+describe('ending terminals', () => {
+  afterEach(async () => {
+    await daemon.shutdown();
+  });
+
+  const twoPanes = (a: number, b: number): Layout => ({
+    tabs: [{ id: 'main', root: { split: 'right', ratio: 0.5, a: { term: a }, b: { term: b } } }],
+    active: 0,
+  });
+
+  /** Creates a terminal in `worktree` whose spawn runs `command` in bash; resolves with its id. */
+  const start = async (client: DaemonClient, worktree: string, command: string): Promise<number> => {
+    const count = spawns.length;
+    const reply = client.request({ t: 'createTerm', worktree, preset: 'shell', command: null, cols: 80, rows: 24 });
+    await vi.waitFor(() => {
+      expect(spawns).toHaveLength(count + 1);
+    });
+    const pending = spawns[count];
+    if (pending === undefined) throw new Error('no spawn');
+    const env = { ...process.env, HOME: dir, SHELL: '/bin/bash' };
+    pending.resolve(await TerminalProcess.spawn({ ...pending.spec, cwd: dir, command, env }, pending.events));
+    const created = await reply;
+    if (created.t !== 'termCreated') throw new Error(`createTerm failed: ${JSON.stringify(created)}`);
+    return created.term.termId;
+  };
+
+  it('closes a cleanly exited terminal: its split gives way to the other half, then termClosed, and no termExited', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const leaving = await start(client, WT, 'read -r _; exit 0');
+    const staying = await start(client, WT, 'exec sleep 60');
+    await client.ok({ t: 'setLayout', worktree: WT, layout: twoPanes(leaving, staying) });
+    const from = client.mark();
+    client.sendInput(leaving, '\r');
+    await client.waitFor('termClosed', (m) => m.termId === leaving, { from, timeout: 3000 });
+    await client.expectNone('termExited', () => true, 300);
+    expect(client.messages.slice(from).filter((m) => m.t !== 'activity')).toEqual([
+      { t: 'layoutChanged', worktree: WT, layout: { tabs: [{ id: 'main', root: { term: staying } }], active: 0 } },
+      { t: 'termClosed', termId: leaving },
+    ]);
+    expect((await (await connected()).watch(REPO)).terminals.map((t) => t.termId)).toEqual([staying]);
+  });
+
+  it.each([
+    ['a non-zero code', 'read -r _; exit 1', { code: 1, signal: null }],
+    ['a signal', 'read -r _; kill -KILL $$', { signal: 'SIGKILL' }],
+  ])('keeps a terminal that exited with %s, sending termExited', async (_name, command, exit) => {
+    const client = await connected();
+    await client.watch(REPO);
+    const term = await start(client, WT, command);
+    const from = client.mark();
+    client.sendInput(term, '\r');
+    expect(await client.waitFor('termExited', (m) => m.termId === term, { from })).toMatchObject(exit);
+    await client.expectNone('termClosed', () => true, 300);
+    expect((await (await connected()).watch(REPO)).terminals.find((t) => t.termId === term)?.exit).toMatchObject(exit);
+  });
+
+  it('sends termClosed for a cleanly exited terminal whose layout cannot be saved, and reports the failure', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const leaving = await start(client, WT, 'read -r _; exit 0');
+    const staying = await start(client, WT, 'exec sleep 60');
+    await client.ok({ t: 'setLayout', worktree: WT, layout: twoPanes(leaving, staying) });
+    const failure = new Error('disk full');
+    vi.spyOn(store, 'setLayout').mockRejectedValue(failure);
+    const from = client.mark();
+    client.sendInput(leaving, '\r');
+    await client.waitFor('termClosed', (m) => m.termId === leaving, { from, timeout: 3000 });
+    expect(client.messages.slice(from).filter((m) => m.t === 'layoutChanged' || m.t === 'termExited')).toEqual([]);
+    expect(store.layout(REPO, WT)).toEqual(twoPanes(leaving, staying));
+    expect(reported).toContain(failure);
+  });
+
+  it('writes the layout of a removed worktree once, then sends termClosed for each of its terminals', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const one = await start(client, WT, 'exec sleep 60');
+    const two = await start(client, WT, 'exec sleep 60');
+    await client.ok({ t: 'setLayout', worktree: WT, layout: twoPanes(one, two) });
+    const write = vi.spyOn(store, 'setLayout');
+    const from = client.mark();
+    await client.ok({ t: 'removeWorktree', worktree: WT, force: true });
+    const empty: Layout = { tabs: [], active: 0 };
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(REPO, WT, empty);
+    expect(client.messages.slice(from).filter((m) => m.t !== 'activity')).toEqual([
+      { t: 'layoutChanged', worktree: WT, layout: empty },
+      { t: 'termClosed', termId: one },
+      { t: 'termClosed', termId: two },
+      { t: 'done', req: ANY_REQ },
+    ]);
+    expect(removed).toEqual([WT]);
+  });
 });

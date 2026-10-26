@@ -9,6 +9,28 @@ import { fx, KiB, MiB, started, useDaemonTerminalsHost } from '../support/daemon
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonTerminalsHost();
 
+const countByte = (data: Uint8Array, byte: number): number => {
+  let n = 0;
+  for (const b of data) if (b === byte) n++;
+  return n;
+};
+
+describe('final burst', () => {
+  it.each([
+    ['termExited after a failed exit', 1, 'termExited'],
+    ['termClosed after a clean exit', 0, 'termClosed'],
+  ] as const)('delivers 1 MiB written just before the exit before %s', async (_name, code, end) => {
+    const term = await started(fx.a, `read go; head -c 1048576 /dev/zero | tr '\\0' x; exit ${String(code)}`);
+    fx.a.sendInput(term.termId, 'go\r');
+    await fx.a.waitFor(end, (m) => m.termId === term.termId, { timeout: 30_000 });
+    const endAt = fx.a.received.findIndex((r) => r.kind === 'message' && r.message.t === end);
+    const before = fx.a.received
+      .slice(0, endAt)
+      .reduce((n, r) => n + (r.kind === 'output' && r.termId === term.termId ? countByte(r.data, 0x78) : 0), 0);
+    expect(before).toBe(MiB);
+  });
+});
+
 describe('attach and snapshot', () => {
   const GENERATOR = String.raw`
 read go
@@ -74,7 +96,7 @@ exec sleep 600
   });
 
   it('shrinks the scrollback of a snapshot that would exceed MAX_FRAME', async () => {
-    const awk = `awk 'BEGIN { for (l = 0; l < 5100; l++) { s = ""; for (c = 0; c < 500; c++) s = s "\\033[31ma\\033[32mb"; print s } }'; echo BIG-DONE`;
+    const awk = `awk 'BEGIN { for (l = 0; l < 5100; l++) { s = ""; for (c = 0; c < 500; c++) s = s "\\033[31ma\\033[32mb"; print s } }'; echo BIG-DONE; exit 1`;
     const term = await fx.a.create(fx.wt, { command: awk, cols: 1000, rows: 50 });
     await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 90_000 });
     const view = await fx.a.attach(term.termId, 60_000);
@@ -105,7 +127,7 @@ exec sleep 600
   });
 
   it('attaches to an exited terminal', async () => {
-    const term = await fx.a.create(fx.wt, { command: 'echo bye-bye; exit 0' });
+    const term = await fx.a.create(fx.wt, { command: 'echo bye-bye; exit 1' });
     await fx.a.waitFor('termExited', (m) => m.termId === term.termId);
     const view = await fx.a.attach(term.termId);
     expect(await view.screen.text()).toContain('bye-bye');
@@ -114,7 +136,7 @@ exec sleep 600
 
 describe('output flow control', () => {
   it('evicts a client that never acks while an acking client receives every byte', async () => {
-    const term = await started(fx.b, 'read go; seq 1 1500000; echo FLOOD-DONE');
+    const term = await started(fx.b, 'read go; seq 1 1500000; echo FLOOD-DONE; exit 1');
     fx.a.autoAck = false;
     await fx.a.attach(term.termId);
     const goAt = Date.now();
@@ -139,7 +161,7 @@ describe('output flow control', () => {
   });
 
   it('lets an unwatched flood complete and shows its final screen to a later attach', async () => {
-    const term = await fx.a.create(fx.wt, { command: 'seq 1 2000000; echo NOBODY-DONE' });
+    const term = await fx.a.create(fx.wt, { command: 'seq 1 2000000; echo NOBODY-DONE; exit 1' });
     await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 60_000 });
     const text = await (await fx.a.attach(term.termId)).screen.text();
     expect(text).toContain('2000000');
@@ -180,12 +202,12 @@ describe('input', () => {
     const lines = Array.from({ length: 300 }, (_, i) => `line ${String(i)}`);
     for (const line of lines) fx.a.sendInput(term.termId, `${line}\n`);
     fx.a.sendInput(term.termId, '\x04');
-    await fx.a.waitFor('termExited', (m) => m.termId === term.termId, { timeout: 10_000 });
+    await fx.a.waitFor('termClosed', (m) => m.termId === term.termId, { timeout: 10_000 });
     expect(readFileSync(join(fx.wt, 'in.txt'), 'utf8')).toBe(lines.map((l) => `${l}\n`).join(''));
   });
 
   it('discards input to an exited terminal without an error', async () => {
-    const term = await fx.a.create(fx.wt, { command: 'exit 0' });
+    const term = await fx.a.create(fx.wt, { command: 'exit 1' });
     await fx.a.waitFor('termExited', (m) => m.termId === term.termId);
     fx.a.sendInput(term.termId, 'ignored\r');
     await fx.a.expectNone('error', () => true, 400);

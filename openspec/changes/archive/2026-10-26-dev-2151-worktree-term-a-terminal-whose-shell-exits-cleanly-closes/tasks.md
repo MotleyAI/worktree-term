@@ -9,19 +9,19 @@
 
 ## 2. Daemon
 
-- [ ] 2.1 Add `retire(terms)` in `src/daemon/server/daemon.ts` per design D1 and route `closeTerm` and `removeWorktree` through it; `shutdown` keeps only process ending; verify 1.1 and existing daemon tests pass
-- [ ] 2.2 Branch the `exited` handler in `createTerm` on clean vs failed (design D2); verify 1.1 and 1.3 pass
-- [ ] 2.3 In `TerminalProcess.onExit` set `unseen` only for a failed exit; verify 1.2 and the unseen process tests pass
+- [x] 2.1 Add `retire(terms)` in `src/daemon/server/daemon.ts` per design D1 and route `closeTerm` and `removeWorktree` through it; `shutdown` keeps only process ending; verify 1.1 and existing daemon tests pass
+- [x] 2.2 Branch the `exited` handler in `createTerm` on clean vs failed (design D2); verify 1.1 and 1.3 pass
+- [x] 2.3 In `TerminalProcess.onExit` set `unseen` only for a failed exit; verify 1.2 and the unseen process tests pass
 
 ## 3. Protocol
 
-- [ ] 3.1 Raise `DAEMON_PROTOCOL_VERSION` to 7 in `src/protocol/constants.ts` and re-bless `src/protocol/wire.golden.json` with schemas unchanged; verify 1.4 passes
+- [x] 3.1 Raise `DAEMON_PROTOCOL_VERSION` to 7 in `src/protocol/constants.ts` and re-bless `src/protocol/wire.golden.json` with schemas unchanged; verify 1.4 passes
 
 ## 4. Web
 
-- [ ] 4.1 Drop the plain `exited` mark (`src/web/ui/marks.ts`, `.mark-exited` in `src/web/main/styles.css`); verify 1.5 and the attention e2e pass
-- [ ] 4.2 Choices focus rule (design D6) in `src/web/ui/app.tsx` / `src/web/ui/view.ts`; verify the choices e2e scenarios in 1.6 pass
+- [x] 4.1 Drop the plain `exited` mark (`src/web/ui/marks.ts`, `.mark-exited` in `src/web/main/styles.css`); verify 1.5 and the attention e2e pass
+- [x] 4.2 Choices focus rule (design D6) in `src/web/ui/app.tsx` / `src/web/ui/view.ts`; verify the choices e2e scenarios in 1.6 pass
 
 ## 5. Gates
 
-- [ ] 5.1 Run `pnpm lint`, `tsc -b`, `la-arch-check` and the full `pnpm test`; all green
+- [x] 5.1 Run `pnpm lint`, `tsc -b`, `la-arch-check` and the full `pnpm test`; all green

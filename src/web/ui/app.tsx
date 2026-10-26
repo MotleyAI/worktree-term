@@ -962,16 +962,18 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
   );
 };
 
-/** The presets a worktree without terminals offers. */
-const PresetChoices = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
+/** The presets a worktree without terminals offers; with `emptied`, they take a keyboard focus left on the page body. */
+const PresetChoices = ({ view, presets, emptied }: { view: View; presets: readonly Preset[]; emptied: boolean }) => {
   const [index, setIndex] = useState(0);
+  // Decided at mount, after the closed terminal's xterm left the document.
+  const [focus] = useState(() => emptied && (document.activeElement === null || document.activeElement === document.body));
   return (
     <div class="preset-choices" data-testid="preset-choices">
       <div class="title">Start a terminal</div>
       <PresetList
         presets={presets}
         index={Math.min(index, presets.length - 1)}
-        focusFirst={false}
+        focusFirst={focus}
         move={setIndex}
         choose={(i) => {
           const preset = presets[i];
@@ -1059,6 +1061,13 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
   const presets = client.store.presets.value;
   const focused = view.focused.value;
   const empty = view.termTabs.value.tabs.length === 0;
+  const worktree = view.worktree.value;
+  /** The worktree and whether it was empty at the last render. */
+  const last = useRef<{ worktree: string | null; empty: boolean }>({ worktree, empty });
+  const emptied = empty && last.current.worktree === worktree && !last.current.empty;
+  useLayoutEffect(() => {
+    last.current = { worktree, empty };
+  });
   return (
     <div class="terminal-area" ref={area}>
       {view.panes.value.map((pane) => (
@@ -1073,7 +1082,7 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
       {view.dividers.value.map((divider) => (
         <DividerHandle key={divider.path.join('.')} divider={divider} view={view} />
       ))}
-      {empty && view.canCreate.value && presets !== null && <PresetChoices view={view} presets={presets} />}
+      {empty && view.canCreate.value && presets !== null && <PresetChoices view={view} presets={presets} emptied={emptied} />}
       {presets !== null && <PresetPicker view={view} presets={presets} />}
     </div>
   );

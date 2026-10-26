@@ -209,6 +209,17 @@ it('waits for a terminal still starting in a worktree being removed, and reports
   await process.close();
 });
 
+it('prunes state of unlisted worktrees when removing a worktree without terminals', async () => {
+  const client = await connected();
+  await client.watch(REPO);
+  await store.setChecked(REPO, '/r.worktrees/gone', true);
+  await client.ok({ t: 'removeWorktree', worktree: WT, force: true });
+  await vi.waitFor(() => {
+    expect(store.paths(REPO)).not.toContain('/r.worktrees/gone');
+  });
+  expect(removed).toEqual([WT]);
+});
+
 it('refuses to start a terminal in a worktree while it is being removed', async () => {
   const client = await connected();
   await client.watch(REPO);
@@ -325,6 +336,25 @@ describe('ending terminals', () => {
     await client.waitFor('termClosed', (m) => m.termId === leaving, { from, timeout: 3000 });
     expect(client.messages.slice(from).filter((m) => m.t === 'layoutChanged' || m.t === 'termExited')).toEqual([]);
     expect(store.layout(REPO, WT)).toEqual(twoPanes(leaving, staying));
+    expect(reported).toContain(failure);
+  });
+
+  it('closes a terminal on closeTerm whose layout cannot be saved, answering with the failure', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const term = await start(client, WT, 'exec sleep 60');
+    const staying = await start(client, WT, 'exec sleep 60');
+    await client.ok({ t: 'setLayout', worktree: WT, layout: twoPanes(term, staying) });
+    const failure = new Error('disk full');
+    vi.spyOn(store, 'setLayout').mockRejectedValue(failure);
+    const from = client.mark();
+    expect(await client.request({ t: 'closeTerm', termId: term })).toEqual({
+      t: 'error',
+      req: ANY_REQ,
+      code: 'internal',
+      message: 'terminal closed, but its layout could not be saved: disk full',
+    });
+    expect(client.messages.slice(from).filter((m) => m.t === 'termClosed')).toEqual([{ t: 'termClosed', termId: term }]);
     expect(reported).toContain(failure);
   });
 

@@ -576,12 +576,21 @@ describe('hub tunnels', () => {
       configure([{ name: 'box', ssh: 'box', port: oldPort }]);
       const client = await fx.host.session();
       expect(opened(await openHub(client, 1)).port).toBe(oldPort);
+      // Once freed, the old port may be bound by any other process, so the old listener's closing is
+      // observed on a connection it accepted.
+      const old = await tcp(oldPort);
+      old.on('error', () => undefined);
+      const oldClosed = new Promise<boolean>((resolve) => {
+        old.once('close', () => {
+          resolve(true);
+        });
+      });
       configure([{ name: 'box', ssh: 'box', port: newPort }]);
       const { port, fragment } = opened(await openHub(client, 1));
       expect(port).toBe(newPort);
       const { client: page } = await tunneled(newPort, fragment.code);
       page.close();
-      await waitUntil(() => refused(oldPort), 'the old listener to close', 5000);
+      expect(await Promise.race([oldClosed, sleep(5000).then(() => false)])).toBe(true);
     },
     INSTALL_TIMEOUT,
   );

@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, beforeEach } from 'vitest';
 import type { Terminal } from '../../src/protocol/index.js';
-import type { DaemonClient } from './daemon-client.js';
+import type { DaemonClient, EventOf } from './daemon-client.js';
 import { addWorktree, DaemonHost, makeRepo, sleep, type WtdProcess } from './daemon-host.js';
 
 /** Per-test values, refilled by the `beforeEach` that `useDaemonTerminalsHost` registers. */
@@ -58,6 +58,19 @@ export const started = async (
   }
   return term;
 };
+
+/** Activity messages about `termId` that `client` received from index `from`. */
+export const activityOf = (client: DaemonClient, termId: number, from: number): EventOf<'activity'>[] =>
+  client.messages.slice(from).filter((m): m is EventOf<'activity'> => m.t === 'activity' && m.termId === termId);
+
+export const isInput =
+  (termId: number): ((m: EventOf<'activity'>) => boolean) =>
+  (m) =>
+    m.termId === termId && m.state === 'input';
+
+/** The terminal entry a fresh watcher of the repo receives. */
+export const entryOf = async (termId: number): Promise<Terminal | undefined> =>
+  (await (await fx.host.client()).watch(fx.repo)).terminals.find((t) => t.termId === termId);
 
 /** Restarts the daemon with extra environment, re-watching from fresh clients. */
 export const restart = async (env: Record<string, string | undefined> = {}): Promise<void> => {

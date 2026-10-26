@@ -332,6 +332,13 @@ input:focus-visible,
   transform: translateX(12px);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .star-filter input,
+  .star-filter input::after {
+    transition: none;
+  }
+}
+
 .worktree {
   display: flex;
   align-items: center;
@@ -672,10 +679,6 @@ dialog.add-repo-dialog {
 
 .mark-failed {
   background: var(--danger);
-}
-
-.mark-exited {
-  background: var(--muted);
 }
 
 .mark-done {

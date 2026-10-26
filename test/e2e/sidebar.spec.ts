@@ -234,6 +234,18 @@ test.describe('checked filter', () => {
     expect(await animating()).toBe(false);
   });
 
+  test('a click does not animate the switch when reduced motion is preferred', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openUi(hub, page);
+    await page.addStyleTag({ content: '* , *::before, *::after { transition-duration: 10s !important; }' });
+    const toggle = page.locator(byTestId(TID.filterChecked));
+
+    await toggle.check();
+    expect(await toggle.evaluate((input) => input.getAnimations({ subtree: true }).length)).toBe(0);
+  });
+
   test('the selected worktree stays listed and selected when unchecked under "checked only"', async ({ hub, page, wire }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
     const [a = '', b = ''] = worktrees;

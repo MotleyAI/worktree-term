@@ -15,7 +15,7 @@ Three running components, all started from the one `wtd` binary:
 | Page | The browser | Rendering (xterm.js) and view preferences in `localStorage`: selected repo, selected worktree per repo, "checked only" filter, name search, sidebar width |
 
 - **The browser talks only to the hub**: the hub serves the page and one WebSocket per page, on `127.0.0.1` only.
-- **The daemon manages the terminals.** A terminal lives until it is closed or its worktree removed; closing the page or restarting the hub does not end it.
+- **The daemon manages the terminals.** A terminal lives until it is closed, its worktree is removed, or its program exits cleanly; one that fails stays open, marked, until closed. Closing the page or restarting the hub does not end it.
 - **Tabs and splits are persisted by the daemon** of the host the worktree is on, so every page sees the same layout. View preferences stay in each browser.
 - For each page, the hub holds one link per host: the daemon's owner-only unix socket locally, `ssh <alias> "$HOME/.local/bin/wtd" connect` remotely. `wtd connect` only bridges SSH's stdio to the remote daemon's socket, starting the daemon if needed.
 
@@ -142,7 +142,7 @@ The preset picker takes 1–9, the arrow keys and Enter, and Escape cancels it.
 
 ## Attention marks
 
-Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of their terminals: needs input, exited with failure, exited, done (quiet after unseen output) and new output. A terminal needs input when its program rings the bell or sends a desktop notification (OSC 9, OSC 777 `notify` or OSC 99). Claude Code does so only when told to; put this in `~/.claude/settings.json`:
+Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of their terminals: needs input, exited with failure, done (quiet after unseen output) and new output. A terminal needs input when its program rings the bell or sends a desktop notification (OSC 9, OSC 777 `notify` or OSC 99). Claude Code does so only when told to; put this in `~/.claude/settings.json`:
 
 ```json
 { "preferredNotifChannel": "terminal_bell" }
@@ -150,7 +150,7 @@ Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of t
 
 ## Development
 
-Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`uv tool install living-architecture==0.3.1`), which `pnpm test` runs.
+Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`npm install -g living-architecture@0.4.1`), which `pnpm test` runs.
 
 ```sh
 pnpm install

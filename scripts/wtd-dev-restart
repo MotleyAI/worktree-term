@@ -53,17 +53,28 @@ stop_pid() {
   exit 1
 }
 
-# Waits up to $2 tenths of a second for something to listen on TCP port $1.
-wait_port() {
-  for _ in $(seq "$2"); do
-    ss -Hltn "sport = :$1" | grep -q . && return 0
-    sleep 0.1
-  done
-  return 1
+listening() { ss -Hltn "sport = :$1" | grep -q .; }
+
+# Pid of a process listening on TCP port $1, if any.
+port_pid() { ss -Hltnp "sport = :$1" | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true; }
+
+hub_record() { [[ -f $STATE/run/hub.json ]] && sed -n "s/.*\"$1\":\"\{0,1\}\([A-Za-z0-9_-]*\).*/\1/p" "$STATE/run/hub.json" || true; }
+
+# Calls $1 /api/$2 on the hub on port $3 with the hub token, which stays off the command line.
+hub_api() {
+  local token
+  token=$(cat "$STATE/hub-token" 2>/dev/null) || return 1
+  printf 'Authorization: Bearer %s\n' "$token" | curl -sf --max-time 2 -X "$1" -H @- "http://127.0.0.1:$3/api/$2"
 }
 
-hub_pid() { [[ -f $STATE/run/hub.json ]] && sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$STATE/run/hub.json" || true; }
-hub_port() { [[ -f $STATE/run/hub.json ]] && sed -n 's/.*"port":\([0-9]*\).*/\1/p' "$STATE/run/hub.json" || true; }
+# The instance of the hub that answers for its record, if any.
+hub_instance() {
+  local port instance
+  port=$(hub_record port) instance=$(hub_record instance)
+  [[ -n $port && -n $instance ]] || return 0
+  hub_api GET identity "$port" 2>/dev/null | grep -qF "\"instance\":\"$instance\"" && echo "$instance"
+  return 0
+}
 
 cd "$REPO"
 mkdir -p "$STATE"
@@ -73,35 +84,64 @@ if ! pnpm build >"$STATE/build.log" 2>&1; then
   exit 1
 fi
 
-old_hub=$(hub_pid)
-[[ -n $old_hub ]] && stop_pid "$old_hub" hub
+# Only a Vite serving a worktree-term checkout is ours to stop.
+vite_pid=$(port_pid "$VITE_PORT")
+if [[ -n $vite_pid ]]; then
+  vite_cwd=$(readlink "/proc/$vite_pid/cwd" || true)
+  if ! tr '\0' ' ' <"/proc/$vite_pid/cmdline" 2>/dev/null | grep -q vite || [[ ! -f $vite_cwd/scripts/wtd-dev-restart ]]; then
+    echo "wtd-dev-restart: port $VITE_PORT is taken by pid $vite_pid, which is not worktree-term's Vite" >&2
+    exit 1
+  fi
+  stop_pid "$vite_pid" "Vite dev server"
+fi
+
+# The hub is stopped through its authenticated API, never by a pid from its record, which may be stale.
+old_hub=$(hub_instance)
+if [[ -n $old_hub ]]; then
+  old_port=$(hub_record port)
+  log "stopping the hub (port $old_port)"
+  hub_api POST shutdown "$old_port" >/dev/null
+  for _ in $(seq 100); do
+    listening "$old_port" || break
+    sleep 0.1
+  done
+  if listening "$old_port"; then
+    echo "wtd-dev-restart: the hub on port $old_port did not stop" >&2
+    exit 1
+  fi
+fi
 
 if ((!keep_daemon)); then
-  # Daemons of this user's state directory, not the test daemons under /tmp.
-  for pid in $(ss -Hxlp | grep -F "$STATE/run/" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true); do
+  # Daemons of this user's state directory, not the test daemons under /tmp nor SSH control masters.
+  for pid in $(ss -Hxlp | grep -F "$STATE/run/" | grep -E '/[^/ ]+\.sock ' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true); do
     stop_pid "$pid" daemon
   done
 fi
 
-vite_pid=$(ss -Hltnp "sport = :$VITE_PORT" | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true)
-[[ -n $vite_pid ]] && stop_pid "$vite_pid" "Vite dev server"
-
 log "starting the hub (log: $STATE/hub.log)"
 setsid node dist/wtd.mjs hub >>"$STATE/hub.log" 2>&1 </dev/null &
 for _ in $(seq 100); do
-  pid=$(hub_pid)
-  if [[ -n $pid && $pid != "$old_hub" ]] && kill -0 "$pid" 2>/dev/null && wait_port "$(hub_port)" 1; then break; fi
+  hub=$(hub_instance)
+  [[ -n $hub && $hub != "$old_hub" ]] && break
   sleep 0.1
 done
-pid=$(hub_pid)
-if [[ -z $pid || $pid == "$old_hub" ]]; then
+if [[ -z $hub || $hub == "$old_hub" ]]; then
   echo "wtd-dev-restart: the hub did not start; see $STATE/hub.log" >&2
   exit 1
 fi
 
 log "starting Vite (log: $STATE/vite.log)"
 setsid pnpm dev >"$STATE/vite.log" 2>&1 </dev/null &
-if ! wait_port "$VITE_PORT" 200; then
+vite_session=$!
+# Ready once a process of the new Vite's session listens on the port.
+for _ in $(seq 200); do
+  pid=$(port_pid "$VITE_PORT")
+  [[ -n $pid && $(ps -o sid= -p "$pid" | tr -d ' ') == "$vite_session" ]] && break
+  pid=
+  kill -0 "$vite_session" 2>/dev/null || break
+  sleep 0.1
+done
+if [[ -z $pid ]]; then
   echo "wtd-dev-restart: Vite did not start; see $STATE/vite.log" >&2
   exit 1
 fi
@@ -110,4 +150,4 @@ url="http://127.0.0.1:$VITE_PORT/login"
 if ((open_browser)); then
   setsid "$BROWSER" --app="$url" >/dev/null 2>&1 </dev/null &
 fi
-log "ready: $url (hub on port $(hub_port); the daemon starts with the first page)"
+log "ready: $url (hub on port $(hub_record port); the daemon starts with the first page)"

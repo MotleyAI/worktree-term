@@ -127,7 +127,7 @@ The selected repo tab and each repo's selected worktree SHALL be stored per brow
 - **THEN** the second repo tab and that worktree are selected
 
 ### Requirement: Terminal tabs
-The terminal area SHALL show the selected worktree's layout tabs, each labelled by its first terminal, with the layout's active tab shown and its tab shown in the accent colour; live terminals of the worktree missing from its layout SHALL be shown as further single-pane tabs. Choosing a tab SHALL show it at once and then store it as active with `setLayout`. The tab bar SHALL offer controls to create a new tab, split the focused pane right and split it down, each naming its keyboard shortcut on hover and each starting a new terminal through the preset picker; the split controls SHALL be disabled when the focused pane's tab cannot be split further, the new-tab control when the layout holds 64 tabs, and all of them while the host is not `connected`, the worktree is prunable or gone, or no presets have been received. A new tab SHALL send `createTerm` with the chosen preset's name and command and the size of the terminal area, then add the terminal as a new active tab with `setLayout`. A terminal SHALL never be created again because a request failed or the session closed. An exited terminal's tab, and its pane header in a split, SHALL show that it exited and keep its screen readable until closed. A worktree without terminals SHALL show the presets as choices in the terminal area; no terminal SHALL be created without the user choosing one.
+The terminal area SHALL show the selected worktree's layout tabs, each labelled by its first terminal, with the layout's active tab shown and its tab shown in the accent colour; live terminals of the worktree missing from its layout SHALL be shown as further single-pane tabs. Choosing a tab SHALL show it at once and then store it as active with `setLayout`. The tab bar SHALL offer controls to create a new tab, split the focused pane right and split it down, each naming its keyboard shortcut on hover and each starting a new terminal through the preset picker; the split controls SHALL be disabled when the focused pane's tab cannot be split further, the new-tab control when the layout holds 64 tabs, and all of them while the host is not `connected`, the worktree is prunable or gone, or no presets have been received. A new tab SHALL send `createTerm` with the chosen preset's name and command and the size of the terminal area, then add the terminal as a new active tab with `setLayout`. A terminal SHALL never be created again because a request failed or the session closed. The tab of a terminal whose process failed, and its pane header in a split, SHALL show that it exited and keep its screen readable until closed; a terminal whose process exited cleanly SHALL leave the tabs of every page, as any closed terminal does. A worktree without terminals SHALL show the presets as choices in the terminal area; no terminal SHALL be created without the user choosing one. When the selected worktree's last terminal closes and the keyboard focus is left on the page body, the choices SHALL take the keyboard focus on their first preset; otherwise showing them SHALL NOT move the keyboard focus.
 
 #### Scenario: New terminal
 - **WHEN** the user picks a preset in a worktree without terminals
@@ -142,8 +142,24 @@ The terminal area SHALL show the selected worktree's layout tabs, each labelled 
 - **THEN** after reconnecting the terminal is shown as a tab, and no second terminal was created
 
 #### Scenario: Exited terminal
-- **WHEN** the shell in a terminal exits
+- **WHEN** the shell in a terminal runs `exit 1`
 - **THEN** its tab shows that it exited and its screen stays readable until it is closed
+
+#### Scenario: Clean exit closes the tab
+- **WHEN** the shell in one of a worktree's two single-pane tabs runs `exit`
+- **THEN** its tab disappears from every page showing the worktree and the remaining tab is shown
+
+#### Scenario: Last terminal leaves the choices
+- **WHEN** the user types `exit` in the only terminal of the selected worktree and then presses 1
+- **THEN** the preset choices are shown, and the first preset starts as a new terminal of that worktree
+
+#### Scenario: Confirmed close leaves the choices focused
+- **WHEN** the user closes the only, running, terminal of the selected worktree, confirms, and then presses 1
+- **THEN** the first preset starts as a new terminal of that worktree
+
+#### Scenario: Choices leave the focus elsewhere alone
+- **WHEN** the only terminal of the selected worktree exits cleanly while the keyboard focus is in the worktree search
+- **THEN** the preset choices are shown and the search keeps the keyboard focus
 
 ### Requirement: Terminal lifetime
 Each terminal SHALL have exactly one terminal object and container in the page, created on the first view of its worktree, which also attaches every terminal of that worktree. The object SHALL never be re-created or removed from the document while its PTY lives — not by switching, renderer changes, reconnects or snapshots — and SHALL be disposed when its terminal is closed or its daemon instance is gone. Hidden terminals SHALL keep receiving output. Each terminal SHALL keep 10000 lines of scrollback, open links in a new window without access to the page, and measure character widths per Unicode 11.
@@ -276,6 +292,10 @@ Each tab SHALL have one focused pane, kept per page and not stored: the first pa
 - **WHEN** the focused pane of a two-pane split is closed
 - **THEN** the remaining pane is focused and receives typed input
 
+#### Scenario: Focus follows a cleanly exited pane's sibling
+- **WHEN** the user types `exit` in the focused pane of a two-pane split
+- **THEN** the remaining pane is focused and receives typed input
+
 ### Requirement: Preset picker
 The page SHALL keep the presets the hub sent for the session and forget them when the session closes. Starting a new terminal SHALL open a picker listing the presets in order, over the terminal area, for the selected worktree and the requested operation; with exactly one preset it SHALL use that preset without showing the picker. Digits 1–9 SHALL choose the preset at that position; arrow keys and Enter SHALL move and choose; Escape or a click outside SHALL cancel without creating anything. The picker SHALL close without creating anything when the selected worktree changes, its host leaves `connected`, the pane it would split closes, or the operation is no longer possible; choosing SHALL check again that the operation is possible. A worktree without terminals SHALL show the same list in the terminal area, choosable by click, digits or arrows and Enter.
 
@@ -307,12 +327,16 @@ Each pane SHALL have a close control that closes its terminal, and Ctrl+Shift+W 
 - **THEN** both terminals are closed and the tab disappears from every page
 
 #### Scenario: Exited terminal closes at once
-- **WHEN** the user closes a pane whose process has exited
+- **WHEN** the user closes a pane whose process has exited with code 1
 - **THEN** it closes without a dialog
 
 #### Scenario: Mixed tab cancelled closes nothing
-- **WHEN** the user closes a tab holding one exited and one running pane and cancels
+- **WHEN** the user closes a tab holding one pane whose process exited with code 1 and one running pane, and cancels
 - **THEN** both terminals remain
+
+#### Scenario: Dialog closes when its terminal exits cleanly
+- **WHEN** the close dialog lists a single running terminal and that terminal's shell exits with code 0
+- **THEN** the dialog closes and no `closeTerm` is sent
 
 ### Requirement: Keyboard shortcuts
 The page SHALL handle these shortcuts whether the keyboard focus is in a terminal or elsewhere on the page, except while a picker or dialog is open or text is being composed with an input method; a handled shortcut SHALL act once per key press, SHALL NOT reach the terminal's program, and SHALL suppress the browser's own action:
@@ -350,7 +374,7 @@ Holding a navigation shortcut SHALL repeat it; holding any other shortcut SHALL 
 - **THEN** the selected text is typed into the second terminal
 
 ### Requirement: Attention indicators
-Each terminal tab, and each pane of a split, SHALL show one mark for its terminal, the first that applies of: needs input (`state` `input`); exited with failure (a non-zero code or a signal); exited; done (`unseen` with `state` `idle`); new output (`unseen` with `state` `working`); none otherwise. A tab holding several panes SHALL show the first-ranked mark of its terminals. Each worktree row and each repo tab SHALL show the first-ranked mark among the terminals of that worktree or of that repo's worktrees, counting an exited terminal only while it is `unseen`, with the number of terminals per mark on hover. Marks SHALL follow `activity`, `termExited` and terminal list changes without user action.
+Each terminal tab, and each pane of a split, SHALL show one mark for its terminal, the first that applies of: needs input (`state` `input`); exited with failure (the terminal has exited, which only a failed exit leaves visible); done (`unseen` with `state` `idle`); new output (`unseen` with `state` `working`); none otherwise. A tab holding several panes SHALL show the first-ranked mark of its terminals. Each worktree row and each repo tab SHALL show the first-ranked mark among the terminals of that worktree or of that repo's worktrees, counting an exited terminal only while it is `unseen`, with the number of terminals per mark on hover. Marks SHALL follow `activity`, `termExited` and terminal list changes without user action.
 
 #### Scenario: Agent waiting in a hidden worktree
 - **WHEN** a terminal in a non-selected worktree of a non-selected repo rings the bell
@@ -363,6 +387,10 @@ Each terminal tab, and each pane of a split, SHALL show one mark for its termina
 #### Scenario: Failed exit
 - **WHEN** a hidden terminal's process exits with code 1
 - **THEN** its tab shows the failed-exit mark and its worktree row shows it until the terminal is viewed
+
+#### Scenario: Killed terminal marked failed
+- **WHEN** a terminal's shell is killed by a signal sent from outside the daemon
+- **THEN** its tab shows the failed-exit mark
 
 ### Requirement: Page visibility
 The page SHALL tell each host which of its terminals the page shows: every pane of the shown tab while the page is visible, none while it is hidden. On becoming hidden or being unloaded it SHALL send `setVisible` with no terminals to every host it told of shown terminals; on becoming visible again, and after every host is restored following a reconnect, it SHALL send the terminals it shows.

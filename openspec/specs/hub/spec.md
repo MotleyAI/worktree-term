@@ -280,7 +280,7 @@ While a session's unsent WebSocket data is at least 1 MiB, the hub SHALL stop re
 - **THEN** the old daemon exits, host 0 becomes `connected` with a new instance and the hub's protocol, and the browser receives `done`
 
 #### Scenario: Newer daemon restarted
-- **WHEN** host 0 is served by a daemon speaking protocol 6, whose messages after `hello` are not valid protocol-5 messages, and the browser sends `restartDaemon`
+- **WHEN** host 0 is served by a daemon speaking a newer protocol than the hub's, whose messages after `hello` are not valid messages of the hub's protocol, and the browser sends `restartDaemon`
 - **THEN** that daemon exits and host 0 becomes `connected` with a new instance and the hub's protocol
 
 #### Scenario: Remote daemon restarted

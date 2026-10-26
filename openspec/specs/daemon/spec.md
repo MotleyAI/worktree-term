@@ -160,19 +160,39 @@ A terminal request, `resize` or input frame for an unknown terminal id SHALL fai
 - **THEN** the request fails with `unknown-term`
 
 ### Requirement: Terminal lifetime
-A terminal SHALL end only by `closeTerm`, by its process exiting, or by `shutdown`; a client disconnecting or unwatching SHALL NOT end it. When the process exits, the daemon SHALL first offer every remaining output byte, then send `termExited{code, signal}` to the repo's watchers, `signal` being the signal name or null; the terminal SHALL remain, reporting `exit`, until closed. `closeTerm` SHALL send `SIGHUP` to the terminal's process group and `SIGKILL` 5 s later if it is still alive, never signalling a process after the terminal's process has been reaped; it SHALL remove the terminal from its layout, send `termClosed` to the repo's watchers, then reply `done`.
+A terminal SHALL end only by `closeTerm`, by its process exiting, or by `shutdown`; a client disconnecting or unwatching SHALL NOT end it. An exit with code 0 and no signal SHALL be a clean exit; any other exit SHALL be a failed exit. When the process exits, the daemon SHALL first offer every remaining output byte. After a failed exit it SHALL then send `termExited{code, signal}` to the repo's watchers, `signal` being the signal name or null, and the terminal SHALL remain, reporting `exit`, until closed. After a clean exit it SHALL close the terminal itself, without sending `termExited`: it SHALL remove the terminal from its layout and send `termClosed` to the repo's watchers, sending `termClosed` even when the changed layout cannot be saved. `closeTerm` SHALL send `SIGHUP` to the terminal's process group and `SIGKILL` 5 s later if it is still alive, never signalling a process after the terminal's process has been reaped; it SHALL remove the terminal from its layout, send `termClosed` to the repo's watchers, then reply `done`.
 
 #### Scenario: Client leaves, terminal stays
 - **WHEN** the only attached client disconnects and a new client attaches later
 - **THEN** the terminal is still running and its output produced meanwhile is in the snapshot
 
 #### Scenario: Exit after a final burst
-- **WHEN** a terminal's process writes 1 MiB and exits immediately
+- **WHEN** a terminal's process writes 1 MiB and exits immediately with code 1
 - **THEN** an attached client receives all of it before `termExited`
+
+#### Scenario: Clean exit after a final burst
+- **WHEN** a terminal's process writes 1 MiB and exits immediately with code 0
+- **THEN** an attached client receives all of it before `termClosed`
 
 #### Scenario: Exit code reported
 - **WHEN** a terminal's shell runs `exit 3`
 - **THEN** watchers receive `termExited` with `code` 3 and `signal` null
+
+#### Scenario: Killed by a signal stays
+- **WHEN** a terminal's shell is killed by `SIGTERM` sent from outside the daemon
+- **THEN** watchers receive `termExited` with `signal` "SIGTERM", and a client watching the repo afterwards is told of the terminal with that `exit`
+
+#### Scenario: Clean exit closes the terminal
+- **WHEN** a terminal's shell runs `exit`
+- **THEN** watchers receive `termClosed` and no `termExited`, and a client watching the repo afterwards is not told of the terminal
+
+#### Scenario: Clean exit leaves the layout
+- **WHEN** the terminal in one half of a split exits with code 0
+- **THEN** watchers receive `layoutChanged` in which the split is replaced by the other half, and then `termClosed`
+
+#### Scenario: Clean exit with a layout that cannot be saved
+- **WHEN** a terminal in a layout exits with code 0 and writing the changed layout fails
+- **THEN** watchers receive `termClosed`, the stored layout is unchanged, and the failure is reported
 
 #### Scenario: Close kills the process group
 - **WHEN** a terminal whose shell started a background child is closed
@@ -219,7 +239,7 @@ Input frames SHALL be written to the terminal's PTY in order. Input to an exited
 - **THEN** the output is `30 100`
 
 ### Requirement: Activity
-A terminal SHALL be visible while at least one connection lists it in its latest `setVisible`; ids of unknown terminals or of repos the connection does not watch SHALL be ignored, and a connection's visibility SHALL be withdrawn when it unwatches the repo or disconnects. Output while not visible SHALL set `unseen`; the process exiting while not visible SHALL set `unseen`; becoming visible SHALL clear it.
+A terminal SHALL be visible while at least one connection lists it in its latest `setVisible`; ids of unknown terminals or of repos the connection does not watch SHALL be ignored, and a connection's visibility SHALL be withdrawn when it unwatches the repo or disconnects. Output while not visible SHALL set `unseen`; a failed exit while not visible SHALL set `unseen`, and a clean exit SHALL NOT; becoming visible SHALL clear it.
 Each terminal SHALL have an attention `state`, `idle` when created. Times below are when the daemon received the output or input concerned.
 - An attention signal SHALL be: a bell character outside any escape sequence; an OSC 9 sequence whose payload does not start with a decimal number followed by `;`; an OSC 777 sequence whose payload starts with `notify;`; an OSC 99 sequence. A bell received within 1 s after an input frame that is not only focus reports SHALL NOT be a signal.
 - A signal SHALL set `input`, whether or not the terminal is visible.
@@ -246,8 +266,12 @@ Every change of `unseen` or `state` SHALL be sent as `activity{termId, unseen, s
 - **THEN** the terminal's `unseen` becomes true
 
 #### Scenario: Exit while hidden
-- **WHEN** a terminal not listed by any `setVisible` exits without producing further output
+- **WHEN** a terminal not listed by any `setVisible` exits with code 1 without producing further output
 - **THEN** watchers receive `activity` with `unseen` true
+
+#### Scenario: Clean exit while hidden
+- **WHEN** a terminal not listed by any `setVisible` exits with code 0 without producing further output
+- **THEN** watchers receive `termClosed` and no `activity` with `unseen` true
 
 #### Scenario: Quiet terminal becomes idle
 - **WHEN** a terminal prints a line and then nothing for 3 s
@@ -322,6 +346,10 @@ Checked state and layouts SHALL be stored in `state.json` and survive daemon res
 #### Scenario: Removed worktree with a terminal kept until close
 - **WHEN** a checked worktree with a live terminal is removed, and the terminal is later closed
 - **THEN** the entry stays while the terminal lives and is removed when it closes
+
+#### Scenario: Removed worktree pruned after a clean exit
+- **WHEN** a checked worktree with a live terminal is removed with `git worktree remove`, and the terminal's shell then exits with code 0
+- **THEN** its entry is gone from `state.json`
 
 #### Scenario: Corrupt state file
 - **WHEN** `state.json` holds invalid JSON at start

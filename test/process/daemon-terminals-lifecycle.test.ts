@@ -145,9 +145,9 @@ describe('terminal access', () => {
 
 describe('terminal lifetime', () => {
   it('keeps running when its only client disconnects, keeping the output meanwhile', async () => {
-    const term = await started(fx.a, 'sleep 0.8; echo MARKER-AFTER-LEAVE; exec sleep 60');
+    const term = await started(fx.a, 'sleep 0.8; echo MARKER-AFTER-LEAVE; : > marker.done; exec sleep 60');
     fx.a.close();
-    await sleep(1500);
+    await waitUntil(() => existsSync(join(fx.wt, 'marker.done')), 'the marker echoed while detached', 15_000);
     const c = await fx.host.client();
     const state = await c.watch(fx.repo);
     expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toBeNull();

@@ -1,7 +1,7 @@
 {
   "protocolVersions": {
-    "daemon": 7,
-    "browser": 10
+    "daemon": 8,
+    "browser": 11
   },
   "constants": {
     "MAX_FRAME": 16777216,
@@ -1297,7 +1297,18 @@
               "maxLength": 4096,
               "pattern": "^\\/[^\\u0000]*$"
             },
-            "base": {
+            "local": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "remote": {
               "anyOf": [
                 {
                   "type": "string",
@@ -1314,6 +1325,31 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 4294967295
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fetchFailed": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "reason": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "reason"
+                  ],
+                  "additionalProperties": false
                 },
                 {
                   "type": "null"
@@ -1339,8 +1375,10 @@
             "t",
             "req",
             "worktree",
-            "base",
+            "local",
+            "remote",
             "ahead",
+            "fetchFailed",
             "changes",
             "running"
           ],
@@ -3019,7 +3057,18 @@
                       "maxLength": 4096,
                       "pattern": "^\\/[^\\u0000]*$"
                     },
-                    "base": {
+                    "local": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "remote": {
                       "anyOf": [
                         {
                           "type": "string",
@@ -3036,6 +3085,31 @@
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 4294967295
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fetchFailed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string",
+                              "maxLength": 4096
+                            },
+                            "reason": {
+                              "type": "string",
+                              "maxLength": 1024
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "reason"
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "null"
@@ -3061,8 +3135,10 @@
                     "t",
                     "req",
                     "worktree",
-                    "base",
+                    "local",
+                    "remote",
                     "ahead",
+                    "fetchFailed",
                     "changes",
                     "running"
                   ],
@@ -3652,12 +3728,17 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -3902,12 +3983,17 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}}",
       "valid": false
     },
     {
@@ -4238,6 +4324,26 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":-1,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -4512,12 +4618,17 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}",
       "valid": true
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}",
       "valid": true
     },
     {
@@ -4762,12 +4873,17 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}}",
       "valid": false
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}}",
       "valid": false
     },
     {
@@ -5098,6 +5214,26 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":-1,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -5372,12 +5508,17 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -5622,12 +5763,17 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}}",
       "valid": false
     },
     {
@@ -5958,6 +6104,26 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":-1,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -6232,12 +6398,17 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}",
       "valid": false
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {
@@ -6482,12 +6653,17 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":3,\"changes\":2,\"running\":[1,7]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":11,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":\"origin/main\",\"ahead\":3,\"fetchFailed\":null,\"changes\":2,\"running\":[1,7]}}",
       "valid": true
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":null,\"changes\":0,\"running\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":12,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"worktreeAtRisk\",\"req\":13,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"fetchFailed\":{\"ref\":\"origin/main\",\"reason\":\"fatal: 'origin' does not appear to be a git repository\"},\"changes\":0,\"running\":[]}}",
       "valid": true
     },
     {
@@ -6818,6 +6994,26 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":null,\"ahead\":-1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"base\":\"origin/main\",\"ahead\":1,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":null,\"remote\":null,\"ahead\":-1,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":null,\"fetchFailed\":null,\"changes\":0,\"running\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"worktreeAtRisk\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"local\":\"main\",\"remote\":null,\"ahead\":1,\"changes\":0,\"running\":[]}",
       "valid": false
     },
     {

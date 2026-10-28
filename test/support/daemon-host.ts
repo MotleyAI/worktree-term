@@ -96,6 +96,21 @@ export const makeRepo = (path: string): string => {
   return realpathSync(path);
 };
 
+/** Points `repo`'s `origin` at an `ext::` remote running the shell `body`, written as a script into `dir`. */
+export const extOrigin = (repo: string, dir: string, body: string): void => {
+  const script = join(dir, 'ext-remote.sh');
+  writeFileSync(script, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  git(repo, 'config', 'protocol.ext.allow', 'always');
+  git(repo, 'remote', 'set-url', 'origin', `ext::${script}`);
+};
+
+/** Points `repo`'s `origin` at a remote that always fails; the result tells whether anything tried to reach it. */
+export const failingOrigin = (repo: string, dir: string): (() => boolean) => {
+  const marker = join(dir, 'origin-reached');
+  extOrigin(repo, dir, `touch '${marker}'\nexit 1`);
+  return () => existsSync(marker);
+};
+
 /** Adds a linked worktree on a new branch and returns its real path. */
 export const addWorktree = (repo: string, path: string, branch: string): string => {
   git(repo, 'worktree', 'add', '-q', '-b', branch, path);

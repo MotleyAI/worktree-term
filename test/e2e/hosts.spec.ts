@@ -267,8 +267,9 @@ test.describe('remote reconnect', () => {
     await expect(page.locator(worktreeEntry(app))).toBeVisible({ timeout: 15_000 });
     const term = await newTerminal(page, 'shell', REMOTE);
     await ready(page, term, REMOTE);
-    await typeLine(page, term, "echo KEEP''-MARK", REMOTE);
-    const before = await waitScreen(page, term, 'KEEP-MARK', 10_000, REMOTE);
+    await typeLine(page, term, "PS1='KEPT''> '; echo KEEP''-MARK", REMOTE);
+    // The prompt after the mark is the shell's last write.
+    const before = await waitScreen(page, term, 'KEEP-MARK\nKEPT>', 10_000, REMOTE);
     const xterm = await xtermOf(page, term, REMOTE);
     const instance = hostEntries(wire, REMOTE).findLast((h) => h.status === 'connected')?.instance;
     expect(instance).toBeTruthy();

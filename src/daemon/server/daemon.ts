@@ -524,7 +524,7 @@ export class Daemon {
 
   /**
    * Removes a worktree and closes its terminals; without `force`, first answers `worktreeAtRisk` and keeps it
-   * when that would lose commits not in the base ref, uncommitted changes or running terminals. True when removed.
+   * when that would lose commits in neither base, uncommitted changes or running terminals. True when removed.
    */
   private async removeWorktree(peer: Peer, m: Extract<Correlated, { t: 'removeWorktree' }>): Promise<boolean> {
     if (this.removing.has(m.worktree)) throw new RequestError('busy', `${m.worktree} is being deleted`);

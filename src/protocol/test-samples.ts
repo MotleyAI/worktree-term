@@ -204,8 +204,29 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   { t: 'layoutChanged', worktree: WT, layout: { tabs: [], active: 0 } },
   { t: 'layoutChanged', worktree: WT, layout: fullTabLayout },
   { t: 'reposDiscovered', req: 4, repos: [REPO, WT] },
-  { t: 'worktreeAtRisk', req: 11, worktree: WT, base: 'origin/main', ahead: 3, changes: 2, running: [1, 7] },
-  { t: 'worktreeAtRisk', req: 12, worktree: WT, base: null, ahead: null, changes: 0, running: [] },
+  {
+    t: 'worktreeAtRisk',
+    req: 11,
+    worktree: WT,
+    local: 'main',
+    remote: 'origin/main',
+    ahead: 3,
+    fetchFailed: null,
+    changes: 2,
+    running: [1, 7],
+  },
+  { t: 'worktreeAtRisk', req: 12, worktree: WT, local: null, remote: null, ahead: null, fetchFailed: null, changes: 0, running: [] },
+  {
+    t: 'worktreeAtRisk',
+    req: 13,
+    worktree: WT,
+    local: 'main',
+    remote: null,
+    ahead: 1,
+    fetchFailed: { ref: 'origin/main', reason: "fatal: 'origin' does not appear to be a git repository" },
+    changes: 0,
+    running: [],
+  },
 ];
 
 type DaemonRequest = Exclude<MessageOf<'clientToDaemon'>, { t: 'hello' | 'shutdown' }>;

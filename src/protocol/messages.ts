@@ -108,10 +108,15 @@ const daemonEvents = [
   message('worktreeAtRisk', {
     req,
     worktree: path,
-    base: longText,
+    local: longText,
+    remote: longText,
     ahead: count.nullable(),
+    fetchFailed: z.strictObject({ ref: longText.unwrap(), reason: errorMessage }).nullable(),
     changes: count,
     running: z.array(termId).max(MAX_ENTRIES),
+  }).refine((m) => (m.ahead === null) === (m.local === null && m.remote === null), {
+    message: 'ahead is null exactly without local and remote',
+    path: ['ahead'],
   }),
 ] as const;
 

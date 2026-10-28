@@ -8,6 +8,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
   writeSync,
   type BigIntStats,
@@ -21,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   acquireStartLock,
+  appendLogLine,
   currentHostPaths,
   fileIdentity,
   hostPaths,
@@ -52,6 +54,8 @@ interface Hooks {
   failSyncOf: string | null;
   /** The first unlink or rename away of this path waits 100 ms. */
   delayRemovalOf: string | null;
+  /** The next rename away of this path fails with EBUSY. */
+  failRenameOf: string | null;
   calls: string[];
 }
 
@@ -61,6 +65,7 @@ const hooks = vi.hoisted((): Hooks => ({
   failUnlinkOf: null,
   failSyncOf: null,
   delayRemovalOf: null,
+  failRenameOf: null,
   calls: [],
 }));
 
@@ -116,8 +121,16 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return real.writeFile(path, data, options);
     },
+    appendFile: async (path: PathLike | FsPromises.FileHandle, data: string | Uint8Array, options?: object): Promise<void> => {
+      hooks.calls.push(`append ${String(path)} ${String(Buffer.byteLength(data))}`);
+      await real.appendFile(path, data, options);
+    },
     rename: async (from: PathLike, to: PathLike): Promise<void> => {
       hooks.calls.push(`rename ${String(from)} ${String(to)}`);
+      if (String(from) === hooks.failRenameOf) {
+        hooks.failRenameOf = null;
+        throw Object.assign(new Error('EBUSY: resource busy, rename'), { code: 'EBUSY' });
+      }
       await delayedRemoval(from);
       await real.rename(from, to);
     },
@@ -147,6 +160,7 @@ beforeEach(() => {
   hooks.failUnlinkOf = null;
   hooks.failSyncOf = null;
   hooks.delayRemovalOf = null;
+  hooks.failRenameOf = null;
   hooks.calls.length = 0;
 });
 
@@ -169,10 +183,12 @@ describe('host paths', () => {
       lock: '/tmp/x/worktree-term/run/box.lock',
       state: '/tmp/x/worktree-term/state.json',
       log: '/tmp/x/worktree-term/daemon.log',
+      memoryLog: '/tmp/x/worktree-term/memory.log',
       configDir: '/home/u/.config/worktree-term',
       config: '/home/u/.config/worktree-term/config.json',
       hubToken: '/tmp/x/worktree-term/hub-token',
       hubLog: '/tmp/x/worktree-term/hub.log',
+      hubMemoryLog: '/tmp/x/worktree-term/hub-memory.log',
       hubLock: '/tmp/x/worktree-term/run/hub.lock',
       hubRecord: '/tmp/x/worktree-term/run/hub.json',
       unitFile: '/home/u/.config/systemd/user/worktree-term-daemon.service',
@@ -198,9 +214,10 @@ describe('host paths', () => {
 
   it('keeps hub files under the state directory whatever the configuration directory', () => {
     const paths = hostPaths({ env: { XDG_STATE_HOME: '/s', XDG_CONFIG_HOME: '/c' }, home: '/home/u', host: 'box' });
-    expect([paths.hubToken, paths.hubLog, paths.hubLock, paths.hubRecord]).toEqual([
+    expect([paths.hubToken, paths.hubLog, paths.hubMemoryLog, paths.hubLock, paths.hubRecord]).toEqual([
       '/s/worktree-term/hub-token',
       '/s/worktree-term/hub.log',
+      '/s/worktree-term/hub-memory.log',
       '/s/worktree-term/run/hub.lock',
       '/s/worktree-term/run/hub.json',
     ]);
@@ -520,6 +537,101 @@ describe('daemon log', () => {
     await handle.close();
     expect(statSync(log).size).toBe(MiB);
     expect(readdirSync(dir)).toEqual(['daemon.log']);
+  });
+});
+
+describe('memory log lines', () => {
+  const LIMIT = 16 * MiB;
+  let reported: unknown[];
+  const report = (error: unknown): void => {
+    reported.push(error);
+  };
+  const log = (): string => join(dir, 'memory.log');
+  /** A log of `bytes` bytes; its content does not matter. */
+  const sized = (path: string, bytes: number): void => {
+    writeFileSync(path, '');
+    truncateSync(path, bytes);
+  };
+
+  beforeEach(() => {
+    reported = [];
+  });
+
+  it('appends each line whole, newline included, in one append to a log created owner-only', async () => {
+    await appendLogLine(log(), '{"a":1}', report);
+    await appendLogLine(log(), '{"b":22}', report);
+    expect(readFileSync(log(), 'utf8')).toBe('{"a":1}\n{"b":22}\n');
+    expect(modeOf(log())).toBe(0o600);
+    expect(hooks.calls.filter((call) => call.startsWith('append '))).toEqual([`append ${log()} 8`, `append ${log()} 9`]);
+    expect(reported).toEqual([]);
+  });
+
+  it('keeps appending while the log stays within 16 MiB', async () => {
+    sized(log(), LIMIT - 100);
+    await appendLogLine(log(), 'y'.repeat(99), report);
+    expect(statSync(log()).size).toBe(LIMIT);
+    expect(readdirSync(dir)).toEqual(['memory.log']);
+  });
+
+  it('moves a log the line would take over 16 MiB to .1 and writes the line to a fresh log', async () => {
+    sized(log(), LIMIT - 10);
+    await appendLogLine(log(), 'y'.repeat(99), report);
+    expect(statSync(`${log()}.1`).size).toBe(LIMIT - 10);
+    expect(readFileSync(log(), 'utf8')).toBe(`${'y'.repeat(99)}\n`);
+    expect(reported).toEqual([]);
+  });
+
+  it('shifts .1 and .2 up and replaces .3 when rotating', async () => {
+    sized(log(), LIMIT);
+    writeFileSync(`${log()}.1`, 'one');
+    writeFileSync(`${log()}.2`, 'two');
+    writeFileSync(`${log()}.3`, 'three');
+    await appendLogLine(log(), 'new', report);
+    expect(readFileSync(`${log()}.3`, 'utf8')).toBe('two');
+    expect(readFileSync(`${log()}.2`, 'utf8')).toBe('one');
+    expect(statSync(`${log()}.1`).size).toBe(LIMIT);
+    expect(readFileSync(log(), 'utf8')).toBe('new\n');
+    expect(readdirSync(dir).sort()).toEqual(['memory.log', 'memory.log.1', 'memory.log.2', 'memory.log.3']);
+  });
+
+  it('skips missing old files when rotating', async () => {
+    sized(log(), LIMIT);
+    writeFileSync(`${log()}.2`, 'two');
+    await appendLogLine(log(), 'new', report);
+    expect(readFileSync(`${log()}.3`, 'utf8')).toBe('two');
+    expect(statSync(`${log()}.1`).size).toBe(LIMIT);
+    expect(readdirSync(dir).sort()).toEqual(['memory.log', 'memory.log.1', 'memory.log.3']);
+    expect(reported).toEqual([]);
+  });
+
+  it('writes a line over 16 MiB after rotating', async () => {
+    writeFileSync(log(), 'old\n');
+    const line = 'z'.repeat(LIMIT + 1);
+    await appendLogLine(log(), line, report);
+    expect(readFileSync(`${log()}.1`, 'utf8')).toBe('old\n');
+    expect(statSync(log()).size).toBe(LIMIT + 2);
+  });
+
+  it.each([
+    ['.2 to .3', '.2'],
+    ['.1 to .2', '.1'],
+    ['the log to .1', ''],
+  ])('reports a failed rename of %s, still appends the line, and rotates on the next append', async (_name, suffix) => {
+    sized(log(), LIMIT);
+    writeFileSync(`${log()}.1`, 'one');
+    writeFileSync(`${log()}.2`, 'two');
+    hooks.failRenameOf = `${log()}${suffix}`;
+    await appendLogLine(log(), 'first', report);
+    expect(reported).toEqual([expect.objectContaining({ code: 'EBUSY' })]);
+    expect(statSync(log()).size).toBe(LIMIT + 'first\n'.length);
+    await appendLogLine(log(), 'second', report);
+    expect(reported).toHaveLength(1);
+    expect(readFileSync(log(), 'utf8')).toBe('second\n');
+    expect(statSync(`${log()}.1`).size).toBe(LIMIT + 'first\n'.length);
+  });
+
+  it('fails when the line cannot be written', async () => {
+    await expect(appendLogLine(join(dir, 'missing', 'memory.log'), 'x', report)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 

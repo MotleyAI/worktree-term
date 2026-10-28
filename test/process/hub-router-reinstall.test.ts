@@ -29,7 +29,9 @@ describe('remote daemon restart and reinstall', () => {
     const from = client.mark();
     const reply = await client.hubRequest({ t: 'restartDaemon', host: 1 }, 20_000);
     expect(reply).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
-    expect(await remoteInstance(client, 1, from)).not.toBe(old);
+    // The session may still report the old instance as connected until its link sees the old daemon go.
+    const fresh = await client.waitHost(1, (h) => h.status === 'connected' && h.instance !== old, { from, timeout: REMOTE_TIMEOUT });
+    expect(fresh.instance).not.toBeNull();
     await waitUntil(() => oldPid !== undefined && !alive(oldPid), 'the old remote daemon to exit');
     await waitUntil(() => remote.daemonPids().length === 1, 'one remote daemon');
   });

@@ -34,6 +34,24 @@ done
 
 log() { printf 'wtd-dev-restart: %s\n' "$*"; }
 
+# The commands this script runs that a system may lack, as a space-terminated list.
+missing_tools() {
+  local tool
+  for tool in node pnpm ss setsid; do command -v "$tool" >/dev/null || printf '%s ' "$tool"; done
+}
+
+# A desktop launcher does not read the shell's startup files, where node and pnpm are often put on PATH:
+# put the user's interactive shell's PATH first.
+if [[ -n $(missing_tools) ]]; then
+  shell_path=$("${SHELL:-bash}" -ic 'printf "\n%s" "$PATH"' 2>/dev/null </dev/null | tail -n 1 || true)
+  [[ -n $shell_path ]] && export PATH=$shell_path:$PATH
+fi
+missing=$(missing_tools)
+if [[ -n $missing ]]; then
+  echo "wtd-dev-restart: not on PATH, nor on an interactive shell's: ${missing% }" >&2
+  exit 1
+fi
+
 # Terminals started under this hub must not look like children of a Claude Code session.
 for var in $(compgen -e); do
   case $var in CLAUDE*) unset "$var" ;; esac

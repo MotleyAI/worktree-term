@@ -23,9 +23,10 @@ describe('wtd-dev-restart finding node and pnpm', () => {
   let tools: string;
   let home: string;
 
-  const run = (path: string): Outcome => {
+  /** Runs the script; without `shell`, SHELL is unset, as in some desktop sessions. */
+  const run = (path: string, shell?: string): Outcome => {
     const result = spawnSync('/bin/bash', [SCRIPT, '--no-browser'], {
-      env: { HOME: home, PATH: path, WTD_REPO: dir, XDG_STATE_HOME: join(dir, 'state') },
+      env: { HOME: home, PATH: path, WTD_REPO: dir, XDG_STATE_HOME: join(dir, 'state'), ...(shell === undefined ? {} : { SHELL: shell }) },
       encoding: 'utf8',
       timeout: 30_000,
     });
@@ -78,6 +79,15 @@ describe('wtd-dev-restart finding node and pnpm', () => {
     chmodSync(join(basics, 'pnpm'), 0o755);
     bashrc(`export PATH=${tools}:$PATH`);
     expect(run(basics).buildPath).toBe(`${tools}:${basics}:${basics}`);
+  });
+
+  it('asks the user’s shell from SHELL rather than bash', () => {
+    bashrc('export PATH=/nowhere:$PATH');
+    // Like a zsh whose startup files put the tools on PATH: answers the interactive command with that PATH.
+    const shell = join(dir, 'zsh');
+    writeFileSync(shell, `#!/bin/sh\n[ "$1" = -ic ] || exit 9\nprintf '\\n%s' "${tools}:$PATH"\n`);
+    chmodSync(shell, 0o755);
+    expect(run(basics, shell).buildPath).toBe(`${tools}:${basics}:${basics}`);
   });
 
   it('names what is still missing and stops before building', () => {

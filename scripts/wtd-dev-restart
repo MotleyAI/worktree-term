@@ -39,9 +39,10 @@ missing_tools() {
   for tool in node pnpm; do command -v "$tool" >/dev/null || printf '%s ' "$tool"; done
 }
 
-# A desktop launcher does not read ~/.bashrc, where node and pnpm are often put on PATH: put an interactive shell's first.
+# A desktop launcher does not read the shell's startup files, where node and pnpm are often put on PATH:
+# put the user's interactive shell's PATH first.
 if [[ -n $(missing_tools) ]]; then
-  shell_path=$(bash -ic 'printf "\n%s" "$PATH"' 2>/dev/null </dev/null | tail -n 1 || true)
+  shell_path=$("${SHELL:-bash}" -ic 'printf "\n%s" "$PATH"' 2>/dev/null </dev/null | tail -n 1 || true)
   [[ -n $shell_path ]] && export PATH=$shell_path:$PATH
 fi
 missing=$(missing_tools)

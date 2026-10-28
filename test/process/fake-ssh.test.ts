@@ -141,6 +141,37 @@ describe('FakeSsh forwards and planted programs', () => {
     command.kill('SIGKILL');
   });
 
+  it('has the banner’s write time recorded by the time the banner can be read', async () => {
+    ssh.addHost('box');
+    ssh.loginHost('box');
+    const startedAt = Date.now();
+    const seen = await Promise.all(
+      Array.from({ length: 8 }, () => {
+        const child = run(['--', 'box', 'true']);
+        return new Promise<{ url: string; writtenAt: number; readAt: number }>((resolve) => {
+          let stderr = '';
+          child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+            stderr += chunk;
+            const url = /https:\/\/login\.tailscale\.com\/a\/wtd\d+/.exec(stderr)?.[0];
+            if (url === undefined) return;
+            let writtenAt = Number.NaN;
+            try {
+              writtenAt = ssh.loginWrittenAt(url);
+            } catch {
+              // Not written yet: NaN fails the checks below.
+            }
+            resolve({ url, writtenAt, readAt: Date.now() });
+          });
+        });
+      }),
+    );
+    for (const { url, writtenAt, readAt } of seen) {
+      expect(writtenAt, url).toBeGreaterThanOrEqual(startedAt);
+      expect(writtenAt, url).toBeLessThanOrEqual(readAt);
+    }
+    for (const { url } of seen) ssh.approveLogin(url);
+  });
+
   it('runs a planted wtd as the remote’s ~/.local/bin/wtd', async () => {
     const remote = ssh.addHost('box');
     remote.plantWtd('echo "planted $*"; exit 2');

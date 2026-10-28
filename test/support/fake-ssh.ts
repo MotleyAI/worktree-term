@@ -92,8 +92,9 @@ if [ ! -f "$h" ]; then echo "ssh: Could not resolve hostname $alias: Name or ser
 if [ -n "$R_HANG" ]; then trap '' TERM; exec sleep 600; fi
 if [ -n "$R_GATE" ]; then while [ ! -e "$R_GATE" ]; do sleep 0.05; done; fi
 if [ -n "$R_LOGIN" ] && [ ! -e "$d/login/open-$alias" ]; then
+  # Recorded whole before the banner, which the reader may act on at once.
+  date +%s%3N > "$d/login/$$.at.tmp" && mv "$d/login/$$.at.tmp" "$d/login/$$.at"
   printf '%s\n' '# Tailscale SSH requires an additional check.' "# To authenticate, visit: https://login.tailscale.com/a/wtd$$" >&2
-  date +%s%3N > "$d/login/$$.at"
   while [ ! -e "$d/login/$$.ok" ]; do
     if [ -e "$d/login/$$.fail" ]; then cat "$d/login/$$.fail" >&2; exit 255; fi
     sleep 0.05

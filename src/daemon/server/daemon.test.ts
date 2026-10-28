@@ -18,8 +18,8 @@ const worktrees: Worktree[] = [
   { path: REPO, head: null, branch: 'main', detached: false, locked: false, prunable: false, bare: false, main: true },
   { path: WT, head: null, branch: 'feat', detached: false, locked: false, prunable: false, bare: false, main: false },
 ];
-const NO_RISK: WorktreeRisks = { base: 'origin/main', ahead: 0, changes: 0 };
 const ANY_REQ: unknown = expect.any(Number);
+const NO_RISK: WorktreeRisks = { local: 'main', remote: 'origin/main', ahead: 0, fetchFailed: null, changes: 0 };
 
 interface PendingSpawn {
   spec: TerminalSpec;
@@ -41,6 +41,7 @@ let heldWatches: (() => void)[] | null;
 let watchHandlers: WorktreeHandlers[];
 /** What the risk check answers; a held promise keeps a removal in progress. */
 let risks: Promise<WorktreeRisks>;
+let riskChecks: number;
 let removed: string[];
 let reported: unknown[];
 
@@ -52,6 +53,7 @@ beforeEach(async () => {
   heldWatches = null;
   watchHandlers = [];
   risks = Promise.resolve(NO_RISK);
+  riskChecks = 0;
   removed = [];
   reported = [];
   const services: DaemonServices = {
@@ -66,7 +68,10 @@ beforeEach(async () => {
     },
     listWorktrees: () => Promise.resolve(worktrees),
     discoverRepos: () => Promise.resolve([]),
-    worktreeRisks: () => risks,
+    worktreeRisks: () => {
+      riskChecks++;
+      return risks;
+    },
     removeWorktree: (_repo, worktree) => {
       removed.push(worktree.path);
       return Promise.resolve();
@@ -229,6 +234,35 @@ it('refuses to start a terminal in a worktree while it is being removed', async 
   expect(spawns).toHaveLength(0);
   release(NO_RISK);
   await client.waitFor('done', (m) => m.req === 1, { from });
+  expect(removed).toEqual([WT]);
+});
+
+it('sends the risks it was given unchanged, failed fetch included', async () => {
+  const at: WorktreeRisks = {
+    local: 'main',
+    remote: null,
+    ahead: 1,
+    fetchFailed: { ref: 'origin/main', reason: "fatal: 'origin' does not appear to be a git repository" },
+    changes: 0,
+  };
+  risks = Promise.resolve(at);
+  const client = await connected();
+  await client.watch(REPO);
+  expect(await client.request({ t: 'removeWorktree', worktree: WT, force: false })).toEqual({
+    t: 'worktreeAtRisk',
+    req: ANY_REQ,
+    worktree: WT,
+    ...at,
+    running: [],
+  });
+  expect(removed).toEqual([]);
+});
+
+it('neither counts commits nor fetches for a forced removal', async () => {
+  const client = await connected();
+  await client.watch(REPO);
+  expect(await client.request({ t: 'removeWorktree', worktree: WT, force: true })).toMatchObject({ t: 'done' });
+  expect(riskChecks).toBe(0);
   expect(removed).toEqual([WT]);
 });
 

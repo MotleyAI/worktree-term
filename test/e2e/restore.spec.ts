@@ -30,8 +30,9 @@ test.describe('reconnect and restore', () => {
     await openUi(hub, page);
     const term = await newTerminal(page);
     await ready(page, term);
-    await typeLine(page, term, "echo KEEP''-MARK");
-    const before = await waitScreen(page, term, 'KEEP-MARK');
+    await typeLine(page, term, "PS1='KEPT''> '; echo KEEP''-MARK");
+    // The prompt after the mark is the shell's last write.
+    const before = await waitScreen(page, term, 'KEEP-MARK\nKEPT>');
     const xterm = await xtermOf(page, term);
 
     await stopHub(hub);

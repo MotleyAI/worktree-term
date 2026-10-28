@@ -166,6 +166,10 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'movePreset', req: 1, name: 'p', to: 64 },
   { t: 'removeWorktree', req: 1, worktree: WT },
   { t: 'worktreeAtRisk', req: 1, worktree: WT, base: null, ahead: -1, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, base: 'origin/main', ahead: 1, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: null, remote: null, ahead: -1, fetchFailed: null, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: null, ahead: null, fetchFailed: null, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: null, ahead: 1, changes: 0, running: [] },
   {
     t: 'hosts',
     hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [] }],
@@ -327,8 +331,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 7 and browser protocol 10', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 7, browser: 10 });
+  it('is blessed for daemon protocol 8 and browser protocol 11', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 8, browser: 11 });
   });
 
   it('records every sample as valid in its own direction', () => {

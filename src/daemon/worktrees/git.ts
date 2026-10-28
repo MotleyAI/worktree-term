@@ -59,16 +59,30 @@ export const checkRepo = async (repo: string): Promise<string> => {
   return common;
 };
 
-/** Remote-tracking refs a worktree's head is compared with, in order of preference after `origin/HEAD`. */
-const BASE_CANDIDATES = ['refs/remotes/origin/main', 'refs/remotes/origin/master'];
-const REMOTES_PREFIX = 'refs/remotes/';
+/** Default branch names tried after `origin/HEAD`'s target, in order. */
+const DEFAULT_BRANCHES = ['main', 'master'];
+const ORIGIN_PREFIX = 'refs/remotes/origin/';
+
+/** A fetch of the default branch that failed: the remote-tracking ref, e.g. `origin/main`, and why. */
+export interface FetchFailure {
+  ref: string;
+  reason: string;
+}
+
+/** The bases a worktree's head is compared with, and its commits in neither. */
+interface Comparison {
+  /** The local default branch, e.g. `main`; null when it does not exist. */
+  local: string | null;
+  /** Its `origin` remote-tracking ref, e.g. `origin/main`; null when it does not exist. */
+  remote: string | null;
+  /** Commits of the head in neither base; null without either, 0 without a head. */
+  ahead: number | null;
+}
 
 /** What deleting a worktree would lose, apart from its terminals. */
-export interface WorktreeRisks {
-  /** The ref compared with, e.g. `origin/main`; null when the repo has none. */
-  base: string | null;
-  /** Commits of the worktree's head not in `base`; null without a base. */
-  ahead: number | null;
+export interface WorktreeRisks extends Comparison {
+  /** Set when fetching the default branch to compare again failed. */
+  fetchFailed: FetchFailure | null;
   /** Uncommitted changes, untracked files included; 0 when its directory is gone. */
   changes: number;
 }
@@ -83,37 +97,71 @@ const gitOrNull = async (cwd: string, args: readonly string[]): Promise<string |
   }
 };
 
-/** The full name of the existing remote-tracking ref heads are compared with: `origin/HEAD`'s target, else origin's main or master. */
-const baseRef = async (repo: string): Promise<string | null> => {
-  const head = await gitOrNull(repo, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']);
-  for (const candidate of head === null || head === '' ? BASE_CANDIDATES : [head, ...BASE_CANDIDATES]) {
-    if ((await gitOrNull(repo, ['rev-parse', '--verify', '--quiet', candidate])) !== null) return candidate;
+const refExists = async (repo: string, ref: string): Promise<boolean> =>
+  (await gitOrNull(repo, ['rev-parse', '--verify', '--quiet', ref])) !== null;
+
+/** The first of `origin/HEAD`'s target, `main` and `master` that exists as a local branch or under `origin`. */
+const defaultBranch = async (repo: string): Promise<string | null> => {
+  const head = await gitOrNull(repo, ['symbolic-ref', '--quiet', `${ORIGIN_PREFIX}HEAD`]);
+  const named = head?.startsWith(ORIGIN_PREFIX) === true ? [head.slice(ORIGIN_PREFIX.length)] : [];
+  for (const branch of [...named, ...DEFAULT_BRANCHES]) {
+    if ((await refExists(repo, `refs/heads/${branch}`)) || (await refExists(repo, `${ORIGIN_PREFIX}${branch}`))) return branch;
   }
   return null;
 };
 
-/** How long fetching the base ref may take. */
+/** Compares `head` with the local `branch` and `origin/<branch>`, whichever exist. */
+const compare = async (repo: string, branch: string, head: string | null): Promise<Comparison> => {
+  const localRef = `refs/heads/${branch}`;
+  const remoteRef = `${ORIGIN_PREFIX}${branch}`;
+  const [hasLocal, hasRemote] = await Promise.all([refExists(repo, localRef), refExists(repo, remoteRef)]);
+  const local = hasLocal ? branch : null;
+  const remote = hasRemote ? `origin/${branch}` : null;
+  if (!hasLocal && !hasRemote) return { local, remote, ahead: null };
+  if (head === null) return { local, remote, ahead: 0 };
+  const bases = [...(hasLocal ? [localRef] : []), ...(hasRemote ? [remoteRef] : [])];
+  return { local, remote, ahead: Number(await git(repo, ['rev-list', '--count', head, '--not', ...bases])) };
+};
+
+/** How long fetching the default branch may take. */
 const FETCH_MS = 20_000;
+const MAX_REASON = 1024;
+// eslint-disable-next-line no-control-regex -- control characters are what it replaces
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
+
+/** Why a failed `execFile` of git failed: a timeout, git's first non-blank error line, else the error's message; rethrows anything else. */
+export const fetchFailureReason = (error: unknown, timeoutMs: number): string => {
+  if (!(error instanceof Error) || !('code' in error)) throw error;
+  const { code } = error;
+  const signal = 'signal' in error ? error.signal : null;
+  if (typeof code !== 'number' && typeof code !== 'string' && typeof signal !== 'string') throw error;
+  if ('killed' in error && error.killed === true) return `timed out after ${String(timeoutMs / 1000)} s`;
+  const stderr = 'stderr' in error && typeof error.stderr === 'string' ? error.stderr : '';
+  const line = stderr
+    .split('\n')
+    .map((l) => l.replace(CONTROL, ' ').trim())
+    .find((l) => l !== '');
+  return (line ?? error.message).slice(0, MAX_REASON);
+};
 
 /**
- * Fetches the remote branch behind the remote-tracking `ref`, so a branch merged since the last fetch counts
- * as merged; false when that failed (offline, no access), leaving the local ref, which can only err towards asking.
+ * Fetches `branch` from `origin` into `origin/<branch>`, whatever origin's configured refspec;
+ * the reason when that failed.
  */
-const fetchBase = async (repo: string, ref: string): Promise<boolean> => {
-  const [remote, ...branch] = ref.slice(REMOTES_PREFIX.length).split('/');
-  if (remote === undefined || branch.length === 0) return false;
+const fetchDefault = async (repo: string, branch: string, timeoutMs: number): Promise<string | null> => {
   try {
-    await run('git', ['fetch', '--quiet', '--no-tags', '--', remote, branch.join('/')], {
+    await run('git', ['fetch', '--quiet', '--no-tags', '--', 'origin', `+refs/heads/${branch}:${ORIGIN_PREFIX}${branch}`], {
       cwd: repo,
-      timeout: FETCH_MS,
+      timeout: timeoutMs,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', SSH_ASKPASS_REQUIRE: 'never' },
     });
-    return true;
+    return null;
   } catch (error) {
-    if (error instanceof Error && 'code' in error) return false;
-    throw error;
+    return fetchFailureReason(error, timeoutMs);
   }
 };
+
+const hasOrigin = async (repo: string): Promise<boolean> => (await git(repo, ['remote'])).split('\n').includes('origin');
 
 const isDirectory = async (path: string): Promise<boolean> => {
   try {
@@ -124,20 +172,33 @@ const isDirectory = async (path: string): Promise<boolean> => {
   }
 };
 
-/** What deleting `worktree` of `repo` would lose: commits not in the base ref and uncommitted changes. */
-export const worktreeRisks = async (repo: string, worktree: Worktree): Promise<WorktreeRisks> => {
-  // `worktree` may predate its latest commit.
-  const head = (await listWorktrees(repo)).find((w) => w.path === worktree.path)?.head ?? worktree.head;
-  const ref = await baseRef(repo);
-  if (ref !== null) await fetchBase(repo, ref);
-  let base: string | null = null;
-  let ahead: number | null = null;
-  if (ref !== null) {
-    base = ref.startsWith(REMOTES_PREFIX) ? ref.slice(REMOTES_PREFIX.length) : ref;
-    ahead = head === null ? 0 : Number(await git(repo, ['rev-list', '--count', `${ref}..${head}`]));
-  }
-  const status = (await isDirectory(worktree.path)) ? await git(worktree.path, ['status', '--porcelain', '--untracked-files=normal']) : '';
-  return { base, ahead, changes: status.split('\n').filter((line) => line !== '').length };
+const changesIn = async (path: string): Promise<number> => {
+  const status = (await isDirectory(path)) ? await git(path, ['status', '--porcelain', '--untracked-files=normal']) : '';
+  return status.split('\n').filter((line) => line !== '').length;
+};
+
+/** The worktree's current head: `worktree` may predate its latest commit. */
+const headOf = async (repo: string, worktree: Worktree): Promise<string | null> =>
+  (await listWorktrees(repo)).find((w) => w.path === worktree.path)?.head ?? worktree.head;
+
+/**
+ * What deleting `worktree` of `repo` would lose: commits in neither the local default branch nor its
+ * `origin` remote-tracking ref, compared again after fetching it when some are, and uncommitted changes.
+ */
+export const worktreeRisks = async (repo: string, worktree: Worktree, fetchMs = FETCH_MS): Promise<WorktreeRisks> => {
+  const branch = await defaultBranch(repo);
+  if (branch === null) return { local: null, remote: null, ahead: null, fetchFailed: null, changes: await changesIn(worktree.path) };
+  const before = await compare(repo, branch, await headOf(repo, worktree));
+  if ((before.ahead ?? 0) === 0 || !(await hasOrigin(repo)))
+    return { ...before, fetchFailed: null, changes: await changesIn(worktree.path) };
+  const ref = `origin/${branch}`;
+  const reason = await fetchDefault(repo, branch, fetchMs);
+  // Head and changes are read again after the fetch, which may take a while, so work done meanwhile counts.
+  const changes = await changesIn(worktree.path);
+  if (reason !== null) return { ...before, fetchFailed: { ref, reason }, changes };
+  const after = await compare(repo, branch, await headOf(repo, worktree));
+  if (after.remote === null) return { ...before, fetchFailed: { ref, reason: `${ref} is missing after the fetch` }, changes };
+  return { ...after, fetchFailed: null, changes };
 };
 
 /** Removes `worktree` of `repo`, also when its directory is gone, `force` also discarding its changes. */

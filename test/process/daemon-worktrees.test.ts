@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worktree } from '../../src/protocol/index.js';
 import type { DaemonClient, EventOf } from '../support/daemon-client.js';
-import { addWorktree, DaemonHost, fakeWorktrees, git, makeRepo, sleep } from '../support/daemon-host.js';
+import { addWorktree, DaemonHost, failingOrigin, fakeWorktrees, git, makeRepo, sleep } from '../support/daemon-host.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
@@ -388,34 +388,89 @@ describe('discoverRepos', () => {
 });
 
 describe('removeWorktree', () => {
-  /** Gives the repo a bare `origin` holding its `main`, with `origin/HEAD` pointing at it. */
-  const withOrigin = (): void => {
+  /** Gives the repo a bare `origin` holding its `main`, with `origin/HEAD` pointing at it; returns the origin's path. */
+  const withOrigin = (): string => {
     const origin = join(host.dir, 'origin.git');
     git(host.dir, 'init', '-q', '--bare', '-b', 'main', origin);
     git(repo, 'remote', 'add', 'origin', origin);
     git(repo, 'push', '-q', 'origin', 'main');
     git(repo, 'remote', 'set-head', 'origin', 'main');
+    return origin;
   };
 
-  const commit = (cwd: string, file: string): void => {
+  /** Commits a new file and returns the commit. */
+  const commit = (cwd: string, file: string): string => {
     writeFileSync(join(cwd, file), file);
     git(cwd, 'add', file);
     git(cwd, 'commit', '-q', '-m', file);
+    return git(cwd, 'rev-parse', 'HEAD');
   };
 
-  it('removes a merged, clean worktree at once, closing its exited terminals and keeping its branch', async () => {
-    withOrigin();
+  const remove = async (wt: string, force = false): Promise<unknown> => {
+    const client = await host.client();
+    await client.watch(repo);
+    return client.request({ t: 'removeWorktree', worktree: wt, force });
+  };
+
+  const DONE = { t: 'done', req: ANY_REQ };
+
+  it('removes a clean worktree in the local main at once, closing its exited terminals and keeping its branch', async () => {
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
     const client = await host.client();
     await client.watch(repo);
     const exited = await client.create(wt, { command: 'exit 1' });
     await client.waitFor('termExited', (m) => m.termId === exited.termId);
     const from = client.mark();
-    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toEqual({ t: 'done', req: ANY_REQ });
+    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toEqual(DONE);
     expect(existsSync(wt)).toBe(false);
     await client.waitFor('termClosed', (m) => m.termId === exited.termId, { from });
     await client.waitFor('worktreesChanged', (m) => find(m.worktrees, wt) === undefined, { from });
     expect(git(repo, 'branch', '--list', 'feat')).toContain('feat');
+  });
+
+  it('removes a worktree merged into the local main without trying the unreachable remote', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    git(repo, 'merge', '-q', '--ff-only', commit(wt, 'a'));
+    const reached = failingOrigin(repo, host.dir);
+    expect(await remove(wt)).toEqual(DONE);
+    expect(existsSync(wt)).toBe(false);
+    expect(reached()).toBe(false);
+  });
+
+  it('removes a worktree in origin/main as last fetched without trying the remote', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    git(repo, 'update-ref', 'refs/remotes/origin/main', commit(wt, 'a'));
+    const reached = failingOrigin(repo, host.dir);
+    expect(await remove(wt)).toEqual(DONE);
+    expect(existsSync(wt)).toBe(false);
+    expect(reached()).toBe(false);
+  });
+
+  it('counts only the merge of a commit in main and a commit in origin/main', async () => {
+    const origin = withOrigin();
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    const other = addWorktree(repo, join(host.dir, 'other'), 'other');
+    const a = commit(wt, 'a');
+    const b = commit(other, 'b');
+    git(wt, 'merge', '-q', '--no-ff', '-m', 'merge', 'other');
+    git(repo, 'merge', '-q', '--ff-only', a);
+    git(repo, 'update-ref', 'refs/remotes/origin/main', b);
+    rmSync(origin, { recursive: true });
+    expect(await remove(wt)).toMatchObject({ t: 'worktreeAtRisk', local: 'main', remote: 'origin/main', ahead: 1 });
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it('fetches main and removes a worktree merged on the remote since the last fetch', async () => {
+    withOrigin();
+    const stale = git(repo, 'rev-parse', 'refs/remotes/origin/main');
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    commit(wt, 'a');
+    git(wt, 'push', '-q', 'origin', 'feat:main');
+    git(repo, 'update-ref', 'refs/remotes/origin/main', stale);
+    expect(await remove(wt)).toEqual(DONE);
+    expect(existsSync(wt)).toBe(false);
   });
 
   it('keeps a worktree at risk and reports every risk: commits ahead, changes and running terminals', async () => {
@@ -430,8 +485,10 @@ describe('removeWorktree', () => {
       t: 'worktreeAtRisk',
       req: ANY_REQ,
       worktree: wt,
-      base: 'origin/main',
+      local: 'main',
+      remote: 'origin/main',
       ahead: 1,
+      fetchFailed: null,
       changes: 1,
       running: [running.termId],
     });
@@ -439,33 +496,58 @@ describe('removeWorktree', () => {
     await client.expectNone('termClosed', () => true, 300);
   });
 
-  it('reports a worktree of a repo without an origin as at risk', async () => {
+  it('reports a failed fetch when the remote cannot be reached', async () => {
+    const origin = withOrigin();
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
-    const client = await host.client();
-    await client.watch(repo);
-    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: false })).toMatchObject({
+    commit(wt, 'a');
+    rmSync(origin, { recursive: true });
+    expect(await remove(wt)).toMatchObject({
       t: 'worktreeAtRisk',
-      base: null,
+      local: 'main',
+      remote: 'origin/main',
+      ahead: 1,
+      fetchFailed: { ref: 'origin/main', reason: `fatal: '${origin}' does not appear to be a git repository` },
+    });
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it('compares a worktree of a repo without an origin with the local main alone', async () => {
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    commit(wt, 'a');
+    expect(await remove(wt)).toMatchObject({ t: 'worktreeAtRisk', local: 'main', remote: null, ahead: 1, fetchFailed: null });
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it('reports a worktree of a repo without an origin, main or master as at risk', async () => {
+    git(repo, 'branch', '-m', 'main', 'trunk');
+    const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
+    expect(await remove(wt)).toMatchObject({
+      t: 'worktreeAtRisk',
+      local: null,
+      remote: null,
       ahead: null,
+      fetchFailed: null,
       changes: 0,
       running: [],
     });
     expect(existsSync(wt)).toBe(true);
   });
 
-  it('removes a worktree at risk when forced, closing its running terminals', async () => {
+  it('removes a worktree at risk when forced, closing its running terminals without trying the remote', async () => {
     withOrigin();
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
     commit(wt, 'a');
     writeFileSync(join(wt, 'untracked'), 'new');
+    const reached = failingOrigin(repo, host.dir);
     const client = await host.client();
     await client.watch(repo);
     const running = await client.create(wt, { command: 'exec sleep 60' });
     const from = client.mark();
-    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: true })).toEqual({ t: 'done', req: ANY_REQ });
+    expect(await client.request({ t: 'removeWorktree', worktree: wt, force: true })).toEqual(DONE);
     expect(existsSync(wt)).toBe(false);
     await client.waitFor('termClosed', (m) => m.termId === running.termId, { from });
     expect(git(repo, 'rev-parse', 'feat')).toMatch(/^[0-9a-f]{40}$/);
+    expect(reached()).toBe(false);
   });
 
   it('refuses the main worktree, a locked one and a path that is not a worktree', async () => {

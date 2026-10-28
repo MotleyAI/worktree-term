@@ -19,6 +19,7 @@ import {
   test,
   typeLine,
   waitScreen,
+  waitSettledScreen,
   watcher,
   xtermOf,
 } from './fixture.js';
@@ -31,7 +32,7 @@ test.describe('reconnect and restore', () => {
     const term = await newTerminal(page);
     await ready(page, term);
     await typeLine(page, term, "echo KEEP''-MARK");
-    const before = await waitScreen(page, term, 'KEEP-MARK');
+    const before = await waitSettledScreen(page, term, 'KEEP-MARK');
     const xterm = await xtermOf(page, term);
 
     await stopHub(hub);
@@ -104,7 +105,7 @@ test.describe('reconnect and restore', () => {
     const term = await newTerminal(page);
     await ready(page, term);
     await typeLine(page, term, "printf '\\033[?1049h\\033[H\\033[2JFULL''-SCREEN-MARK\\n'; sleep 600");
-    const before = await waitScreen(page, term, 'FULL-SCREEN-MARK');
+    const before = await waitSettledScreen(page, term, 'FULL-SCREEN-MARK');
     expect(before).not.toContain('READY-MARK');
 
     await page.reload();

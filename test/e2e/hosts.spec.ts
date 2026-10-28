@@ -28,6 +28,7 @@ import {
   test,
   typeLine,
   waitScreen,
+  waitSettledScreen,
   writeHubConfig,
   xtermOf,
 } from './fixture.js';
@@ -268,7 +269,7 @@ test.describe('remote reconnect', () => {
     const term = await newTerminal(page, 'shell', REMOTE);
     await ready(page, term, REMOTE);
     await typeLine(page, term, "echo KEEP''-MARK", REMOTE);
-    const before = await waitScreen(page, term, 'KEEP-MARK', 10_000, REMOTE);
+    const before = await waitSettledScreen(page, term, 'KEEP-MARK', 10_000, REMOTE);
     const xterm = await xtermOf(page, term, REMOTE);
     const instance = hostEntries(wire, REMOTE).findLast((h) => h.status === 'connected')?.instance;
     expect(instance).toBeTruthy();

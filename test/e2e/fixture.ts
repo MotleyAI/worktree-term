@@ -320,6 +320,23 @@ export const waitScreen = async (page: Page, termId: number, pattern: string, ti
   return (await screenOf(page, termId, host)) ?? '';
 };
 
+/** Waits until the terminal's text contains `pattern` and is the same on two reads 250 ms apart, so a prompt still being drawn is in it. */
+export const waitSettledScreen = async (page: Page, termId: number, pattern: string, timeout = 10_000, host = LOCAL): Promise<string> => {
+  let last = '';
+  await expect
+    .poll(
+      async () => {
+        const screen = (await screenOf(page, termId, host)) ?? '';
+        const settled = screen.includes(pattern) && screen === last;
+        last = screen;
+        return settled;
+      },
+      { timeout, intervals: [250] },
+    )
+    .toBe(true);
+  return last;
+};
+
 /** Waits until the shell prompt of a fresh terminal settled, by echoing a marker. */
 export const ready = async (page: Page, termId: number, host = LOCAL): Promise<void> => {
   await typeLine(page, termId, "echo READY''-MARK", host);

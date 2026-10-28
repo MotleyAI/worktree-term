@@ -130,6 +130,7 @@ export const removalReasons = (risks: RemovalRisks): string[] => {
 export const keptNote = (worktree: Pick<Worktree, 'detached' | 'head'>, bases: RemovalBases): string => {
   if (!worktree.detached) return 'Its branch is kept.';
   const phrase = basesPhrase(bases);
-  const lost = `It has no branch: once it is deleted, its commits ${phrase === null ? '' : `not in ${phrase} `}become unreachable`;
+  const missing = phrase === null ? '' : `not in ${phrase} `;
+  const lost = `It has no branch: once it is deleted, its commits ${missing}become unreachable`;
   return worktree.head === null ? `${lost}.` : `${lost}; its head is ${worktree.head.slice(0, SHORT_HEAD)}.`;
 };

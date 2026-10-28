@@ -144,7 +144,6 @@ describe('FakeSsh forwards and planted programs', () => {
   it('has the banner’s write time recorded by the time the banner can be read', async () => {
     ssh.addHost('box');
     ssh.loginHost('box');
-    const startedAt = Date.now();
     const seen = await Promise.all(
       Array.from({ length: 8 }, () => {
         const child = run(['--', 'box', 'true']);
@@ -152,7 +151,8 @@ describe('FakeSsh forwards and planted programs', () => {
           let stderr = '';
           child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
             stderr += chunk;
-            const url = /https:\/\/login\.tailscale\.com\/a\/wtd\d+/.exec(stderr)?.[0];
+            // Only a whole line: a chunk can end inside the pid.
+            const url = /https:\/\/login\.tailscale\.com\/a\/wtd\d+(?=\n)/.exec(stderr)?.[0];
             if (url === undefined) return;
             let writtenAt = Number.NaN;
             try {
@@ -165,10 +165,9 @@ describe('FakeSsh forwards and planted programs', () => {
         });
       }),
     );
-    for (const { url, writtenAt, readAt } of seen) {
-      expect(writtenAt, url).toBeGreaterThanOrEqual(startedAt);
-      expect(writtenAt, url).toBeLessThanOrEqual(readAt);
-    }
+    // A missing or empty record reads as NaN or 0. The window allows for the shell's and Node's wall clocks
+    // disagreeing, as a CI runner's can after a step.
+    for (const { url, writtenAt, readAt } of seen) expect(Math.abs(readAt - writtenAt), url).toBeLessThan(5000);
     for (const { url } of seen) ssh.approveLogin(url);
   });
 

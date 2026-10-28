@@ -34,9 +34,10 @@ done
 
 log() { printf 'wtd-dev-restart: %s\n' "$*"; }
 
+# The commands this script runs that a system may lack, as a space-terminated list.
 missing_tools() {
   local tool
-  for tool in node pnpm; do command -v "$tool" >/dev/null || printf '%s ' "$tool"; done
+  for tool in node pnpm ss setsid; do command -v "$tool" >/dev/null || printf '%s ' "$tool"; done
 }
 
 # A desktop launcher does not read the shell's startup files, where node and pnpm are often put on PATH:

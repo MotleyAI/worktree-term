@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const SCRIPT = resolve('scripts/wtd-dev-restart');
 /** What the script runs before its build, besides node and pnpm. */
-const BASICS = ['bash', 'mkdir', 'cat', 'tail'];
+const BASICS = ['bash', 'mkdir', 'cat', 'tail', 'ss', 'setsid'];
 
 interface Outcome {
   status: number | null;
@@ -88,6 +88,14 @@ describe('wtd-dev-restart finding node and pnpm', () => {
     writeFileSync(shell, `#!/bin/sh\n[ "$1" = -ic ] || exit 9\nprintf '\\n%s' "${tools}:$PATH"\n`);
     chmodSync(shell, 0o755);
     expect(run(basics, shell).buildPath).toBe(`${tools}:${basics}:${basics}`);
+  });
+
+  it('names a missing system command too, before building', () => {
+    rmSync(join(basics, 'ss'));
+    bashrc('');
+    const outcome = run(`${tools}:${basics}`);
+    expect(outcome.buildPath).toBeNull();
+    expect(outcome.stderr).toBe("wtd-dev-restart: not on PATH, nor on an interactive shell's: ss\n");
   });
 
   it('names what is still missing and stops before building', () => {

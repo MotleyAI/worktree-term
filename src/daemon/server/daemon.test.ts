@@ -325,7 +325,6 @@ describe('terminal tags and memory view', () => {
   it('remembers the last 256 closed terminals', async () => {
     const client = await connected();
     await client.watch(REPO);
-    const from = client.mark();
     for (let req = 1; req <= 257; req++) create(client, req);
     await vi.waitFor(() => {
       expect(spawns).toHaveLength(257);

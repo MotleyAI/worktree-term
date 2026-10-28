@@ -53,6 +53,12 @@ interface Consumer {
   pending: { offset: number; data: Uint8Array }[];
 }
 
+/** Lines of the screen mirror's normal and alternate buffers, and its columns. */
+export interface MirrorStats {
+  lines: number;
+  cols: number;
+}
+
 export interface ExitStatus {
   code: number;
   signal: string | null;
@@ -198,6 +204,16 @@ export class TerminalProcess {
       pty.kill('SIGKILL');
       throw new SpawnError(`cannot drive the PTY of ${shell}`, { cause: error });
     }
+  }
+
+  /** The shell's pid, which leads its session. */
+  get pid(): number {
+    return this.pty.pid;
+  }
+
+  mirrorStats(): MirrorStats {
+    const { normal, alternate } = this.mirror.buffer;
+    return { lines: normal.length + alternate.length, cols: this.mirror.cols };
   }
 
   get exit(): ExitStatus | null {

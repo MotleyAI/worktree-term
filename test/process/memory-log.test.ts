@@ -86,6 +86,13 @@ const sampleWhere = <T>(path: string, schema: z.ZodType<T>, matches: (line: T) =
 const HOG_SCRIPT = `process.on('SIGHUP',()=>{});globalThis.b=Buffer.alloc(${String(32 * MiB)},1);setInterval(()=>{},1e6)`;
 const hog = (marker: string): string => `${process.execPath} -e "${HOG_SCRIPT}" ${marker}`;
 
+/** Whether `pid` has installed a SIGHUP handler; node resets inherited dispositions at startup, so until then a hangup kills it. */
+const catchesHup = (pid: number): boolean => {
+  const status = `/proc/${String(pid)}/status`;
+  const mask = existsSync(status) ? /^SigCgt:\t([0-9a-f]+)$/m.exec(readFileSync(status, 'utf8'))?.[1] : undefined;
+  return mask !== undefined && (BigInt(`0x${mask}`) & 1n) === 1n;
+};
+
 /** Parent pid of `pid`. */
 const parentOf = (pid: number): number => {
   const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8');
@@ -145,12 +152,13 @@ describe('daemon memory log', () => {
       10_000,
     );
 
+  /** The pid of the hog named `marker`, once it ignores hangups. */
   const hogPid = (marker: string): Promise<number> =>
     waitUntil(
       () =>
         livePidsWhere(
           (cmdline, environ) => cmdline[0] === process.execPath && cmdline.includes(marker) && environ.includes(`HOME=${host.home}`),
-        )[0],
+        ).find(catchesHup),
       marker,
       10_000,
     );

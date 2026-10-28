@@ -121,7 +121,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return real.writeFile(path, data, options);
     },
-    appendFile: async (path: PathLike | FsPromises.FileHandle, data: string | Uint8Array, options?: object): Promise<void> => {
+    appendFile: async (path: PathLike, data: string | Uint8Array, options?: object): Promise<void> => {
       hooks.calls.push(`append ${String(path)} ${String(Buffer.byteLength(data))}`);
       await real.appendFile(path, data, options);
     },
@@ -631,7 +631,8 @@ describe('memory log lines', () => {
   });
 
   it('fails when the line cannot be written', async () => {
-    await expect(appendLogLine(join(dir, 'missing', 'memory.log'), 'x', report)).rejects.toMatchObject({ code: 'ENOENT' });
+    const path = join(dir, 'missing', 'memory.log');
+    await expect(appendLogLine(path, 'x', report)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 

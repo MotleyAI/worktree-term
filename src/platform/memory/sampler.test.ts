@@ -122,7 +122,12 @@ describe('sampling cadence', () => {
     tight = true;
     start();
     await at(4000);
-    nextTake = () => new Promise((resolve) => setTimeout(() => resolve({ slow: true }), 12_000));
+    nextTake = () =>
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({ slow: true });
+        }, 12_000);
+      });
     await at(23_000);
     expect(takes).toEqual([0, 5000, 22_000]);
     expect(checks.filter((t) => t > 5000 && t < 17_000)).toEqual([]);
@@ -183,11 +188,11 @@ describe('sampler timers', () => {
   it('never keep the process alive', async () => {
     const timers: NodeJS.Timeout[] = [];
     const real = globalThis.setTimeout;
-    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn: () => void, ms?: number) => {
       const timer = real(fn, ms);
       timers.push(timer);
       return timer;
-    }) as typeof setTimeout);
+    });
     const sampler = startSampler({
       intervalMs: 20,
       tight: () => Promise.resolve(false),

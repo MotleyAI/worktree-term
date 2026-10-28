@@ -23,13 +23,13 @@ const hooks = vi.hoisted((): { failing: Map<string, string> } => ({ failing: new
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof FsPromises>();
-  const fail = (path: PathLike | FsPromises.FileHandle): void => {
+  const fail = (path: PathLike): void => {
     const code = hooks.failing.get(String(path));
     if (code !== undefined) throw Object.assign(new Error(`${code}: ${String(path)}`), { code });
   };
   return {
     ...real,
-    readFile: async (path: PathLike | FsPromises.FileHandle, options?: object) => {
+    readFile: async (path: PathLike, options?: object) => {
       fail(path);
       return real.readFile(path, options);
     },
@@ -336,7 +336,8 @@ describe('system memory', () => {
 
   it('gives null pressure without PSI, still reading meminfo', async () => {
     fakeFile('proc/meminfo', MEMINFO);
-    expect(await readSystemMemory(roots, report)).toEqual({ pressure: null, meminfo: expect.objectContaining({ total: 1000 * KiB }) });
+    const meminfo: unknown = expect.objectContaining({ total: 1000 * KiB });
+    expect(await readSystemMemory(roots, report)).toEqual({ pressure: null, meminfo });
     expect(reported).toEqual([]);
   });
 

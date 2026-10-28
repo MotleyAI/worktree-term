@@ -1,5 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
+import {
+  hostRoots,
+  logWriter,
+  memoryTight,
+  processLookup,
+  readMemory,
+  sampleIntervalMs,
+  selfMemory,
+  startSampler,
+  type MemorySampler,
+} from '../../platform/memory/index.js';
 import { encodeHomeFragment, encodePrintCode } from '../../protocol/index.js';
 import { loadConfig, type HubConfig } from '../config/index.js';
 import { forwardToHub, startDetached, type DaemonPaths } from '../links/index.js';
@@ -16,12 +27,13 @@ import {
   TunnelListeners,
   type HubPaths,
 } from '../server/index.js';
+import { hubRecord } from './memory.js';
 
 export { ConfigError } from '../config/index.js';
 export { HubAlreadyRunningError, PortInUseError } from '../server/index.js';
 
 /** Host files the hub uses. */
-export type HubHostPaths = HubPaths & DaemonPaths & { config: string };
+export type HubHostPaths = HubPaths & DaemonPaths & { config: string; hubMemoryLog: string };
 
 export interface HubRun {
   /** The package version. */
@@ -32,7 +44,10 @@ export interface HubRun {
   /** The web bundle directory. */
   webDir: string;
   home: string;
-  /** Read for `WTD_HUB_OPEN_MS`, `WTD_HUB_PROBE_MS` and `WTD_HUB_INSTALL_MS`, which shorten the hub's time limits. */
+  /**
+   * Read for `WTD_HUB_OPEN_MS`, `WTD_HUB_PROBE_MS` and `WTD_HUB_INSTALL_MS`, which shorten the hub's time limits, and
+   * `WTD_MEMORY_SAMPLE_MS`, the memory log's base interval.
+   */
   env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -68,6 +83,31 @@ const budget = (value: string | undefined): number | undefined => {
 const maps = (config: HubConfig, { host, alias, port }: { host: string; alias: string; port: number }): boolean =>
   config.hosts.some((h) => h.name === host && h.ssh === alias && h.port === port);
 
+interface HubIdentity {
+  version: string;
+  instance: string;
+  daemonCommand: readonly string[];
+}
+
+/** Samples the hub's memory into `hub-memory.log` until stopped. */
+const sampleMemory = (path: string, env: HubRun['env'], identity: HubIdentity, report: (error: unknown) => void): MemorySampler => {
+  const roots = hostRoots();
+  const lookup = processLookup(roots);
+  const intervalMs = sampleIntervalMs(env['WTD_MEMORY_SAMPLE_MS']);
+  return startSampler({
+    intervalMs,
+    tight: () => memoryTight(roots, report),
+    take: async () => {
+      const ts = new Date().toISOString();
+      const self = selfMemory();
+      const reading = await readMemory(roots, report);
+      return hubRecord({ ts, pid: process.pid, ...identity, intervalMs, self, ...reading, lookup });
+    },
+    write: logWriter(path, report),
+    report,
+  });
+};
+
 /** Runs the hub until SIGTERM, SIGINT or an authenticated shutdown request. */
 export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun): Promise<void> => {
   let stop = (): void => undefined;
@@ -84,9 +124,13 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
       current: (target) => maps(latest, target),
     });
     const probeMs = budget(env['WTD_HUB_PROBE_MS']) ?? PROBE_MS;
+    const daemonCommand = [...wtd, 'daemon'];
+    const report = (error: unknown): void => {
+      console.error(error);
+    };
     const router = new Router({
       paths,
-      daemonCommand: [...wtd, 'daemon'],
+      daemonCommand,
       configPath: paths.config,
       home,
       config,
@@ -94,9 +138,7 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
       instance,
       hostName: hostname(),
       bundle: wtd[1] ?? '',
-      report: (error) => {
-        console.error(error);
-      },
+      report,
       tunnels: {
         ensure: (target, signal) => tunnels.ensure(target, signal),
         probe: (port, signal) => tunnels.probe(port, probeMs, signal),
@@ -115,7 +157,9 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
       openSession: (channel) => router.open(channel),
       shutdown: stop,
     });
+    const sampler = sampleMemory(paths.hubMemoryLog, env, { version, instance, daemonCommand }, report);
     await stopped;
+    sampler.stop();
     await Promise.all([server.close(), tunnels.close()]);
   } finally {
     for (const signal of STOP_SIGNALS) process.off(signal, stop);

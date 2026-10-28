@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -219,7 +219,7 @@ describe('process and mirror figures', () => {
     const started = await run('echo $$ > pid; exec sleep 60');
     const file = join(home, 'pid');
     await vi.waitFor(() => {
-      expect(existsSync(file) && readFileSync(file, 'utf8').endsWith('\n')).toBe(true);
+      expect(readFileSync(file, 'utf8')).toMatch(/\n$/);
     });
     expect(started.pid).toBe(Number(readFileSync(file, 'utf8')));
   });

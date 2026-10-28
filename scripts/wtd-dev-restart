@@ -34,6 +34,16 @@ done
 
 log() { printf 'wtd-dev-restart: %s\n' "$*"; }
 
+# A desktop launcher does not read ~/.bashrc, where node and pnpm are often put on PATH: take an interactive shell's.
+if ! command -v pnpm >/dev/null; then
+  shell_path=$(bash -ic 'printf "\n%s" "$PATH"' 2>/dev/null </dev/null | tail -n 1 || true)
+  [[ -n $shell_path ]] && export PATH=$shell_path
+fi
+if ! command -v pnpm >/dev/null; then
+  echo "wtd-dev-restart: pnpm is not on PATH, nor on an interactive shell's" >&2
+  exit 1
+fi
+
 # Terminals started under this hub must not look like children of a Claude Code session.
 for var in $(compgen -e); do
   case $var in CLAUDE*) unset "$var" ;; esac

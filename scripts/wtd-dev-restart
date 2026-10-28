@@ -34,13 +34,19 @@ done
 
 log() { printf 'wtd-dev-restart: %s\n' "$*"; }
 
-# A desktop launcher does not read ~/.bashrc, where node and pnpm are often put on PATH: take an interactive shell's.
-if ! command -v pnpm >/dev/null; then
+missing_tools() {
+  local tool
+  for tool in node pnpm; do command -v "$tool" >/dev/null || printf '%s ' "$tool"; done
+}
+
+# A desktop launcher does not read ~/.bashrc, where node and pnpm are often put on PATH: put an interactive shell's first.
+if [[ -n $(missing_tools) ]]; then
   shell_path=$(bash -ic 'printf "\n%s" "$PATH"' 2>/dev/null </dev/null | tail -n 1 || true)
-  [[ -n $shell_path ]] && export PATH=$shell_path
+  [[ -n $shell_path ]] && export PATH=$shell_path:$PATH
 fi
-if ! command -v pnpm >/dev/null; then
-  echo "wtd-dev-restart: pnpm is not on PATH, nor on an interactive shell's" >&2
+missing=$(missing_tools)
+if [[ -n $missing ]]; then
+  echo "wtd-dev-restart: not on PATH, nor on an interactive shell's: ${missing% }" >&2
   exit 1
 fi
 

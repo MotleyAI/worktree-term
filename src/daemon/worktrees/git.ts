@@ -177,22 +177,26 @@ const changesIn = async (path: string): Promise<number> => {
   return status.split('\n').filter((line) => line !== '').length;
 };
 
+/** The worktree's current head: `worktree` may predate its latest commit. */
+const headOf = async (repo: string, worktree: Worktree): Promise<string | null> =>
+  (await listWorktrees(repo)).find((w) => w.path === worktree.path)?.head ?? worktree.head;
+
 /**
  * What deleting `worktree` of `repo` would lose: commits in neither the local default branch nor its
  * `origin` remote-tracking ref, compared again after fetching it when some are, and uncommitted changes.
  */
 export const worktreeRisks = async (repo: string, worktree: Worktree, fetchMs = FETCH_MS): Promise<WorktreeRisks> => {
-  // `worktree` may predate its latest commit.
-  const head = (await listWorktrees(repo)).find((w) => w.path === worktree.path)?.head ?? worktree.head;
-  const changes = await changesIn(worktree.path);
   const branch = await defaultBranch(repo);
-  if (branch === null) return { local: null, remote: null, ahead: null, fetchFailed: null, changes };
-  const before = await compare(repo, branch, head);
-  if ((before.ahead ?? 0) === 0 || !(await hasOrigin(repo))) return { ...before, fetchFailed: null, changes };
+  if (branch === null) return { local: null, remote: null, ahead: null, fetchFailed: null, changes: await changesIn(worktree.path) };
+  const before = await compare(repo, branch, await headOf(repo, worktree));
+  if ((before.ahead ?? 0) === 0 || !(await hasOrigin(repo)))
+    return { ...before, fetchFailed: null, changes: await changesIn(worktree.path) };
   const ref = `origin/${branch}`;
   const reason = await fetchDefault(repo, branch, fetchMs);
+  // Head and changes are read again after the fetch, which may take a while, so work done meanwhile counts.
+  const changes = await changesIn(worktree.path);
   if (reason !== null) return { ...before, fetchFailed: { ref, reason }, changes };
-  const after = await compare(repo, branch, head);
+  const after = await compare(repo, branch, await headOf(repo, worktree));
   if (after.remote === null) return { ...before, fetchFailed: { ref, reason: `${ref} is missing after the fetch` }, changes };
   return { ...after, fetchFailed: null, changes };
 };

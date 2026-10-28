@@ -59,6 +59,23 @@ const setOriginMain = (commit: string): void => {
 const NOTHING_AHEAD: WorktreeRisks = { local: 'main', remote: 'origin/main', ahead: 0, fetchFailed: null, changes: 0 };
 const NOT_A_REPO = (path: string): string => `fatal: '${path}' does not appear to be a git repository`;
 
+/** Runs `body` with a `git` first on PATH that runs the shell code `onFetch` instead of a fetch, and git for anything else. */
+const withFetchAs = async (onFetch: string, body: () => Promise<void>): Promise<void> => {
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, 'git'),
+    `#!/bin/sh\nPATH='${process.env['PATH'] ?? ''}'\nexport PATH\nfor a; do [ "$a" = fetch ] && { ${onFetch}\nexit; }; done\nexec git "$@"\n`,
+    { mode: 0o755 },
+  );
+  vi.stubEnv('PATH', `${bin}:${process.env['PATH'] ?? ''}`);
+  try {
+    await body();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+};
+
 describe('worktreeRisks: bases', () => {
   it('reports no base, whether or not the worktree has a head, in a repo without origin, main or master', async () => {
     git(repo, 'branch', '-m', 'main', 'trunk');
@@ -197,6 +214,14 @@ describe('worktreeRisks: counting', () => {
     expect((await risksOf(wt)).changes).toBe(2);
   });
 
+  it('counts a change made while main is being fetched', async () => {
+    withOrigin();
+    const wt = addWorktree(repo, join(root, 'wt'), 'feat');
+    commit(wt, 'a');
+    extOrigin(repo, root, `echo new > '${join(wt, 'during-fetch')}'; exit 1`);
+    expect((await risksOf(wt)).changes).toBe(1);
+  });
+
   it('reports no changes for a worktree whose directory is gone', async () => {
     withOrigin();
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
@@ -215,6 +240,20 @@ describe('worktreeRisks: fetching', () => {
     setOriginMain(stale);
     expect(await risksOf(wt)).toEqual(NOTHING_AHEAD);
     expect(git(repo, 'rev-parse', 'refs/remotes/origin/main')).toBe(head);
+  });
+
+  it('counts a commit of a detached worktree made while main is being fetched', async () => {
+    withOrigin();
+    const stale = git(repo, 'rev-parse', 'refs/remotes/origin/main');
+    const wt = addWorktree(repo, join(root, 'wt'), 'feat');
+    const merged = commit(wt, 'a');
+    git(wt, 'checkout', '-q', '--detach');
+    git(wt, 'push', '-q', 'origin', `${merged}:refs/heads/main`);
+    setOriginMain(stale);
+    const commitB = `cd '${wt}' && echo b > b && git add b && git -c user.name=t -c user.email=t@t commit -q -m b`;
+    await withFetchAs(`git "$@" || exit\n${commitB}`, async () => {
+      expect(await risksOf(wt)).toEqual({ ...NOTHING_AHEAD, ahead: 1 });
+    });
   });
 
   it("updates origin/main when origin's fetch refspec does not map main", async () => {
@@ -268,26 +307,16 @@ describe('worktreeRisks: fetching', () => {
 
   it('reports origin/main missing after a fetch that succeeded without it', async () => {
     git(repo, 'remote', 'add', 'origin', join(root, 'nowhere'));
-    const bin = join(root, 'bin');
-    mkdirSync(bin);
-    writeFileSync(
-      join(bin, 'git'),
-      `#!/bin/sh\nfor a; do [ "$a" = fetch ] && exit 0; done\nPATH='${process.env['PATH'] ?? ''}' exec git "$@"\n`,
-      { mode: 0o755 },
-    );
     const wt = addWorktree(repo, join(root, 'wt'), 'feat');
     commit(wt, 'a');
-    vi.stubEnv('PATH', `${bin}:${process.env['PATH'] ?? ''}`);
-    try {
+    await withFetchAs('exit 0', async () => {
       expect(await risksOf(wt)).toEqual({
         ...NOTHING_AHEAD,
         remote: null,
         ahead: 1,
         fetchFailed: { ref: 'origin/main', reason: 'origin/main is missing after the fetch' },
       });
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    });
   });
 
   it('fetches without prompting for credentials', async () => {

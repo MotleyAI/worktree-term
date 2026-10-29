@@ -25,6 +25,7 @@ export const ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   'platform.files': ['fs'],
   'platform.dialer': ['net', 'child_process'],
   'platform.install': ['fs', 'child_process'],
+  'platform.memory': ['fs'],
   'daemon.worktrees': ['fs', 'child_process'],
   'daemon.terminals': ['@homebridge/node-pty-prebuilt-multiarch', '@xterm/headless', '@xterm/addon-serialize', 'fs'],
   'daemon.state': ['zod'],

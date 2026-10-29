@@ -8,11 +8,11 @@ The CLI is `wtd`: a daemon per host owns the PTYs and git watches, and a local h
 
 Three running components, all started from the one `wtd` binary:
 
-| Component | Runs | Owns |
-| --- | --- | --- |
-| Daemon (`wtd daemon`) | One per host, independent of any page or hub | The PTYs and their screen mirrors, git worktree watches, and `~/.local/state/worktree-term/state.json`: each worktree's terminal tabs, splits, active tab and checkbox |
-| Hub (`wtd hub`, started by `wtd ui`) | One on the machine you browse from | `~/.config/worktree-term/config.json` (repos, roots, presets, hosts and their hub ports); nothing else |
-| Page | The browser | Rendering (xterm.js) and view preferences in `localStorage`: selected repo, selected worktree per repo, "checked only" filter, name search, sidebar width |
+| Component                            | Runs                                         | Owns                                                                                                                                                                   |
+| ------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daemon (`wtd daemon`)                | One per host, independent of any page or hub | The PTYs and their screen mirrors, git worktree watches, and `~/.local/state/worktree-term/state.json`: each worktree's terminal tabs, splits, active tab and checkbox |
+| Hub (`wtd hub`, started by `wtd ui`) | One on the machine you browse from           | `~/.config/worktree-term/config.json` (repos, roots, presets, hosts and their hub ports); nothing else                                                                 |
+| Page                                 | The browser                                  | Rendering (xterm.js) and view preferences in `localStorage`: selected repo, selected worktree per repo, "checked only" filter, name search, sidebar width              |
 
 - **The browser talks only to the hub**: the hub serves the page and one WebSocket per page, on `127.0.0.1` only.
 - **The daemon manages the terminals.** A terminal lives until it is closed, its worktree is removed, or its program exits cleanly; one that fails stays open, marked, until closed. Closing the page or restarting the hub does not end it.

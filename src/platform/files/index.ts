@@ -12,10 +12,12 @@ export interface HostPaths {
   lock: string;
   state: string;
   log: string;
+  memoryLog: string;
   configDir: string;
   config: string;
   hubToken: string;
   hubLog: string;
+  hubMemoryLog: string;
   hubLock: string;
   hubRecord: string;
   unitFile: string;
@@ -33,6 +35,8 @@ export const UNIT_NAME = 'worktree-term-daemon.service';
 /** Longest unix socket path, in bytes, that fits `sockaddr_un`. */
 const MAX_SOCKET_PATH = 107;
 const LOG_ROTATE_BYTES = 1024 * 1024;
+const LINE_LOG_ROTATE_BYTES = 16 * 1024 * 1024;
+const LINE_LOG_KEPT = 3;
 const LOCK_RETRY_MS = 50;
 const LOCK_WAIT_MS = 5000;
 
@@ -58,10 +62,12 @@ export const hostPaths = ({ env, home, host }: HostIdentity): HostPaths => {
     lock: join(runDir, `${name}.lock`),
     state: join(stateDir, 'state.json'),
     log: join(stateDir, 'daemon.log'),
+    memoryLog: join(stateDir, 'memory.log'),
     configDir,
     config: join(configDir, 'config.json'),
     hubToken: join(stateDir, 'hub-token'),
     hubLog: join(stateDir, 'hub.log'),
+    hubMemoryLog: join(stateDir, 'hub-memory.log'),
     hubLock: join(runDir, 'hub.lock'),
     hubRecord: join(runDir, 'hub.json'),
     unitFile: join(configHome, 'systemd', 'user', UNIT_NAME),
@@ -279,6 +285,48 @@ export const openLog = async (path: string): Promise<FileHandle> => {
   const handle = await open(path, 'a', 0o600);
   await handle.chmod(0o600);
   return handle;
+};
+
+const sizeOf = async (path: string): Promise<number> => {
+  try {
+    return (await stat(path)).size;
+  } catch (error) {
+    if (hasCode(error, 'ENOENT') || hasCode(error, 'ENOTDIR')) return 0;
+    throw error;
+  }
+};
+
+/** Shifts `<path>.2` to `.3`, `.1` to `.2` and `path` to `.1`, skipping missing files. */
+const rotate = async (path: string): Promise<void> => {
+  for (let n = LINE_LOG_KEPT - 1; n >= 0; n--) {
+    const from = n === 0 ? path : `${path}.${String(n)}`;
+    try {
+      await rename(from, `${path}.${String(n + 1)}`); // NOSONAR(S9382) — renames must run in order
+    } catch (error) {
+      if (!hasCode(error, 'ENOENT')) throw error;
+    }
+  }
+};
+
+/**
+ * Appends `line` and a newline to the owner-only log at `path` in one write, first rotating a log the
+ * line would take over 16 MiB; a failed rotation is reported and retried on the next append.
+ */
+export const appendLogLine = async (path: string, line: string, report: (error: unknown) => void): Promise<void> => {
+  const data = `${line}\n`;
+  try {
+    const size = await sizeOf(path);
+    if (size > 0 && size + Buffer.byteLength(data) > LINE_LOG_ROTATE_BYTES) await rotate(path);
+  } catch (error) {
+    report(error);
+  }
+  const handle = await open(path, 'a', 0o600);
+  try {
+    await handle.chmod(0o600);
+    await handle.appendFile(data);
+  } finally {
+    await handle.close();
+  }
 };
 
 export interface StartLock {

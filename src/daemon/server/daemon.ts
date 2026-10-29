@@ -1,7 +1,14 @@
 import type { Socket } from 'node:net';
 import { FLOW_HIGH, DAEMON_PROTOCOL_VERSION, type Layout, type Terminal, type Worktree } from '../../protocol/index.js';
 import { pruneLayout, type StateStore } from '../state/index.js';
-import { SpawnError, type OutputSink, type TerminalEvents, type TerminalProcess, type TerminalSpec } from '../terminals/index.js';
+import {
+  SpawnError,
+  type MirrorStats,
+  type OutputSink,
+  type TerminalEvents,
+  type TerminalProcess,
+  type TerminalSpec,
+} from '../terminals/index.js';
 import {
   NotARepoError,
   type discoverRepos,
@@ -16,6 +23,8 @@ import { Peer, type Event } from './peer.js';
 
 /** Most live terminals per repo. */
 const MAX_TERMINALS = 1024;
+/** Most closed terminals remembered for the memory log. */
+const MAX_CLOSED = 256;
 
 type ErrorCode = Extract<Event, { t: 'error' }>['code'];
 type Correlated = Extract<Request, { req: number }>;
@@ -43,6 +52,30 @@ interface TermEntry {
   worktree: string;
   preset: string;
   process: TerminalProcess;
+}
+
+/** A live terminal as the memory log sees it. */
+export interface LiveTerminalView {
+  termId: number;
+  repo: string;
+  worktree: string;
+  preset: string;
+  /** The shell's pid, which leads its session. */
+  pid: number;
+  mirror: MirrorStats;
+}
+
+/** A closed terminal whose leftover processes the memory log attributes to it. */
+export interface ClosedTerminalView {
+  termId: number;
+  pid: number;
+  worktree: string;
+  preset: string;
+}
+
+export interface MemoryView {
+  terminals: LiveTerminalView[];
+  closed: ClosedTerminalView[];
 }
 
 /** What the daemon composes: worktree watching and listing, discovery, and terminals. */
@@ -83,6 +116,8 @@ export class Daemon {
   private readonly spawnsIn = new Map<string, Set<Promise<TerminalProcess>>>();
   /** Worktrees being removed; no terminal starts in them meanwhile. */
   private readonly removing = new Set<string>();
+  /** The last MAX_CLOSED terminals closed, oldest first. */
+  private readonly closed = new Map<number, ClosedTerminalView>();
   /** Terminals closed but not yet reaped. */
   private readonly reaping = new Set<Promise<void>>();
   private stopping = false;
@@ -118,6 +153,26 @@ export class Daemon {
     while (this.reaping.size > 0) await Promise.all(this.reaping); // NOSONAR(S9382) — re-checks for closes started meanwhile
     await this.options.store.flush();
     for (const peer of this.peers) peer.end();
+  }
+
+  /** Live terminals with their shell pid and mirror, and remembered closed ones. */
+  memoryView(): MemoryView {
+    return {
+      terminals: [...this.terminals.values()].map((t) => ({
+        termId: t.termId,
+        repo: t.repo,
+        worktree: t.worktree,
+        preset: t.preset,
+        pid: t.process.pid,
+        mirror: t.process.mirrorStats(),
+      })),
+      closed: [...this.closed.values()],
+    };
+  }
+
+  /** Stops remembering the closed terminals `termIds`. */
+  forgetClosed(termIds: readonly number[]): void {
+    for (const termId of termIds) this.closed.delete(termId);
   }
 
   private receive(peer: Peer, outcome: GateOutcome): void {
@@ -359,9 +414,10 @@ export class Daemon {
     if (this.terminalsOf(repo).length + (this.spawning.get(repo) ?? 0) >= MAX_TERMINALS) {
       throw new RequestError('busy', `${repo} has ${String(MAX_TERMINALS)} terminals`);
     }
-    let termId = 0;
+    const termId = this.nextTermId++;
+    const env = { ...this.options.env, WTD_TERMINAL: `${String(process.pid)}/${this.options.instance}/${String(termId)}` };
     const spawn = this.options.services.spawnTerminal(
-      { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env: this.options.env },
+      { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env },
       {
         activity: (unseen, state) => {
           this.broadcast(repo, { t: 'activity', termId, unseen, state });
@@ -392,7 +448,6 @@ export class Daemon {
       inWorktree.delete(spawn);
       if (inWorktree.size === 0) this.spawnsIn.delete(m.worktree);
     }
-    termId = this.nextTermId++;
     const term: TermEntry = { termId, repo, worktree: m.worktree, preset: m.preset, process: spawned };
     this.terminals.set(termId, term);
     peer.send({ t: 'termCreated', req: m.req, term: describe(term) });
@@ -510,6 +565,11 @@ export class Daemon {
   /** Removes `term` and ends its process. */
   private closeTerminal(term: TermEntry): void {
     this.terminals.delete(term.termId);
+    this.closed.set(term.termId, { termId: term.termId, pid: term.process.pid, worktree: term.worktree, preset: term.preset });
+    for (const oldest of this.closed.keys()) {
+      if (this.closed.size <= MAX_CLOSED) break;
+      this.closed.delete(oldest);
+    }
     const reaped = term.process.close().finally(() => this.reaping.delete(reaped));
     this.reaping.add(reaped);
     for (const peer of this.peers) if (peer.visible.has(term.termId)) this.showOnly(peer, [...peer.visible]);

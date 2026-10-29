@@ -368,7 +368,10 @@ export class HubClient {
         return;
       case 'error':
         // A superseded opening's error, sent before the hub ended it, is no notice.
-        if (m.req === null || (!this.pending.resolve(m.req, { ok: false, code: m.code, message: m.message }) && !this.openings.isSuperseded(m.req))) {
+        if (
+          m.req === null ||
+          (!this.pending.resolve(m.req, { ok: false, code: m.code, message: m.message }) && !this.openings.isSuperseded(m.req))
+        ) {
           this.store.notice.value = `${m.code}: ${m.message}`;
         }
         if (m.req !== null) this.opening(m);

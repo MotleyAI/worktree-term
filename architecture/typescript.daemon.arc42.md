@@ -15,6 +15,7 @@ flowchart TD
   protocol["Protocol"]
   subgraph platform["Platform"]
     platform__files["Files"]
+    platform__memory["Memory"]
   end
   subgraph daemon["Daemon"]
     daemon__worktrees["Worktrees"]
@@ -30,12 +31,13 @@ flowchart TD
   daemon__main --> daemon__worktrees
   daemon__main --> daemon__terminals
   daemon__main --> daemon__state
+  daemon__main --> platform__memory
   daemon__server --> daemon__worktrees
   daemon__server --> daemon__terminals
   daemon__server --> daemon__state
   cli --> daemon__main
   classDef leaf fill:none;
-  class protocol,platform__files,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,cli leaf;
+  class protocol,platform__files,platform__memory,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,cli leaf;
 ```
 <!-- /likec4:daemon -->
 

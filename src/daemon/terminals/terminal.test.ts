@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AttentionState } from './attention.js';
 import { TerminalProcess } from './terminal.js';
 
@@ -190,5 +190,50 @@ describe('attention signals in the output', () => {
     await sleep(200);
     expect(term.unseen).toBe(false);
     expect(events.slice(before)).toEqual([]);
+  });
+});
+
+describe('process and mirror figures', () => {
+  let home: string;
+  let term: TerminalProcess | null;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'wtd-figures-'));
+    term = null;
+  });
+
+  afterEach(async () => {
+    await term?.close();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const run = async (command: string): Promise<TerminalProcess> => {
+    term = await TerminalProcess.spawn(
+      { cwd: home, command, cols: 80, rows: 24, env: { ...process.env, HOME: home, SHELL: '/bin/bash' } },
+      { activity: () => undefined, exited: () => undefined },
+    );
+    return term;
+  };
+
+  it("gives the shell's pid", async () => {
+    const started = await run('echo $$ > pid; exec sleep 60');
+    const file = join(home, 'pid');
+    await vi.waitFor(() => {
+      expect(readFileSync(file, 'utf8')).toMatch(/\n$/);
+    });
+    expect(started.pid).toBe(Number(readFileSync(file, 'utf8')));
+  });
+
+  it('counts the lines of the normal and the alternate buffer, and the columns', async () => {
+    const started = await run(String.raw`seq 1 300; read -r _; printf '\033[?1049hALT'; exec sleep 60`);
+    await vi.waitFor(() => {
+      expect(started.mirrorStats().lines).toBeGreaterThanOrEqual(300);
+    });
+    const normal = started.mirrorStats().lines;
+    expect(started.mirrorStats().cols).toBe(80);
+    started.write(Buffer.from('\r'));
+    await vi.waitFor(() => {
+      expect(started.mirrorStats().lines).toBeGreaterThanOrEqual(normal + 24);
+    });
   });
 });

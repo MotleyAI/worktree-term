@@ -25,6 +25,7 @@ describe('model', () => {
       ['platform.files', 'src/platform/files', true],
       ['platform.dialer', 'src/platform/dialer', true],
       ['platform.install', 'src/platform/install', true],
+      ['platform.memory', 'src/platform/memory', true],
       ['daemon.worktrees', 'src/daemon/worktrees', true],
       ['daemon.terminals', 'src/daemon/terminals', true],
       ['daemon.state', 'src/daemon/state', true],
@@ -47,7 +48,8 @@ describe('model', () => {
     expect(model.arrows).toContainEqual({ from: 'cli', to: 'daemon.main' });
     expect(model.arrows).toContainEqual({ from: 'daemon', to: 'protocol' });
     expect(model.arrows).toContainEqual({ from: 'platform.install', to: 'platform.dialer' });
-    expect(model.arrows).toHaveLength(38);
+    expect(model.arrows).toContainEqual({ from: 'daemon.main', to: 'platform.memory' });
+    expect(model.arrows).toHaveLength(41);
   });
 });
 

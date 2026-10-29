@@ -87,6 +87,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
             await target.sync();
           };
         }
+        if (key === 'appendFile') {
+          return async (data: string | Uint8Array): Promise<void> => {
+            hooks.calls.push(`append ${path} ${String(Buffer.byteLength(data))}`);
+            await target.appendFile(data);
+          };
+        }
         if ((key === 'write' || key === 'writeFile') && failing(path)) {
           return async (data: string | Uint8Array): Promise<never> => {
             await target.write(half(data));
@@ -120,10 +126,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         }
       }
       return real.writeFile(path, data, options);
-    },
-    appendFile: async (path: PathLike, data: string | Uint8Array, options?: object): Promise<void> => {
-      hooks.calls.push(`append ${String(path)} ${String(Buffer.byteLength(data))}`);
-      await real.appendFile(path, data, options);
     },
     rename: async (from: PathLike, to: PathLike): Promise<void> => {
       hooks.calls.push(`rename ${String(from)} ${String(to)}`);
@@ -564,6 +566,12 @@ describe('memory log lines', () => {
     expect(modeOf(log())).toBe(0o600);
     expect(hooks.calls.filter((call) => call.startsWith('append '))).toEqual([`append ${log()} 8`, `append ${log()} 9`]);
     expect(reported).toEqual([]);
+  });
+
+  it('makes an existing log owner-only before appending', async () => {
+    writeFileSync(log(), 'old\n', { mode: 0o644 });
+    await appendLogLine(log(), 'new', report);
+    expect(modeOf(log())).toBe(0o600);
   });
 
   it('keeps appending while the log stays within 16 MiB', async () => {

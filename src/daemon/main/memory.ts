@@ -109,14 +109,59 @@ interface Placement {
   found: Set<number>;
 }
 
-/** Places each process of `table` by the first rule that applies; see the daemon memory log spec. */
+/** Where one process belongs; `closed` is this daemon's closed terminal it is attributed to. */
+type Slot =
+  | { kind: 'member' | 'detached'; termId: number }
+  | { kind: 'foreign' }
+  | { kind: 'escaped'; tag: string; closed: number | null };
+
+interface PlaceContext {
+  self: number;
+  instance: string;
+  lookup: ProcessLookup;
+  live: Set<number>;
+  closedBySession: Map<number, ClosedTerminalView>;
+  trees: { termId: number; shell: number; tree: Set<number> }[];
+  /** Memoised per pid. */
+  daemons: Map<number, Promise<boolean>>;
+}
+
+const runsDaemon = (ctx: PlaceContext, pid: number): Promise<boolean> => {
+  let known = ctx.daemons.get(pid);
+  if (known === undefined) {
+    known = ctx.lookup.args(pid).then(isWtdDaemon);
+    ctx.daemons.set(pid, known);
+  }
+  return known;
+};
+
+/** The first placement rule that applies to `p`; see the daemon memory log spec. */
+const slotOf = async (ctx: PlaceContext, p: ProcessInfo): Promise<Slot | null> => {
+  const member = ctx.trees.find((t) => p.sid === t.shell || p.pid === t.shell || t.tree.has(p.pid));
+  if (member !== undefined) return { kind: 'member', termId: member.termId };
+  const tag = await ctx.lookup.tag(p.pid);
+  const parsed = tag === null ? null : parseTag(tag);
+  const ours = parsed !== null && parsed.pid === ctx.self && parsed.instance === ctx.instance ? parsed.termId : null;
+  if (ours !== null && ctx.live.has(ours)) return { kind: 'detached', termId: ours };
+  if (parsed !== null && parsed.pid !== ctx.self && (await runsDaemon(ctx, parsed.pid))) return { kind: 'foreign' };
+  if (tag !== null) return { kind: 'escaped', tag, closed: ours };
+  const session = ctx.closedBySession.get(p.sid);
+  if (session === undefined) return null;
+  return { kind: 'escaped', tag: `${String(ctx.self)}/${ctx.instance}/${String(session.termId)}`, closed: session.termId };
+};
+
+/** Places each process of `table` by {@link slotOf}. */
 const place = async (input: DaemonSampleInput, table: readonly ProcessInfo[]): Promise<Placement> => {
-  const { pid: self, instance, view, lookup } = input;
-  const ownTag = (termId: number): string => `${String(self)}/${instance}/${String(termId)}`;
-  const live = new Map(view.terminals.map((t) => [t.termId, t]));
-  const closedById = new Map(view.closed.map((t) => [t.termId, t]));
-  const closedBySession = new Map(view.closed.map((t) => [t.pid, t]));
-  const trees = view.terminals.map((t) => ({ termId: t.termId, shell: t.pid, tree: descendants(table, t.pid) }));
+  const { view } = input;
+  const ctx: PlaceContext = {
+    self: input.pid,
+    instance: input.instance,
+    lookup: input.lookup,
+    live: new Set(view.terminals.map((t) => t.termId)),
+    closedBySession: new Map(view.closed.map((t) => [t.pid, t])),
+    trees: view.terminals.map((t) => ({ termId: t.termId, shell: t.pid, tree: descendants(table, t.pid) })),
+    daemons: new Map(),
+  };
   const result: Placement = {
     members: new Map(view.terminals.map((t) => [t.termId, []])),
     detached: new Map(view.terminals.map((t) => [t.termId, []])),
@@ -124,51 +169,20 @@ const place = async (input: DaemonSampleInput, table: readonly ProcessInfo[]): P
     placed: new Set(),
     found: new Set(),
   };
-  const daemons = new Map<number, Promise<boolean>>();
-  const runsDaemon = (pid: number): Promise<boolean> => {
-    let known = daemons.get(pid);
-    if (known === undefined) {
-      known = lookup.args(pid).then(isWtdDaemon);
-      daemons.set(pid, known);
-    }
-    return known;
-  };
-  const escape = (tag: string, p: ProcessInfo): void => {
-    result.escaped.set(tag, [...(result.escaped.get(tag) ?? []), p]);
-    result.placed.add(p.pid);
-  };
-
   for (const p of table) {
-    if (p.pid === self) continue;
-    const member = trees.find((t) => p.sid === t.shell || p.pid === t.shell || t.tree.has(p.pid));
-    if (member !== undefined) {
-      result.members.get(member.termId)?.push(p);
-      result.placed.add(p.pid);
-      continue;
-    }
-    const tag = await lookup.tag(p.pid); // NOSONAR(S9382) — one environ read at a time
-    const parsed = tag === null ? null : parseTag(tag);
-    if (parsed !== null && parsed.pid === self && parsed.instance === instance && live.has(parsed.termId)) {
-      result.detached.get(parsed.termId)?.push(p);
-      result.placed.add(p.pid);
-      continue;
-    }
-    if (parsed !== null && parsed.pid !== self && (await runsDaemon(parsed.pid))) {
-      result.placed.add(p.pid);
-      continue;
-    }
-    if (tag !== null) {
-      if (parsed !== null && parsed.pid === self && parsed.instance === instance) result.found.add(parsed.termId);
-      escape(tag, p);
-      continue;
-    }
-    const session = closedBySession.get(p.sid);
-    if (session !== undefined) {
-      result.found.add(session.termId);
-      escape(ownTag(session.termId), p);
+    if (p.pid === ctx.self) continue;
+    const slot = await slotOf(ctx, p); // NOSONAR(S9382) — one environ read at a time
+    if (slot === null) continue;
+    result.placed.add(p.pid);
+    if (slot.kind === 'member') result.members.get(slot.termId)?.push(p);
+    else if (slot.kind === 'detached') result.detached.get(slot.termId)?.push(p);
+    else if (slot.kind === 'escaped') {
+      if (slot.closed !== null) result.found.add(slot.closed);
+      result.escaped.set(slot.tag, [...(result.escaped.get(slot.tag) ?? []), p]);
     }
   }
-  for (const termId of result.found) if (!closedById.has(termId)) result.found.delete(termId);
+  const closedIds = new Set(view.closed.map((t) => t.termId));
+  for (const termId of result.found) if (!closedIds.has(termId)) result.found.delete(termId);
   return result;
 };
 

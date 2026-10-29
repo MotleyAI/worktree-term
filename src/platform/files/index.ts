@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
-import { appendFile, link, lstat, mkdir, open, readdir, readFile, rename, stat, unlink, chmod, type FileHandle } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, readFile, rename, stat, unlink, chmod, type FileHandle } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -320,7 +320,13 @@ export const appendLogLine = async (path: string, line: string, report: (error: 
   } catch (error) {
     report(error);
   }
-  await appendFile(path, data, { mode: 0o600 });
+  const handle = await open(path, 'a', 0o600);
+  try {
+    await handle.chmod(0o600);
+    await handle.appendFile(data);
+  } finally {
+    await handle.close();
+  }
 };
 
 export interface StartLock {

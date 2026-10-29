@@ -183,7 +183,7 @@ describe('daemon memory log', () => {
   it("tags a terminal's environment with the daemon's pid, its instance and the terminal id", async () => {
     const term = await shell();
     client.sendInput(term.termId, 'echo "tag=$WTD_TERMINAL"\r');
-    await client.waitOutput(term.termId, `tag=${tagOf(term.termId)}\r\n`);
+    await expect(client.waitOutput(term.termId, `tag=${tagOf(term.termId)}\r\n`)).resolves.toBeUndefined();
   });
 
   it("logs a terminal's tree with its members' memory", async () => {
@@ -305,7 +305,8 @@ describe('hub memory log', () => {
     await host.startHub(ENV);
     await host.session();
     const link = await waitUntil(() => ssh.livePids('box')[0], 'the SSH link to box', 10_000);
-    await sampleWhere(log(), hubLine, (l) => l.children?.top.some((t) => t.pid === link) === true);
+    const line = await sampleWhere(log(), hubLine, (l) => l.children?.top.some((t) => t.pid === link) === true);
+    expect(line.children?.top.find((t) => t.pid === link)?.rss).toBeGreaterThan(0);
   });
 
   it("counts neither the daemon it started nor its terminals' processes among the hub's children", async () => {

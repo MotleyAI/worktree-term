@@ -7,7 +7,7 @@ import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction, statusText } from './hosts.js';
 import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
 import { aggregate, markTitle, worktreeTitle, type Aggregate } from './marks.js';
-import { dropPosition, pickerKey, presetFromForm } from './picker.js';
+import { choicesTakeFocus, dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import {
@@ -691,6 +691,7 @@ const PresetList = ({
   cancel,
   remove,
   reorder,
+  keyReorder,
   focusFirst,
 }: {
   presets: readonly Preset[];
@@ -702,6 +703,8 @@ const PresetList = ({
   remove: (name: string) => void;
   /** Moves the named preset to position `to`, by dragging or Alt+Up/Down; resolves with whether the hub did. */
   reorder: (name: string, to: number) => Promise<boolean>;
+  /** Whether Alt+Up/Down move the highlighted preset; otherwise they stay the page's worktree shortcuts. */
+  keyReorder: boolean;
   /** Whether the list takes the keyboard focus when shown; it follows the highlighted option once it has it. */
   focusFirst: boolean;
 }) => {
@@ -740,6 +743,7 @@ const PresetList = ({
       ref={list}
       onKeyDown={(event) => {
         if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+          if (!keyReorder) return;
           event.preventDefault();
           event.stopPropagation();
           moveBy(event.key === 'ArrowUp' ? -1 : 1);
@@ -956,17 +960,24 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
           view.removePreset(name);
         }}
         reorder={(name, to) => view.movePreset(name, to)}
+        keyReorder
       />
       <PresetAdder view={view} presets={presets} />
     </dialog>
   );
 };
 
-/** The presets a worktree without terminals offers; with `emptied`, they take a keyboard focus left on the page body. */
-const PresetChoices = ({ view, presets, emptied }: { view: View; presets: readonly Preset[]; emptied: boolean }) => {
+/** The presets a worktree without terminals offers; on showing, they take the keyboard focus as `choicesTakeFocus` says. */
+const PresetChoices = ({ manager, view, presets }: { manager: TerminalManager; view: View; presets: readonly Preset[] }) => {
   const [index, setIndex] = useState(0);
-  // Decided at mount, after the closed terminal's xterm left the document.
-  const [focus] = useState(() => emptied && (document.activeElement === null || document.activeElement === document.body));
+  const [focus] = useState(() => {
+    const active = document.activeElement;
+    const focused =
+      active instanceof HTMLElement
+        ? { tagName: active.tagName, type: active.getAttribute('type'), isContentEditable: active.isContentEditable }
+        : null;
+    return choicesTakeFocus(focused, manager.owns(active), view.modal.peek());
+  });
   return (
     <div class="preset-choices" data-testid="preset-choices">
       <div class="title">Start a terminal</div>
@@ -984,6 +995,7 @@ const PresetChoices = ({ view, presets, emptied }: { view: View; presets: readon
           view.removePreset(name);
         }}
         reorder={(name, to) => view.movePreset(name, to)}
+        keyReorder={false}
       />
       <PresetAdder view={view} presets={presets} />
     </div>
@@ -1061,13 +1073,9 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
   const presets = client.store.presets.value;
   const focused = view.focused.value;
   const empty = view.termTabs.value.tabs.length === 0;
-  const worktree = view.worktree.value;
-  /** The worktree and whether it was empty at the last render. */
-  const last = useRef<{ worktree: string | null; empty: boolean }>({ worktree, empty });
-  const emptied = empty && last.current.worktree === worktree && !last.current.empty;
-  useLayoutEffect(() => {
-    last.current = { worktree, empty };
-  });
+  const tab = view.tab.value;
+  // Each worktree gets its own choices, which take the focus on showing.
+  const choicesKey = `${tab === null ? '' : repoKey(tab.host, tab.repo)}\n${view.worktree.value ?? ''}`;
   return (
     <div class="terminal-area" ref={area}>
       {view.panes.value.map((pane) => (
@@ -1082,7 +1090,9 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
       {view.dividers.value.map((divider) => (
         <DividerHandle key={divider.path.join('.')} divider={divider} view={view} />
       ))}
-      {empty && view.canCreate.value && presets !== null && <PresetChoices view={view} presets={presets} emptied={emptied} />}
+      {empty && view.canCreate.value && presets !== null && (
+        <PresetChoices key={choicesKey} manager={manager} view={view} presets={presets} />
+      )}
       {presets !== null && <PresetPicker view={view} presets={presets} />}
     </div>
   );

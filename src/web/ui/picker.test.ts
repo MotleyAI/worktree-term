@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Layout } from '../../protocol/index.js';
-import { dropPosition, pickerKey, pickerValid, presetFromForm, type PickerContext, type PickerWorld } from './picker.js';
+import {
+  choicesTakeFocus,
+  dropPosition,
+  pickerKey,
+  pickerValid,
+  presetFromForm,
+  type FocusedLike,
+  type PickerContext,
+  type PickerWorld,
+} from './picker.js';
 
 type Pane = Layout['tabs'][number]['root'];
 
@@ -149,5 +158,44 @@ describe('dropPosition', () => {
     ['between two earlier presets', 3, 1, 1],
   ])('places a preset dropped %s', (_case, from, slot, position) => {
     expect(dropPosition(from, slot)).toBe(position);
+  });
+});
+
+describe('choicesTakeFocus', () => {
+  const el = (tagName: string, type: string | null = null, isContentEditable = false): FocusedLike => ({
+    tagName,
+    type,
+    isContentEditable,
+  });
+
+  it.each<[string, FocusedLike | null]>([
+    ['nothing', null],
+    ['the page body', el('BODY')],
+    ['a sidebar button', el('BUTTON')],
+    ['a checkbox', el('INPUT', 'checkbox')],
+    ['a focusable div', el('DIV')],
+  ])('takes the focus from %s', (_name, focused) => {
+    expect(choicesTakeFocus(focused, false, false)).toBe(true);
+  });
+
+  it.each<[string, FocusedLike]>([
+    ['a text input without a type', el('INPUT')],
+    ['a text input', el('INPUT', 'text')],
+    ['a search input', el('INPUT', 'search')],
+    ['a textarea', el('TEXTAREA')],
+    ['a select', el('SELECT')],
+    ['an editable element', el('DIV', null, true)],
+  ])('leaves the focus in %s', (_name, focused) => {
+    expect(choicesTakeFocus(focused, false, false)).toBe(false);
+  });
+
+  it('takes the focus from a terminal, whose input is a textarea', () => {
+    expect(choicesTakeFocus(el('TEXTAREA'), true, false)).toBe(true);
+  });
+
+  it('leaves the focus while a picker or dialog owns the keys', () => {
+    expect(choicesTakeFocus(null, false, true)).toBe(false);
+    expect(choicesTakeFocus(el('BODY'), false, true)).toBe(false);
+    expect(choicesTakeFocus(el('TEXTAREA'), true, true)).toBe(false);
   });
 });

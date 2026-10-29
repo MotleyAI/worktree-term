@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { decodeMessage } from '../../src/protocol/index.js';
-import { byTestId, pane, terminalBox, termTab, TID } from './contract.js';
+import { byTestId, pane, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
   activeTerm,
   confirmClose,
@@ -12,6 +12,7 @@ import {
   newTerminal,
   openPage,
   openUi,
+  presetRequests,
   PRESETS,
   ready,
   screenOf,
@@ -130,6 +131,71 @@ test.describe('terminal tabs', () => {
     await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(page.locator(byTestId(TID.termTab))).toHaveCount(0);
     expect(wire.sentToHost(LOCAL).filter((m) => m.t === 'createTerm')).toEqual([]);
+  });
+
+  test('selecting a worktree without terminals focuses its choices, and Down then Enter starts the second preset', async ({
+    hub,
+    page,
+    wire,
+  }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, feat);
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await expect(options.nth(0)).toBeFocused();
+
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(1)).toBeFocused();
+    const mark = wire.markSent();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => createsSent(wire, mark)).toEqual([expect.objectContaining({ worktree: feat, preset: PRESETS[1].name })]);
+  });
+
+  test('Alt+Down from focused choices selects the next worktree, whose choices take the focus from the first preset', async ({
+    hub,
+    page,
+    wire,
+  }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [a = '', b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, a);
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toBeFocused();
+
+    const mark = wire.markSent();
+    await page.keyboard.press('Alt+ArrowDown');
+    await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(0)).toBeFocused();
+    await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(options).toHaveText(PRESETS.map((p) => p.name));
+    expect(presetRequests(wire, mark)).toEqual([]);
+    await page.keyboard.press('1');
+    await expect.poll(() => createsSent(wire, mark)).toEqual([expect.objectContaining({ worktree: b, preset: PRESETS[0].name })]);
+  });
+
+  test('selecting a worktree without terminals by Alt+Down from the worktree search leaves the focus in the search', async ({
+    hub,
+    page,
+  }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [a = '', b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, a);
+    const search = page.locator(byTestId(TID.worktreeSearch));
+    await search.focus();
+
+    await page.keyboard.press('Alt+ArrowDown');
+    await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(byTestId(TID.presetChoices))).toBeVisible();
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(search).toBeFocused();
   });
 
   test('a live terminal missing from the layout is shown as a tab', async ({ hub, page }) => {

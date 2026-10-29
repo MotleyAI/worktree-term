@@ -53,6 +53,29 @@ export const pickerKey = (key: string, index: number, count: number): PickerKey 
   }
 };
 
+/** The parts of the focused element `choicesTakeFocus` reads. */
+export interface FocusedLike {
+  tagName: string;
+  /** The `type` attribute, if any. */
+  type: string | null;
+  isContentEditable: boolean;
+}
+
+const CHOICE_TYPES = new Set(['checkbox', 'radio', 'button', 'submit', 'reset']);
+
+/** Whether a worktree's preset choices take the keyboard focus on showing: not from a dialog, nor from a text field outside the terminals. */
+export const choicesTakeFocus = (focused: FocusedLike | null, inTerminal: boolean, modal: boolean): boolean => {
+  if (modal) return false;
+  if (focused === null || inTerminal) return true;
+  const tag = focused.tagName.toUpperCase();
+  const field =
+    focused.isContentEditable ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    (tag === 'INPUT' && !CHOICE_TYPES.has(focused.type?.toLowerCase() ?? ''));
+  return !field;
+};
+
 const MAX_PRESET_NAME = 64;
 const MAX_PRESET_COMMAND = 4096;
 

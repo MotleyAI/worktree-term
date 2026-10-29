@@ -202,8 +202,15 @@ const parsePressure = (text: string, path: string): Pressure => {
   return { some: figures('some'), full: figures('full') };
 };
 
+/** Null when absent or with PSI disabled, where reading fails with `EOPNOTSUPP`. */
 const readPressure = async (path: string): Promise<Pressure | null> => {
-  const text = await readOptional(path);
+  let text: string | null;
+  try {
+    text = await readOptional(path);
+  } catch (error) {
+    if (codeOf(error) === 'EOPNOTSUPP') return null;
+    throw error;
+  }
   return text === null ? null : parsePressure(text, path);
 };
 

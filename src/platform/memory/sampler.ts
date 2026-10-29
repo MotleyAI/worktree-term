@@ -20,9 +20,11 @@ export interface MemorySampler {
   stop: () => void;
 }
 
-/** The base interval: `WTD_MEMORY_SAMPLE_MS` when a positive integer, else 60 s. */
-export const sampleIntervalMs = (value: string | undefined): number =>
-  value !== undefined && /^\d+$/.test(value) && Number(value) > 0 ? Number(value) : DEFAULT_INTERVAL_MS;
+/** The base interval: `WTD_MEMORY_SAMPLE_MS` when a positive safe integer, else 60 s. */
+export const sampleIntervalMs = (value: string | undefined): number => {
+  const ms = value !== undefined && /^\d+$/.test(value) ? Number(value) : 0;
+  return Number.isSafeInteger(ms) && ms > 0 ? ms : DEFAULT_INTERVAL_MS;
+};
 
 /** Appends lines to the rotating owner-only log at `path`. */
 export const logWriter =

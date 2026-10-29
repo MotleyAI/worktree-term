@@ -273,6 +273,19 @@ describe('own cgroup', () => {
     expect(reported).toEqual([]);
   });
 
+  it('gives null pressure with PSI disabled, keeping the other figures', async () => {
+    const dir = fakeCgroup();
+    hooks.failing.set(join(dir, 'memory.pressure'), 'EOPNOTSUPP');
+    expect(await readOwnCgroup(roots, report)).toMatchObject({ current: 123456, pressure: null, pids: [10, 11, 12] });
+    expect(reported).toEqual([]);
+  });
+
+  it('yields null and reports EOPNOTSUPP on a file other than memory.pressure', async () => {
+    hooks.failing.set(join(fakeCgroup(), 'memory.peak'), 'EOPNOTSUPP');
+    expect(await readOwnCgroup(roots, report)).toBeNull();
+    expect(reported).toEqual([expect.objectContaining({ code: 'EOPNOTSUPP' })]);
+  });
+
   it('yields null without memory.current while the system source is still read', async () => {
     rmSync(join(fakeCgroup(), 'memory.current'));
     fakeFile('proc/meminfo', MEMINFO);
@@ -336,6 +349,15 @@ describe('system memory', () => {
 
   it('gives null pressure without PSI, still reading meminfo', async () => {
     fakeFile('proc/meminfo', MEMINFO);
+    const meminfo: unknown = expect.objectContaining({ total: 1000 * KiB });
+    expect(await readSystemMemory(roots, report)).toEqual({ pressure: null, meminfo });
+    expect(reported).toEqual([]);
+  });
+
+  it('gives null pressure with PSI disabled, reporting nothing', async () => {
+    fakeFile('proc/pressure/memory', PSI);
+    fakeFile('proc/meminfo', MEMINFO);
+    hooks.failing.set(join(roots.proc, 'pressure', 'memory'), 'EOPNOTSUPP');
     const meminfo: unknown = expect.objectContaining({ total: 1000 * KiB });
     expect(await readSystemMemory(roots, report)).toEqual({ pressure: null, meminfo });
     expect(reported).toEqual([]);

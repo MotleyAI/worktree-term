@@ -219,6 +219,8 @@ describe('base interval', () => {
     ['0', MINUTE],
     ['-5', MINUTE],
     ['1.5', MINUTE],
+    ['9'.repeat(400), MINUTE],
+    ['9007199254740993', MINUTE],
     ['abc', MINUTE],
     ['', MINUTE],
   ])('WTD_MEMORY_SAMPLE_MS %j gives %d ms', (value, ms) => {

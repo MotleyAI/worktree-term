@@ -155,6 +155,8 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'presets', presets: [{ name: '   ', command: null }] },
   { t: 'presets', presets: [{ name: 'p', command: '' }] },
   { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', root: ninePanes }], active: 0 } },
+  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', name: '  ', root: { term: 1 } }], active: 0 } },
+  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', name: 'n'.repeat(65), root: { term: 1 } }], active: 0 } },
   { t: 'discoverRepos', req: 1, roots: ['GitHub'], depth: 3 },
   { t: 'discoverRepos', req: 1, roots: ['~user/x'], depth: 3 },
   { t: 'discoverRepos', req: 1, roots: ['~/'], depth: 3 },
@@ -331,8 +333,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 8 and browser protocol 11', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 8, browser: 11 });
+  it('is blessed for daemon protocol 9 and browser protocol 12', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 9, browser: 12 });
   });
 
   it('records every sample as valid in its own direction', () => {

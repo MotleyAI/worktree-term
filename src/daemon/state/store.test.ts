@@ -153,6 +153,14 @@ describe('loading', () => {
     });
   });
 
+  it('loads a state file holding a named tab instead of moving it aside', async () => {
+    const named: Layout = { tabs: [{ id: 'a', name: 'build', root: { term: 1 } }], active: 0 };
+    writeFileSync(file, JSON.stringify({ version: 1, repos: [{ repo: REPO, worktrees: [{ path: WT1, checked: true, layout: named }] }] }));
+    const store = await StateStore.load(file);
+    expect(store.checked(REPO)).toEqual([WT1]);
+    expect(readdirSync(dir)).toEqual(['state.json']);
+  });
+
   it('leaves an already pruned state file untouched', async () => {
     const content = JSON.stringify({ version: 1, repos: [{ repo: REPO, worktrees: [{ path: WT1, checked: true, layout: EMPTY }] }] });
     writeFileSync(file, content);
@@ -203,6 +211,17 @@ describe('persisted format', () => {
     const second = await StateStore.load(file);
     expect(sorted(second.checked(REPO))).toEqual(sorted([WT1, WT2]));
     expect(second.checked(OTHER)).toEqual([]);
+  });
+
+  it('stores a named tab and reports it with its name', async () => {
+    const named: Layout = { tabs: [{ id: 'a', name: 'build', root: { term: 1 } }], active: 0 };
+    const store = await StateStore.load(file);
+    await store.setLayout(REPO, WT1, named);
+    expect(store.layout(REPO, WT1)).toEqual(named);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+      version: 1,
+      repos: [{ repo: REPO, worktrees: [{ path: WT1, checked: false, layout: named }] }],
+    });
   });
 
   it('reports layouts per worktree', async () => {

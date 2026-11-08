@@ -552,13 +552,14 @@ describe('nameTab', () => {
 
   it('creates a layout for a terminal when there is none', () => {
     const next = nameTab(null, 4, 'build');
-    expect(next.tabs).toEqual([{ id: expect.any(String), name: 'build', root: leaf(4) }]);
+    expect(next.tabs).toEqual([{ id: next.tabs[0]?.id, name: 'build', root: leaf(4) }]);
     expect(layoutSchema.safeParse(next).success).toBe(true);
   });
 
   it('refuses to add a tab to a layout of 64 tabs', () => {
-    expect(() => nameTab(manyTabs(MAX_TABS), 100, 'build')).toThrow(Error);
-    expect(nameTab(manyTabs(MAX_TABS), 1, 'build').tabs[0]).toEqual({ id: 't1', name: 'build', root: leaf(1) });
+    const full = manyTabs(MAX_TABS);
+    expect(() => nameTab(full, 100, 'build')).toThrow(Error);
+    expect(nameTab(full, 1, 'build').tabs[0]).toEqual({ id: 't1', name: 'build', root: leaf(1) });
   });
 
   it('does not change the layout it is given', () => {

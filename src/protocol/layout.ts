@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { name, termId } from './values.js';
+import { name, presetName, termId } from './values.js';
 
 const MAX_TABS = 64;
 const MAX_DEPTH = 16;
@@ -33,7 +33,7 @@ const distinct = (values: readonly unknown[]): boolean => new Set(values).size =
 
 export const layout = z
   .strictObject({
-    tabs: z.array(z.strictObject({ id: name, root: pane })).max(MAX_TABS),
+    tabs: z.array(z.strictObject({ id: name, name: presetName.optional(), root: pane })).max(MAX_TABS),
     active: z.int().min(0),
   })
   .refine((l) => l.active < Math.max(l.tabs.length, 1), 'active must index a tab, or be 0 without tabs')

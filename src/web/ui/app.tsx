@@ -12,7 +12,9 @@ import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import {
   hasPaneHeaders,
+  MAX_TAB_NAME,
   PANE_HEADER,
+  tabLabel,
   type AddRepoDialog,
   type CloseRequest,
   type Confirmation,
@@ -551,54 +553,125 @@ const WorktreeMenuBox = ({ view, menu }: { view: View; menu: WorktreeMenu }) => 
   );
 };
 
-const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: View }) => (
-  <div
-    class={`term-tab${active ? ' active' : ''}`}
-    role="tab"
-    data-testid="term-tab"
-    data-term={String(tab.termId)}
-    aria-selected={active ? 'true' : 'false'}
-    tabIndex={0}
-    onClick={() => {
-      view.chooseTab(tab.termId);
-    }}
-    onKeyDown={(event) => {
-      if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
-      event.preventDefault();
-      view.chooseTab(tab.termId);
-    }}
-  >
-    {tab.terminal?.preset ?? 'terminal'} {tab.termId}
-    {tab.terminal?.exit != null ? ' (exited)' : ''}
-    <Mark of={aggregate(tab.terminals, 'tab')} />
-    <button
-      type="button"
-      class="close"
-      data-testid="term-tab-close"
-      title="Close"
+/** Replaces a tab's label while it is renamed; Enter or leaving stores the text, Escape stores nothing, each edit ending once. */
+const TabNameField = ({ tab, view, onEnd }: { tab: ShownTab; view: View; onEnd: () => void }) => {
+  const field = useRef<HTMLInputElement>(null);
+  const ended = useRef(false);
+  useLayoutEffect(() => {
+    const input = field.current;
+    if (input === null) return;
+    input.value = tabLabel(tab);
+    input.focus();
+    input.select();
+  }, []);
+  const end = (text: string | null): void => {
+    if (ended.current) return;
+    ended.current = true;
+    if (text !== null) view.renameTab(tab.termId, text);
+    onEnd();
+  };
+  return (
+    <input
+      type="text"
+      class="term-tab-name"
+      data-testid="term-tab-name"
+      ref={field}
+      maxLength={MAX_TAB_NAME}
+      aria-label="Tab name"
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          end(event.currentTarget.value);
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          end(null);
+        }
+      }}
+      onBlur={(event) => {
+        end(event.currentTarget.value);
+      }}
       onClick={(event) => {
         event.stopPropagation();
-        view.requestClose(termsOf(tab.root));
+      }}
+      onDblClick={(event) => {
+        event.stopPropagation();
+      }}
+    />
+  );
+};
+
+const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: View }) => {
+  const [renaming, setRenaming] = useState(false);
+  return (
+    <div
+      class={`term-tab${active ? ' active' : ''}`}
+      role="tab"
+      data-testid="term-tab"
+      data-term={String(tab.termId)}
+      aria-selected={active ? 'true' : 'false'}
+      tabIndex={0}
+      onClick={() => {
+        view.chooseTab(tab.termId);
+      }}
+      onDblClick={() => {
+        if (view.canRename(tab.termId)) setRenaming(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        view.chooseTab(tab.termId);
       }}
     >
-      ×
-    </button>
-  </div>
+      {renaming ? (
+        <TabNameField
+          tab={tab}
+          view={view}
+          onEnd={() => {
+            setRenaming(false);
+          }}
+        />
+      ) : (
+        tabLabel(tab)
+      )}
+      {tab.terminal?.exit != null ? ' (exited)' : ''}
+      <Mark of={aggregate(tab.terminals, 'tab')} />
+      <button
+        type="button"
+        class="close"
+        data-testid="term-tab-close"
+        title="Close"
+        onClick={(event) => {
+          event.stopPropagation();
+          view.requestClose(termsOf(tab.root));
+        }}
+        onDblClick={(event) => {
+          event.stopPropagation();
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+};
+
+const NewTabButton = ({ view }: { view: View }) => (
+  <button
+    type="button"
+    class="new-tab"
+    data-testid="new-tab"
+    title="New tab (Ctrl+Shift+T)"
+    disabled={!view.canNewTab.value}
+    onClick={() => {
+      view.startCreate({ t: 'newTab' });
+    }}
+  >
+    +
+  </button>
 );
 
 const TabControls = ({ view }: { view: View }) => (
   <span class="tab-controls">
-    <button
-      type="button"
-      data-testid="new-tab"
-      title="New tab (Ctrl+Shift+T)"
-      disabled={!view.canNewTab.value}
-      onClick={() => {
-        view.startCreate({ t: 'newTab' });
-      }}
-    >
-      +
-    </button>
     {(['right', 'down'] as const).map((dir) => (
       <button
         type="button"
@@ -1213,9 +1286,12 @@ const Workspace = ({ client, manager, view }: AppProps) => {
           </div>
         )}
         <div class="term-tabs" role="tablist">
-          {tabs.map((t) => (
-            <TermTab key={t.key} tab={t} active={t.termId === active} view={view} />
-          ))}
+          <div class="term-tab-strip">
+            {tabs.map((t) => (
+              <TermTab key={t.key} tab={t} active={t.termId === active} view={view} />
+            ))}
+            <NewTabButton view={view} />
+          </div>
           <span class="spacer" />
           <TabControls view={view} />
         </div>

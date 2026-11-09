@@ -87,11 +87,10 @@ export const visibleWorktrees = (
 export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
   (visibleWorktrees(entries, filter, '', null)[0] ?? entries[0])?.path ?? null;
 
-/** The bases the daemon compared a worktree's commits with, and the fetch that failed, if any. */
+/** The refs the daemon compared a worktree's commits with, in order, and the fetches that failed. */
 export interface RemovalBases {
-  local: string | null;
-  remote: string | null;
-  fetchFailed: { ref: string; reason: string } | null;
+  bases: readonly string[];
+  fetchFailed: readonly { ref: string; reason: string }[];
 }
 
 /** What the daemon reported deleting a worktree would lose. */
@@ -104,20 +103,21 @@ export interface RemovalRisks extends RemovalBases {
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
-/** The bases joined by "or", the remote marked as last fetched after a failed fetch; null without either. */
-const basesPhrase = ({ local, remote, fetchFailed }: RemovalBases): string | null => {
-  const names = [local, remote !== null && fetchFailed !== null ? `${remote} as last fetched` : remote].filter((n) => n !== null);
-  return names.length === 0 ? null : names.join(' or ');
+/** The bases as "a, b, c or d", each whose fetch failed marked as last fetched; null without any. */
+const basesPhrase = ({ bases, fetchFailed }: RemovalBases): string | null => {
+  const names = bases.map((base) => (fetchFailed.some((f) => f.ref === base) ? `${base} as last fetched` : base));
+  const last = names.pop();
+  if (last === undefined) return null;
+  return names.length === 0 ? last : `${names.join(', ')} or ${last}`;
 };
 
 /** Every reason to confirm deleting a worktree, one sentence each. */
 export const removalReasons = (risks: RemovalRisks): string[] => {
   const reasons: string[] = [];
   const bases = basesPhrase(risks);
-  if (risks.ahead === null || bases === null) reasons.push('There is no main or origin/main to check that its commits are merged.');
+  if (risks.ahead === null || bases === null) reasons.push('There is no base branch to check that its commits are merged.');
   else if (risks.ahead > 0) {
-    const failed = risks.fetchFailed;
-    const why = failed === null ? '' : `; couldn't compare with a fresh ${failed.ref} because the fetch failed: ${failed.reason}`;
+    const why = risks.fetchFailed.map((f) => `; couldn't compare with a fresh ${f.ref} because the fetch failed: ${f.reason}`).join('');
     reasons.push(`It has ${plural(risks.ahead, 'commit', 'commits')} not in ${bases}${why}.`);
   }
   if (risks.changes > 0)

@@ -6,7 +6,7 @@ The wire contract between the browser UI, the hub and every daemon: which messag
 ## Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 8, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 11, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 9, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 12, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -248,7 +248,7 @@ Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Layout validity
-A layout SHALL be `{tabs, active}` with at most 64 tabs, each `{id, root}`. A pane SHALL be either `{term}` or `{split, ratio, a, b}` with `split` one of `right` or `down` and `ratio` from 0.05 to 0.95. Pane nesting SHALL be at most 16 levels deep, a lone terminal pane counting as one level, a tab SHALL hold at most 8 terminal panes, each terminal id SHALL appear at most once in a layout, tab ids SHALL be unique, and `active` SHALL index an existing tab, or be 0 when there are no tabs.
+A layout SHALL be `{tabs, active}` with at most 64 tabs, each `{id, root}` with an optional `name` of 1–64 characters containing at least one non-whitespace character. A pane SHALL be either `{term}` or `{split, ratio, a, b}` with `split` one of `right` or `down` and `ratio` from 0.05 to 0.95. Pane nesting SHALL be at most 16 levels deep, a lone terminal pane counting as one level, a tab SHALL hold at most 8 terminal panes, each terminal id SHALL appear at most once in a layout, tab ids SHALL be unique, and `active` SHALL index an existing tab, or be 0 when there are no tabs.
 
 #### Scenario: Duplicate terminal rejected
 - **WHEN** a layout whose split has the same `term` in both children is decoded
@@ -273,6 +273,18 @@ A layout SHALL be `{tabs, active}` with at most 64 tabs, each `{id, root}`. A pa
 #### Scenario: Empty layout accepted
 - **WHEN** a layout with no tabs and `active` 0 is decoded
 - **THEN** decoding succeeds
+
+#### Scenario: Named tab accepted
+- **WHEN** a layout whose tab has `name` "build" is decoded
+- **THEN** decoding succeeds and the tab keeps its name
+
+#### Scenario: Blank tab name rejected
+- **WHEN** a layout whose tab has `name` "" or "   " is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Overlong tab name rejected
+- **WHEN** a layout whose tab has a `name` of 65 characters is decoded
+- **THEN** decoding fails with a protocol error
 
 ### Requirement: Stream framing
 On a byte stream (unix socket, SSH stdio) every frame SHALL be a 4-byte big-endian payload length, a 1-byte kind, and the payload. Kinds SHALL be 0 control (UTF-8 JSON), 1 output, 2 snapshot, 3 input. The payload SHALL be at most `MAX_FRAME` bytes. A stream decoder SHALL yield exactly the sent frames, in order, for any split of the stream into chunks. It SHALL fail on a length above `MAX_FRAME`, an unknown kind, or a partial frame at end of stream, and SHALL stay failed once it has failed.

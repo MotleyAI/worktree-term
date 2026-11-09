@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DaemonHost } from '../support/daemon-host.js';
 import { exec, REPO_ROOT, type ExecResult } from '../support/exec.js';
+import { cgroupOf, NO_USER_MANAGER, scopePath, userManagerEnv, withUserManager } from '../support/scopes.js';
 
 const BUNDLE = join(REPO_ROOT, 'dist', 'wtd.mjs');
 
@@ -91,5 +93,25 @@ describe('dist/wtd.mjs', () => {
 
   it.each([['ui'], ['hub'], ['daemon'], ['connect']])('names --systemd as unknown for %s', (verb) => {
     expectUsageError(wtd(verb, '--systemd'), /--systemd/);
+  });
+});
+
+describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('wtd daemon under the user manager'), () => {
+  let host: DaemonHost;
+
+  beforeEach(() => {
+    host = DaemonHost.create();
+  });
+
+  afterEach(async () => {
+    await host.cleanup();
+  });
+
+  it("runs in a daemon scope of its own, not the caller's cgroup, and still exits 0 on SIGTERM", async () => {
+    const daemon = await host.start(userManagerEnv());
+    expect(cgroupOf(daemon.pid)).toMatch(scopePath(host.stateDir, 'daemon'));
+    expect(cgroupOf(daemon.pid)).not.toBe(cgroupOf('self'));
+    daemon.kill('SIGTERM');
+    expect(await daemon.exited).toEqual({ code: 0, signal: null });
   });
 });

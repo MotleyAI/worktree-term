@@ -38,12 +38,12 @@ const pendingClose = () => {
 
 describe('needsConfirm', () => {
   it('keeps the targets that have not exited, in order', () => {
-    const targets = [terminal(3), terminal(1, { code: 0, signal: null }), terminal(2), terminal(4, { code: 0, signal: 'SIGHUP' })];
+    const targets = [terminal(3), terminal(1, { code: 0, signal: null, oom: false }), terminal(2), terminal(4, { code: 0, signal: 'SIGHUP', oom: false })];
     expect(needsConfirm(targets).map((t) => t.termId)).toEqual([3, 2]);
   });
 
   it('needs nothing when every target has exited', () => {
-    expect(needsConfirm([terminal(1, { code: 1, signal: null }), terminal(2, { code: 0, signal: null })])).toEqual([]);
+    expect(needsConfirm([terminal(1, { code: 1, signal: null, oom: false }), terminal(2, { code: 0, signal: null, oom: false })])).toEqual([]);
     expect(needsConfirm([])).toEqual([]);
   });
 });

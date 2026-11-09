@@ -4,11 +4,12 @@ import { createServer as createHttpServer, type IncomingMessage, type Server as 
 import { createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { alive, sessionOf, sleep, waitUntil, WtdProcess, type Exit } from '../support/daemon-host.js';
+import { alive, BUNDLE, makeRepo, sessionOf, sleep, waitUntil, WtdProcess, type Exit } from '../support/daemon-host.js';
 import { decodePrintCode } from '../../src/protocol/index.js';
 import { REPO_ROOT } from '../support/exec.js';
 import { UpgradeRefused } from '../support/hub-client.js';
 import { HubHost } from '../support/hub-host.js';
+import { cgroupOf, failingSystemdRun, fakeProgram, NO_USER_MANAGER, scopePath, userManagerEnv, withUserManager } from '../support/scopes.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
@@ -488,5 +489,58 @@ describe('wtd ui --print-code', () => {
     expect(exit).toEqual({ code: 1, signal: null });
     expectOneLine(run.stderr);
     expect(run.stdout).toBe('');
+  });
+});
+
+describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement under the user manager'), () => {
+  it("runs wtd hub in a hub scope of its own, not the caller's cgroup, and still exits 0 on SIGTERM", async () => {
+    const hub = await host.startHub(userManagerEnv());
+    expect(cgroupOf(hub.pid)).toMatch(scopePath(host.stateDir, 'hub'));
+    expect(cgroupOf(hub.pid)).not.toBe(cgroupOf('self'));
+    hub.kill('SIGTERM');
+    expect(await waitExit(hub)).toEqual({ code: 0, signal: null });
+  });
+
+  it('puts the hub wtd ui --print-code starts, as its record names it, into a hub scope', async () => {
+    const run = host.wtd(['ui', '--print-code'], userManagerEnv()).captureStdout();
+    expect(await waitExit(run, 20_000)).toEqual({ code: 0, signal: null });
+    const pid = host.record()?.pid;
+    if (pid === undefined) throw new Error('no hub record');
+    expect(cgroupOf(pid)).toMatch(scopePath(host.stateDir, 'hub'));
+    expect(cgroupOf(pid)).not.toBe(cgroupOf('self'));
+    expect(cgroupOf(pid)).not.toMatch(/-term-/);
+  });
+
+  it("puts a hub started in a daemon's terminal into a hub scope, not that terminal's scope", async () => {
+    await host.start(userManagerEnv());
+    const client = await host.client();
+    const repo = makeRepo(join(host.dir, 'repo'));
+    await client.watch(repo);
+    await client.create(repo, { command: `echo $$ > sh.pid; ${process.execPath} ${BUNDLE} hub` });
+    await waitUntil(() => host.serving(), 'the hub to serve', 15_000);
+    const shell = Number(readFileSync(join(repo, 'sh.pid'), 'utf8'));
+    const pid = host.record()?.pid;
+    if (pid === undefined) throw new Error('no hub record');
+    expect(cgroupOf(pid)).toMatch(scopePath(host.stateDir, 'hub'));
+    expect(cgroupOf(pid)).not.toBe(cgroupOf(shell));
+  });
+});
+
+describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement failing under the user manager'), () => {
+  it('reports a failure to enter its scope and serves on from the cgroup it was started in', async () => {
+    const systemdRun = fakeProgram(join(host.dir, 'systemd-run'), 'exit 0');
+    const busctl = fakeProgram(join(host.dir, 'busctl'), "echo 'Call failed: Access denied' >&2; exit 1");
+    const hub = await host.startHub({ ...userManagerEnv(), WTD_SYSTEMD_RUN: systemdRun.program, WTD_BUSCTL: busctl.program });
+    expect(busctl.calls()).toHaveLength(1);
+    await waitUntil(() => hub.stderr.includes('Call failed: Access denied'), 'the reported failure');
+    expect(cgroupOf(hub.pid)).toBe(cgroupOf('self'));
+  });
+});
+
+describe('hub placement without a lasting user manager', () => {
+  it('serves from the cgroup it was started in', async () => {
+    const systemdRun = failingSystemdRun(host.dir);
+    const hub = await host.startHub({ ...userManagerEnv(), WTD_SYSTEMD_RUN: systemdRun.program });
+    expect(cgroupOf(hub.pid)).toBe(cgroupOf('self'));
   });
 });

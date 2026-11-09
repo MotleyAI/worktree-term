@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { makeRepo, sleep } from '../support/daemon-host.js';
+import { makeRepo, sleep, waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
 import { installRemote } from '../support/fake-ssh.js';
 import type { HubClient, HubMessageOf } from '../support/hub-client.js';
@@ -400,5 +400,63 @@ describe('configuration edits', () => {
     expect((await client.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toEqual({ t: 'done', req: 1 });
     await client.waitHost(0, (h) => h.repos.includes(added), { from });
     expect(presetsOf(client)).toEqual([DEFAULT_PRESETS]);
+  });
+});
+
+describe('preset memory limits', () => {
+  const TESTS = { name: 'tests', command: null, memory: { max: '24G' } };
+  const HTOP = { name: 'htop', command: 'htop' };
+
+  it('sends every preset with its effective limits', async () => {
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], terminalMemory: { high: '16G', max: '32G' }, presets: [SHELL, TESTS] });
+    expect(presetsOf(await fx.host.session())).toEqual([
+      [
+        { ...SHELL, memory: { high: '16G', max: '32G' } },
+        { ...TESTS, memory: { high: '16G', max: '24G' } },
+      ],
+    ]);
+  });
+
+  it('sends no preset with memory when no limits are configured', async () => {
+    const [presets] = presetsOf(await fx.host.session());
+    expect(presets?.length).toBeGreaterThan(0);
+    expect(presets?.filter((p) => 'memory' in p)).toEqual([]);
+  });
+
+  it('sends effective limits after a preset edit, keeping the stored ones in config.json', async () => {
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], terminalMemory: { high: '16G' }, presets: [SHELL, TESTS] });
+    const client = await fx.host.session();
+    const from = client.mark();
+    expect((await client.hubRequest({ t: 'addPreset', preset: HTOP })).m).toEqual({ t: 'done', req: 1 });
+    expect((await client.waitFor('presets', () => true, { from })).presets).toEqual([
+      { ...SHELL, memory: { high: '16G' } },
+      { ...TESTS, memory: { high: '16G', max: '24G' } },
+      { ...HTOP, memory: { high: '16G' } },
+    ]);
+    expect(configFile()).toEqual({ port: fx.host.port, repos: [fx.repo], terminalMemory: { high: '16G' }, presets: [SHELL, TESTS, HTOP] });
+  });
+
+  it('stores the memory an added preset carries', async () => {
+    const client = await fx.host.session();
+    expect((await client.hubRequest({ t: 'addPreset', preset: TESTS })).m).toEqual({ t: 'done', req: 1 });
+    expect(configFile()).toMatchObject({ presets: expect.arrayContaining([TESTS]) });
+  });
+
+  it("relays a createTerm's memory limits to the daemon", async () => {
+    const client = await watching();
+    const reply = await client.request(0, {
+      t: 'createTerm',
+      worktree: fx.repo,
+      preset: 'tests',
+      command: 'exec sleep 60',
+      cols: 80,
+      rows: 24,
+      memory: { max: '64M' },
+    });
+    expect(reply.m).toMatchObject({ t: 'termCreated', term: { preset: 'tests' } });
+    await waitUntil(
+      () => readFileSync(fx.host.logPath, 'utf8').includes('memory limits ignored: terminal scopes are off'),
+      'the daemon to ignore the limits it was given',
+    );
   });
 });

@@ -23,6 +23,7 @@ export type EventOf<T extends Event['t']> = Extract<Event, { t: T }>;
 type Correlated = Extract<Request, { req: number }>;
 type Unnumbered<T> = T extends unknown ? Omit<T, 'req'> : never;
 export type RequestBody = Unnumbered<Correlated>;
+export type MemoryLimits = Extract<Request, { t: 'createTerm' }>['memory'];
 
 export type Received =
   { kind: 'message'; message: Event } | { kind: 'output' | 'snapshot'; termId: number; offset: number; data: Uint8Array };
@@ -270,7 +271,7 @@ export class DaemonClient {
 
   async create(
     worktree: string,
-    options: { command?: string | null; preset?: string; cols?: number; rows?: number } = {},
+    options: { command?: string | null; preset?: string; cols?: number; rows?: number; memory?: MemoryLimits } = {},
   ): Promise<Terminal> {
     const reply = await this.request({
       t: 'createTerm',
@@ -279,6 +280,7 @@ export class DaemonClient {
       command: options.command ?? null,
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
+      memory: options.memory ?? {},
     });
     if (reply.t !== 'termCreated') throw new Error(`createTerm failed: ${JSON.stringify(reply)}`);
     return reply.term;

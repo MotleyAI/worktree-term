@@ -206,7 +206,7 @@ describe('--systemd', () => {
       ['--user', 'start', UNIT_NAME],
     ]);
     await waitUntil(() => canConnect(host.socket), 'the daemon the unit started', 10_000);
-    expect((await (await client()).waitFor('hello')).protocol).toBe(8);
+    expect((await (await client()).waitFor('hello')).protocol).toBe(9);
   });
 
   it('writes an owner-only unit running the shim with daemon, restarting on failure, for default.target', async () => {

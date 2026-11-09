@@ -4,7 +4,7 @@ import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AttentionState } from './attention.js';
-import { TerminalProcess } from './terminal.js';
+import { TerminalProcess, type TerminalLauncher } from './terminal.js';
 
 const MiB = 1024 * 1024;
 const TERMINALS = 12;
@@ -20,7 +20,7 @@ const deliveredBeforeExit = async (command: string): Promise<number> => {
     exited = resolve;
   });
   const term = await TerminalProcess.spawn(
-    { cwd: tmpdir(), command, cols: 80, rows: 24, env: process.env },
+    { termId: 1, memory: {}, cwd: tmpdir(), command, cols: 80, rows: 24, env: process.env },
     {
       activity: () => undefined,
       exited: () => {
@@ -95,7 +95,7 @@ describe('attention signals in the output', () => {
       exitedNow = resolve;
     });
     const term = await TerminalProcess.spawn(
-      { cwd: home, command, cols: 80, rows: 24, env: { ...process.env, HOME: home, SHELL: '/bin/bash' } },
+      { termId: 1, memory: {}, cwd: home, command, cols: 80, rows: 24, env: { ...process.env, HOME: home, SHELL: '/bin/bash' } },
       {
         activity: (unseen, state) => {
           events.push([unseen, state]);
@@ -209,7 +209,7 @@ describe('process and mirror figures', () => {
 
   const run = async (command: string): Promise<TerminalProcess> => {
     term = await TerminalProcess.spawn(
-      { cwd: home, command, cols: 80, rows: 24, env: { ...process.env, HOME: home, SHELL: '/bin/bash' } },
+      { termId: 1, memory: {}, cwd: home, command, cols: 80, rows: 24, env: { ...process.env, HOME: home, SHELL: '/bin/bash' } },
       { activity: () => undefined, exited: () => undefined },
     );
     return term;
@@ -235,5 +235,131 @@ describe('process and mirror figures', () => {
     await vi.waitFor(() => {
       expect(started.mirrorStats().lines).toBeGreaterThanOrEqual(normal + 24);
     });
+  });
+});
+
+describe('launcher', () => {
+  let home: string;
+  let terms: TerminalProcess[];
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'wtd-launcher-'));
+    terms = [];
+  });
+
+  afterEach(async () => {
+    await Promise.all(terms.map((t) => t.close()));
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  interface Exited {
+    code: number;
+    signal: string | null;
+    oom: boolean;
+    at: number;
+  }
+
+  /** Starts `command` as terminal 7 with `memory`, through `launcher` when given. */
+  const run = async (
+    command: string,
+    launcher?: TerminalLauncher,
+  ): Promise<{ term: TerminalProcess; output: () => string; exited: Promise<Exited> }> => {
+    let text = '';
+    let exitedNow: (exit: Exited) => void = () => undefined;
+    const exited = new Promise<Exited>((resolve) => {
+      exitedNow = resolve;
+    });
+    const spec = {
+      termId: 7,
+      memory: { max: '1G' },
+      cwd: home,
+      command,
+      cols: 80,
+      rows: 24,
+      env: { ...process.env, HOME: home, SHELL: '/bin/bash' },
+    };
+    const events = {
+      activity: () => undefined,
+      exited: (code: number, signal: string | null, oom: boolean) => {
+        exitedNow({ code, signal, oom, at: Date.now() });
+      },
+    };
+    const term = await (launcher === undefined ? TerminalProcess.spawn(spec, events) : TerminalProcess.spawn(spec, events, launcher));
+    terms.push(term);
+    term.attach(1, {
+      snapshot: (_offset, data) => (text += Buffer.from(data).toString()),
+      output: (offset, data) => {
+        text += Buffer.from(data).toString();
+        term.ack(1, offset + data.length);
+      },
+      superseded: () => undefined,
+      lagging: () => undefined,
+    });
+    return { term, output: () => text, exited };
+  };
+
+  /** A launcher recording its calls, answering `oom` after `delayMs`. */
+  const recording = (oom: boolean, delayMs = 0) => {
+    const commands: unknown[][] = [];
+    const asked: { termId: number; at: number }[] = [];
+    const launcher: TerminalLauncher = {
+      command: (termId, memory, shell, args) => {
+        commands.push([termId, memory, shell, [...args]]);
+        return ['/usr/bin/env', 'WTD_LAUNCHED=yes', shell, ...args];
+      },
+      outOfMemory: async (termId) => {
+        asked.push({ termId, at: Date.now() });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return oom;
+      },
+    };
+    return { launcher, commands, asked };
+  };
+
+  it('runs the command the launcher makes of the shell, its arguments, the terminal id and the limits', async () => {
+    const { launcher, commands } = recording(false);
+    const command = 'echo "launched=$WTD_LAUNCHED"; exec sleep 60';
+    const { output } = await run(command, launcher);
+    await vi.waitFor(() => {
+      expect(output()).toContain('launched=yes');
+    });
+    expect(commands).toEqual([[7, { max: '1G' }, '/bin/bash', ['-l', '-i', '-c', command]]]);
+  });
+
+  it('asks the launcher whether a terminal killed by SIGKILL ran out of memory, and reports the exit only then', async () => {
+    const { launcher, asked } = recording(true, 300);
+    const { term, exited } = await run('kill -KILL $$', launcher);
+    const exit = await exited;
+    expect(exit).toMatchObject({ signal: 'SIGKILL', oom: true });
+    expect(asked.map((a) => a.termId)).toEqual([7]);
+    expect(exit.at - (asked[0]?.at ?? 0)).toBeGreaterThanOrEqual(250);
+    expect(term.exit).toEqual({ code: exit.code, signal: 'SIGKILL', oom: true });
+  });
+
+  it('reports oom false for a SIGKILL the launcher finds no out-of-memory kill', async () => {
+    const { launcher } = recording(false);
+    const { term, exited } = await run('kill -KILL $$', launcher);
+    expect(await exited).toMatchObject({ signal: 'SIGKILL', oom: false });
+    expect(term.exit).toMatchObject({ signal: 'SIGKILL', oom: false });
+  });
+
+  it.each([
+    ['a non-zero code', 'exit 3', { code: 3, signal: null }],
+    ['SIGTERM', 'kill -TERM $$', { signal: 'SIGTERM' }],
+  ])('does not ask the launcher about an exit with %s, reporting oom false', async (_name, command, exit) => {
+    const { launcher, asked } = recording(true);
+    const { term, exited } = await run(command, launcher);
+    expect(await exited).toMatchObject({ ...exit, oom: false });
+    expect(term.exit).toMatchObject({ ...exit, oom: false });
+    expect(asked).toEqual([]);
+  });
+
+  it('runs the shell itself without a launcher, reporting oom false for a SIGKILL', async () => {
+    const { output, exited } = await run('echo "launched=${WTD_LAUNCHED:-no}"; read -r _; kill -KILL $$');
+    await vi.waitFor(() => {
+      expect(output()).toContain('launched=no');
+    });
+    terms[0]?.write(Buffer.from('\r'));
+    expect(await exited).toMatchObject({ signal: 'SIGKILL', oom: false });
   });
 });

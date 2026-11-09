@@ -122,10 +122,10 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'detached', termId: 1, reason: 'closed' },
   { t: 'error', req: 1, code: 'oops', message: 'x' },
   { t: 'error', req: 1, code: 'internal', message: 'm'.repeat(1025) },
-  { t: 'termExited', termId: 1, code: 0, signal: 'S'.repeat(33) },
+  { t: 'termExited', termId: 1, code: 0, signal: 'S'.repeat(33), oom: false },
   { t: 'worktreesChanged', repo: REPO, worktrees: [{ ...featWorktree, head: 'A'.repeat(40) }] },
   { t: 'worktreesChanged', repo: REPO, worktrees: [{ ...featWorktree, branch: 'b'.repeat(4097) }] },
-  { t: 'createTerm', req: 1, worktree: WT, preset: '', command: null, cols: 80, rows: 24 },
+  { t: 'createTerm', req: 1, worktree: WT, preset: '', command: null, cols: 80, rows: 24, memory: {} },
   { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [], active: 1 } },
   { t: 'setLayout', req: 1, worktree: WT, layout: { ...layout, active: 2 } },
   {
@@ -331,8 +331,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 8 and browser protocol 11', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 8, browser: 11 });
+  it('is blessed for daemon protocol 9 and browser protocol 12', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 9, browser: 12 });
   });
 
   it('records every sample as valid in its own direction', () => {

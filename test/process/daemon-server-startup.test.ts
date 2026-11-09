@@ -128,7 +128,7 @@ describe('handshake', () => {
     const helloB = await b.waitFor('hello');
     expect(a.received[0]).toEqual({ kind: 'message', message: helloA });
     expect(helloA.protocol).toBe(DAEMON_PROTOCOL_VERSION);
-    expect(helloA.protocol).toBe(8);
+    expect(helloA.protocol).toBe(9);
     expect(helloA.version).toBe(packageVersion());
     expect(helloA.instance).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
     expect(helloB.instance).toBe(helloA.instance);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { OwnCgroup, ProcessInfo, ProcessLookup, SystemMemory } from '../../platform/memory/index.js';
+import type { OwnCgroup, ProcessCgroup, ProcessInfo, ProcessLookup, SystemMemory } from '../../platform/memory/index.js';
 import type { MemoryView } from '../server/index.js';
 import { daemonRecord, type DaemonSampleInput } from './memory.js';
 
@@ -65,6 +65,8 @@ const input = (table: readonly ProcessInfo[] | null, fakes: Fakes = {}, over: Pa
   cgroup: null,
   system: SYSTEM,
   lookup: lookupOf(fakes),
+  terminalUnit: null,
+  processCgroup: () => Promise.resolve(null),
   ...over,
 });
 
@@ -102,6 +104,7 @@ describe('the record', () => {
           mirror: { lines: 100, cols: 80, bytes: 100 * 80 * 12 },
           members: { processes: 1, rss: 200_000, anon: 100_000, top: [{ pid: 200, rss: 200_000, anon: 100_000, command: 'cmd200' }] },
           detached: { processes: 0, rss: 0, anon: 0, top: [] },
+          scope: null,
         },
         {
           termId: 5,
@@ -112,6 +115,7 @@ describe('the record', () => {
           mirror: { lines: 24, cols: 120, bytes: 24 * 120 * 12 },
           members: { processes: 1, rss: 250_000, anon: 125_000, top: [{ pid: 250, rss: 250_000, anon: 125_000, command: 'cmd250' }] },
           detached: { processes: 0, rss: 0, anon: 0, top: [] },
+          scope: null,
         },
       ],
       escaped: [],
@@ -303,5 +307,61 @@ describe('closed terminals', () => {
     expect(inSession.gone).toEqual([3]);
     const tagged = await daemonRecord(input([...BASE, p(701, 1, 701)], { tags: { 701: '100/inst/3' } }));
     expect(tagged.gone).toEqual([2]);
+  });
+});
+
+describe('terminal scope figures', () => {
+  const UNIT = 'wtd-01234567-term-inst-1.scope';
+  const SCOPE_PATH = `/user.slice/user-1.slice/user@1.service/app.slice/app-wtd.slice/${UNIT}`;
+  const FIGURES: ProcessCgroup = {
+    path: SCOPE_PATH,
+    current: 1000,
+    peak: 2000,
+    high: 8_589_934_592,
+    max: 1_073_741_824,
+    swapCurrent: 0,
+    swapMax: 0,
+    pressure: PRESSURE,
+    oomKills: 1,
+  };
+
+  /** Terminal `termId`'s unit: `unit` for terminal 1, another for the rest; no units without scopes. */
+  const unitsWith = (unit: string | null): DaemonSampleInput['terminalUnit'] =>
+    unit === null ? null : (termId) => (termId === 1 ? unit : `wtd-01234567-term-inst-${String(termId)}.scope`);
+
+  const scopes = async (unit: string | null, cgroups: Readonly<Record<number, ProcessCgroup>>): Promise<unknown[]> => {
+    const { record } = await daemonRecord(
+      input(BASE, {}, { terminalUnit: unitsWith(unit), processCgroup: (pid) => Promise.resolve(cgroups[pid] ?? null) }),
+    );
+    return record.terminals.map((t) => t.scope);
+  };
+
+  it("gives a terminal whose shell is in its scope that cgroup's figures, named by its unit", async () => {
+    expect(await scopes(UNIT, { 200: FIGURES })).toEqual([
+      {
+        unit: UNIT,
+        current: 1000,
+        peak: 2000,
+        swapCurrent: 0,
+        high: 8_589_934_592,
+        max: 1_073_741_824,
+        swapMax: 0,
+        pressure: PRESSURE,
+        oomKills: 1,
+      },
+      null,
+    ]);
+  });
+
+  it("gives null for a terminal whose shell's cgroup is not its scope", async () => {
+    expect(await scopes(UNIT, { 200: { ...FIGURES, path: '/app.slice/app-gnome-x.scope' } })).toEqual([null, null]);
+  });
+
+  it('gives null for a terminal whose cgroup cannot be read', async () => {
+    expect(await scopes(UNIT, {})).toEqual([null, null]);
+  });
+
+  it('gives every terminal null without terminal scopes', async () => {
+    expect(await scopes(null, { 200: FIGURES, 250: FIGURES })).toEqual([null, null]);
   });
 });

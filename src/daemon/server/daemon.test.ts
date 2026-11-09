@@ -7,7 +7,7 @@ import { DaemonClient } from '../../../test/support/daemon-client.js';
 import { sleep } from '../../../test/support/daemon-host.js';
 import type { Layout, Worktree } from '../../protocol/index.js';
 import { StateStore } from '../state/index.js';
-import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalSpec } from '../terminals/index.js';
+import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalLauncher, type TerminalSpec } from '../terminals/index.js';
 import type { WorktreeHandlers, WorktreeRisks, WorktreeWatch } from '../worktrees/index.js';
 import { Daemon, type DaemonServices } from './daemon.js';
 
@@ -115,7 +115,7 @@ const connected = async (): Promise<DaemonClient> => {
 };
 
 const create = (client: DaemonClient, req: number): void => {
-  client.send({ t: 'createTerm', req, worktree: REPO, preset: 'shell', command: null, cols: 80, rows: 24 });
+  client.send({ t: 'createTerm', req, worktree: REPO, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} });
 };
 
 it('counts terminals still starting against the per-repo limit, and frees the slot of a failed start', async () => {
@@ -192,7 +192,7 @@ it('prunes state of vanished worktrees before the first repoState', async () => 
 it('waits for a terminal still starting in a worktree being removed, and reports it as running', async () => {
   const client = await connected();
   await client.watch(REPO);
-  client.send({ t: 'createTerm', req: 1, worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24 });
+  client.send({ t: 'createTerm', req: 1, worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} });
   await vi.waitFor(() => {
     expect(spawns).toHaveLength(1);
   });
@@ -230,7 +230,7 @@ it('refuses to start a terminal in a worktree while it is being removed', async 
   const from = client.mark();
   client.send({ t: 'removeWorktree', req: 1, worktree: WT, force: false });
   await sleep(50);
-  expect(await client.fails({ t: 'createTerm', worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('busy');
+  expect(await client.fails({ t: 'createTerm', worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe('busy');
   expect(spawns).toHaveLength(0);
   release(NO_RISK);
   await client.waitFor('done', (m) => m.req === 1, { from });
@@ -278,7 +278,7 @@ describe('terminal tags and memory view', () => {
     { worktree = WT, preset = 'shell', shell = '/bin/bash' }: { worktree?: string; preset?: string; shell?: string } = {},
   ): Promise<{ termId: number; process: TerminalProcess }> => {
     const count = spawns.length;
-    const reply = client.request({ t: 'createTerm', worktree, preset, command: null, cols: 80, rows: 24 });
+    const reply = client.request({ t: 'createTerm', worktree, preset, command: null, cols: 80, rows: 24, memory: {} });
     await vi.waitFor(() => {
       expect(spawns).toHaveLength(count + 1);
     });
@@ -410,7 +410,7 @@ describe('ending terminals', () => {
   /** Creates a terminal in `worktree` whose spawn runs `command` in bash; resolves with its id. */
   const start = async (client: DaemonClient, worktree: string, command: string): Promise<number> => {
     const count = spawns.length;
-    const reply = client.request({ t: 'createTerm', worktree, preset: 'shell', command: null, cols: 80, rows: 24 });
+    const reply = client.request({ t: 'createTerm', worktree, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} });
     await vi.waitFor(() => {
       expect(spawns).toHaveLength(count + 1);
     });
@@ -508,5 +508,73 @@ describe('ending terminals', () => {
       { t: 'done', req: ANY_REQ },
     ]);
     expect(removed).toEqual([WT]);
+  });
+});
+
+describe('memory limits and out-of-memory exits', () => {
+  afterEach(async () => {
+    await daemon.shutdown();
+  });
+
+  /** Reports every SIGKILL as out of memory. */
+  const oomLauncher: TerminalLauncher = {
+    command: (_termId, _memory, shell, args) => [shell, ...args],
+    outOfMemory: () => Promise.resolve(true),
+  };
+
+  /** Creates a terminal in WT with `memory` whose spawn runs `command` in bash through `launcher`; resolves with its id. */
+  const start = async (client: DaemonClient, command: string, memory: Record<string, string>, launcher?: TerminalLauncher): Promise<number> => {
+    const count = spawns.length;
+    const reply = client.request({ t: 'createTerm', worktree: WT, preset: 'tests', command: null, cols: 80, rows: 24, memory });
+    await vi.waitFor(() => {
+      expect(spawns).toHaveLength(count + 1);
+    });
+    const pending = spawns[count];
+    if (pending === undefined) throw new Error('no spawn');
+    const spec = { ...pending.spec, cwd: dir, command, env: { ...process.env, HOME: dir, SHELL: '/bin/bash' } };
+    pending.resolve(await (launcher === undefined ? TerminalProcess.spawn(spec, pending.events) : TerminalProcess.spawn(spec, pending.events, launcher)));
+    const created = await reply;
+    if (created.t !== 'termCreated') throw new Error(`createTerm failed: ${JSON.stringify(created)}`);
+    return created.term.termId;
+  };
+
+  it("starts a terminal with its createTerm's memory limits and its terminal id", async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    client.send({ t: 'createTerm', req: 1, worktree: WT, preset: 'tests', command: null, cols: 80, rows: 24, memory: { max: '64M', swapMax: '0' } });
+    await vi.waitFor(() => {
+      expect(spawns).toHaveLength(1);
+    });
+    expect(spawns[0]?.spec).toMatchObject({ termId: 1, memory: { max: '64M', swapMax: '0' } });
+    spawns[0]?.reject(new SpawnError('not started'));
+  });
+
+  it('sends termExited with oom true to every watcher for an out-of-memory exit, and tells later watchers', async () => {
+    const client = await connected();
+    const other = await connected();
+    await client.watch(REPO);
+    await other.watch(REPO);
+    const term = await start(client, 'read -r _; kill -KILL $$', { max: '64M' }, oomLauncher);
+    const from = client.mark();
+    const fromOther = other.mark();
+    client.sendInput(term, '\r');
+    const expected = { t: 'termExited', termId: term, code: expect.any(Number), signal: 'SIGKILL', oom: true };
+    expect(await client.waitFor('termExited', (m) => m.termId === term, { from })).toEqual(expected);
+    expect(await other.waitFor('termExited', (m) => m.termId === term, { from: fromOther })).toEqual(expected);
+    const later = (await (await connected()).watch(REPO)).terminals.find((t) => t.termId === term);
+    expect(later?.exit).toMatchObject({ signal: 'SIGKILL', oom: true });
+  });
+
+  it.each([
+    ['a non-zero code', 'read -r _; exit 3', { code: 3, signal: null, oom: false }],
+    ['SIGKILL that is no out-of-memory kill', 'read -r _; kill -KILL $$', { signal: 'SIGKILL', oom: false }],
+  ])('sends termExited with oom false for %s', async (_name, command, exit) => {
+    const client = await connected();
+    await client.watch(REPO);
+    const term = await start(client, command, {});
+    const from = client.mark();
+    client.sendInput(term, '\r');
+    expect(await client.waitFor('termExited', (m) => m.termId === term, { from })).toMatchObject(exit);
+    expect((await (await connected()).watch(REPO)).terminals.find((t) => t.termId === term)?.exit).toMatchObject(exit);
   });
 });

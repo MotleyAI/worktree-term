@@ -9,6 +9,7 @@ import {
   isTight,
   processLookup,
   readOwnCgroup,
+  readProcessCgroup,
   readProcessTable,
   readSystemMemory,
   summarise,
@@ -318,6 +319,91 @@ describe('own cgroup', () => {
     writeFileSync(join(fakeCgroup(), 'memory.current'), 'lots\n');
     expect(await readOwnCgroup(roots, report)).toBeNull();
     expect(reported).toHaveLength(1);
+  });
+});
+
+describe("a process's cgroup", () => {
+  const EVENTS = 'low 0\nhigh 4\nmax 3\noom 2\noom_kill 2\noom_group_kill 1\n';
+
+  /** Process `pid` in the cgroup `/app.slice/app-wtd.slice/t.scope` with every file present. */
+  const fakeProcessCgroup = (pid: number): string => {
+    fakeProcess(pid);
+    fakeFile(`proc/${String(pid)}/cgroup`, '0::/app.slice/app-wtd.slice/t.scope\n');
+    const dir = 'cgroup/app.slice/app-wtd.slice/t.scope';
+    fakeFile(`${dir}/memory.current`, '1000\n');
+    fakeFile(`${dir}/memory.peak`, '2000\n');
+    fakeFile(`${dir}/memory.high`, '8589934592\n');
+    fakeFile(`${dir}/memory.max`, 'max\n');
+    fakeFile(`${dir}/memory.swap.current`, '512\n');
+    fakeFile(`${dir}/memory.swap.max`, '0\n');
+    fakeFile(`${dir}/memory.pressure`, PSI);
+    fakeFile(`${dir}/memory.events`, EVENTS);
+    return join(root, dir);
+  };
+
+  it('reads the figures of the cgroup its cgroup file names, with its oom_kill count', async () => {
+    fakeProcessCgroup(70);
+    expect(await readProcessCgroup(roots, 70, report)).toEqual({
+      path: '/app.slice/app-wtd.slice/t.scope',
+      current: 1000,
+      peak: 2000,
+      high: 8589934592,
+      max: null,
+      swapCurrent: 512,
+      swapMax: 0,
+      pressure: PRESSURE,
+      oomKills: 2,
+    });
+    expect(reported).toEqual([]);
+  });
+
+  it('gives null for each optional file that is absent', async () => {
+    const dir = fakeProcessCgroup(71);
+    for (const name of ['memory.peak', 'memory.high', 'memory.max', 'memory.swap.current', 'memory.swap.max', 'memory.pressure']) {
+      rmSync(join(dir, name));
+    }
+    expect(await readProcessCgroup(roots, 71, report)).toMatchObject({
+      current: 1000,
+      peak: null,
+      high: null,
+      max: null,
+      swapCurrent: null,
+      swapMax: null,
+      pressure: null,
+      oomKills: 2,
+    });
+    expect(reported).toEqual([]);
+  });
+
+  it('yields null for a process that no longer exists, reporting nothing', async () => {
+    expect(await readProcessCgroup(roots, 72, report)).toBeNull();
+    expect(reported).toEqual([]);
+  });
+
+  it('yields null for a process whose cgroup is gone, reporting nothing', async () => {
+    rmSync(fakeProcessCgroup(73), { recursive: true });
+    expect(await readProcessCgroup(roots, 73, report)).toBeNull();
+    expect(reported).toEqual([]);
+  });
+
+  it.each([
+    ['memory.events without oom_kill', 'memory.events', 'low 0\nhigh 0\n'],
+    ['a malformed memory.swap.max', 'memory.swap.max', 'none\n'],
+  ])('yields null and reports %s', async (_name, file, text) => {
+    writeFileSync(join(fakeProcessCgroup(74), file), text);
+    expect(await readProcessCgroup(roots, 74, report)).toBeNull();
+    expect(reported).toHaveLength(1);
+  });
+
+  it.runIf(existsSync('/proc/self/cgroup'))('reads the real cgroup of a child of the reader', async () => {
+    const child = spawn('sleep', ['30'], { stdio: 'ignore' });
+    try {
+      const own = readFileSync('/proc/self/cgroup', 'utf8');
+      const path = /^0::(\/.*)$/m.exec(own)?.[1];
+      expect((await readProcessCgroup(hostRoots(), child.pid ?? 0, report))?.path).toBe(path);
+    } finally {
+      child.kill('SIGKILL');
+    }
   });
 });
 

@@ -226,9 +226,12 @@ export class HubHost extends DaemonHost {
   /** `WTD_SSH` for every process of this host; null leaves it unset. */
   sshProgram: string | null = null;
 
+  /** Further environment for every process of this host. */
+  extraEnv: Record<string, string | undefined> = {};
+
   override env(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
     const ssh = this.sshProgram === null ? {} : { WTD_SSH: this.sshProgram };
-    return super.env({ XDG_CONFIG_HOME: this.configHome, WTD_BROWSER: this.browserStub, ...ssh, ...extra });
+    return super.env({ XDG_CONFIG_HOME: this.configHome, WTD_BROWSER: this.browserStub, ...ssh, ...this.extraEnv, ...extra });
   }
 
   /** Writes `config.json` as the JSON of `config`. */

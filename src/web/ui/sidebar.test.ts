@@ -276,12 +276,23 @@ describe('matchesSearch', () => {
 });
 
 const REASON = 'ssh: connect to host github.com port 22: No route to host';
-const BOTH = { local: 'main', remote: 'origin/main', fetchFailed: null };
-const LOCAL_ONLY = { local: 'main', remote: null, fetchFailed: null };
-const REMOTE_ONLY = { local: null, remote: 'origin/master', fetchFailed: null };
-const NO_BASE = { local: null, remote: null, fetchFailed: null };
-const FAILED = { ...BOTH, fetchFailed: { ref: 'origin/main', reason: REASON } };
-const FAILED_NO_REMOTE = { ...LOCAL_ONLY, fetchFailed: { ref: 'origin/main', reason: REASON } };
+const FOUR = ['feature-x', 'origin/feature-x', 'main', 'origin/main'];
+const BOTH = { bases: ['main', 'origin/main'], fetchFailed: [] };
+const LOCAL_ONLY = { bases: ['main'], fetchFailed: [] };
+const REMOTE_ONLY = { bases: ['origin/master'], fetchFailed: [] };
+const THREE = { bases: ['feature-x', 'main', 'origin/main'], fetchFailed: [] };
+const STACKED = { bases: FOUR, fetchFailed: [] };
+const NO_BASE = { bases: [], fetchFailed: [] };
+const FAILED = { ...BOTH, fetchFailed: [{ ref: 'origin/main', reason: REASON }] };
+const FAILED_NO_REMOTE = { ...LOCAL_ONLY, fetchFailed: [{ ref: 'origin/main', reason: REASON }] };
+const BASE_FAILED = { bases: FOUR, fetchFailed: [{ ref: 'origin/feature-x', reason: 'r1' }] };
+const TWO_FAILED = {
+  bases: FOUR,
+  fetchFailed: [
+    { ref: 'origin/feature-x', reason: 'r1' },
+    { ref: 'origin/main', reason: 'r2' },
+  ],
+};
 
 describe('removalReasons', () => {
   const safe = { ...BOTH, ahead: 0, changes: 0, running: [] };
@@ -312,6 +323,13 @@ describe('removalReasons', () => {
     expect(removalReasons({ ...safe, ...bases, ahead: 2 })).toEqual([reason]);
   });
 
+  it.each([
+    ['three bases', THREE, 'It has 3 commits not in feature-x, main or origin/main.'],
+    ['four bases', STACKED, 'It has 3 commits not in feature-x, origin/feature-x, main or origin/main.'],
+  ])('joins %s with commas and a final "or"', (_name, bases, reason) => {
+    expect(removalReasons({ ...safe, ...bases, ahead: 3 })).toEqual([reason]);
+  });
+
   it('says the remote is as last fetched and why the fetch failed', () => {
     expect(removalReasons({ ...safe, ...FAILED, ahead: 1 })).toEqual([
       `It has 1 commit not in main or origin/main as last fetched; couldn't compare with a fresh origin/main because the fetch failed: ${REASON}.`,
@@ -324,9 +342,27 @@ describe('removalReasons', () => {
     ]);
   });
 
-  it('says when there is no main or origin/main to compare with', () => {
-    expect(removalReasons({ ...safe, ...NO_BASE, ahead: null })).toEqual([
-      'There is no main or origin/main to check that its commits are merged.',
+  it("marks only the base's remote as last fetched when only its fetch failed", () => {
+    expect(removalReasons({ ...safe, ...BASE_FAILED, ahead: 2 })).toEqual([
+      "It has 2 commits not in feature-x, origin/feature-x as last fetched, main or origin/main; couldn't compare with a fresh origin/feature-x because the fetch failed: r1.",
+    ]);
+  });
+
+  it('gives one clause per failed fetch, in order', () => {
+    expect(removalReasons({ ...safe, ...TWO_FAILED, ahead: 1 })).toEqual([
+      "It has 1 commit not in feature-x, origin/feature-x as last fetched, main or origin/main as last fetched; couldn't compare with a fresh origin/feature-x because the fetch failed: r1; couldn't compare with a fresh origin/main because the fetch failed: r2.",
+    ]);
+  });
+
+  it('says when there is no base branch to compare with', () => {
+    expect(removalReasons({ ...safe, ...NO_BASE, ahead: null })).toEqual(['There is no base branch to check that its commits are merged.']);
+  });
+
+  it('keeps the no-base sentence before the other reasons', () => {
+    expect(removalReasons({ ...NO_BASE, ahead: null, changes: 1, running: ['shell 1'] })).toEqual([
+      'There is no base branch to check that its commits are merged.',
+      'It has 1 uncommitted change, untracked files included.',
+      'Running terminals will be closed: shell 1.',
     ]);
   });
 });
@@ -337,14 +373,22 @@ describe('keptNote', () => {
 
   it('says the branch is kept', () => {
     expect(keptNote({ detached: false, head: HEAD }, BOTH)).toBe('Its branch is kept.');
+    expect(keptNote({ detached: false, head: HEAD }, NO_BASE)).toBe('Its branch is kept.');
   });
 
   it.each([
     ['both bases', BOTH, 'its commits not in main or origin/main become unreachable'],
     ['only the local branch', LOCAL_ONLY, 'its commits not in main become unreachable'],
     ['only the remote-tracking ref', REMOTE_ONLY, 'its commits not in origin/master become unreachable'],
+    ['three bases', THREE, 'its commits not in feature-x, main or origin/main become unreachable'],
+    ['four bases', STACKED, 'its commits not in feature-x, origin/feature-x, main or origin/main become unreachable'],
     ['a failed fetch', FAILED, 'its commits not in main or origin/main as last fetched become unreachable'],
     ['a failed fetch without a remote-tracking ref', FAILED_NO_REMOTE, 'its commits not in main become unreachable'],
+    [
+      'two failed fetches',
+      TWO_FAILED,
+      'its commits not in feature-x, origin/feature-x as last fetched, main or origin/main as last fetched become unreachable',
+    ],
     ['no base', NO_BASE, 'its commits become unreachable'],
   ])('says a detached worktree leaves its commits unreachable, naming its head, with %s', (_name, bases, lost) => {
     expect(keptNote(detached, bases)).toBe(`It has no branch: once it is deleted, ${lost}; its head is 0123456.`);

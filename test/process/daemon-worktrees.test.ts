@@ -458,7 +458,7 @@ describe('removeWorktree', () => {
     git(repo, 'merge', '-q', '--ff-only', a);
     git(repo, 'update-ref', 'refs/remotes/origin/main', b);
     rmSync(origin, { recursive: true });
-    expect(await remove(wt)).toMatchObject({ t: 'worktreeAtRisk', local: 'main', remote: 'origin/main', ahead: 1 });
+    expect(await remove(wt)).toMatchObject({ t: 'worktreeAtRisk', bases: ['main', 'origin/main'], ahead: 1 });
     expect(existsSync(wt)).toBe(true);
   });
 
@@ -485,10 +485,9 @@ describe('removeWorktree', () => {
       t: 'worktreeAtRisk',
       req: ANY_REQ,
       worktree: wt,
-      local: 'main',
-      remote: 'origin/main',
+      bases: ['main', 'origin/main'],
       ahead: 1,
-      fetchFailed: null,
+      fetchFailed: [],
       changes: 1,
       running: [running.termId],
     });
@@ -503,10 +502,9 @@ describe('removeWorktree', () => {
     rmSync(origin, { recursive: true });
     expect(await remove(wt)).toMatchObject({
       t: 'worktreeAtRisk',
-      local: 'main',
-      remote: 'origin/main',
+      bases: ['main', 'origin/main'],
       ahead: 1,
-      fetchFailed: { ref: 'origin/main', reason: `fatal: '${origin}' does not appear to be a git repository` },
+      fetchFailed: [{ ref: 'origin/main', reason: `fatal: '${origin}' does not appear to be a git repository` }],
     });
     expect(existsSync(wt)).toBe(true);
   });
@@ -514,7 +512,7 @@ describe('removeWorktree', () => {
   it('compares a worktree of a repo without an origin with the local main alone', async () => {
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
     commit(wt, 'a');
-    expect(await remove(wt)).toMatchObject({ t: 'worktreeAtRisk', local: 'main', remote: null, ahead: 1, fetchFailed: null });
+    expect(await remove(wt)).toMatchObject({ t: 'worktreeAtRisk', bases: ['main'], ahead: 1, fetchFailed: [] });
     expect(existsSync(wt)).toBe(true);
   });
 
@@ -523,14 +521,83 @@ describe('removeWorktree', () => {
     const wt = addWorktree(repo, join(host.dir, 'wt'), 'feat');
     expect(await remove(wt)).toMatchObject({
       t: 'worktreeAtRisk',
-      local: null,
-      remote: null,
+      bases: [],
       ahead: null,
-      fetchFailed: null,
+      fetchFailed: [],
       changes: 0,
       running: [],
     });
     expect(existsSync(wt)).toBe(true);
+  });
+
+  describe('of a worktree branched off feature-x', () => {
+    const FOUR = ['feature-x', 'origin/feature-x', 'main', 'origin/main'];
+    const notARepo = (path: string): string => `fatal: '${path}' does not appear to be a git repository`;
+
+    /** Creates `feature-x`, pushed to `origin`, and a worktree on `feat` created from it; returns its path. */
+    const stacked = (): string => {
+      git(repo, 'branch', 'feature-x');
+      git(repo, 'push', '-q', 'origin', 'feature-x');
+      git(repo, 'worktree', 'add', '-q', '-b', 'feat', join(host.dir, 'wt'), 'feature-x');
+      return join(host.dir, 'wt');
+    };
+
+    it('removes it when its commits are merged into feature-x, without trying the remote', async () => {
+      withOrigin();
+      const wt = stacked();
+      git(repo, 'branch', '-f', 'feature-x', commit(wt, 'a'));
+      const reached = failingOrigin(repo, host.dir);
+      expect(await remove(wt)).toEqual(DONE);
+      expect(existsSync(wt)).toBe(false);
+      expect(reached()).toBe(false);
+    });
+
+    it('names feature-x first among the bases of unmerged commits', async () => {
+      const origin = withOrigin();
+      const wt = stacked();
+      commit(wt, 'a');
+      rmSync(origin, { recursive: true });
+      expect(await remove(wt)).toEqual({
+        t: 'worktreeAtRisk',
+        req: ANY_REQ,
+        worktree: wt,
+        bases: FOUR,
+        ahead: 1,
+        fetchFailed: [
+          { ref: 'origin/feature-x', reason: notARepo(origin) },
+          { ref: 'origin/main', reason: notARepo(origin) },
+        ],
+        changes: 0,
+        running: [],
+      });
+      expect(existsSync(wt)).toBe(true);
+    });
+
+    it('fetches feature-x and removes it once merged there on the remote since the last fetch', async () => {
+      withOrigin();
+      const wt = stacked();
+      git(repo, 'config', 'remote.origin.fetch', '+refs/heads/other:refs/remotes/origin/other');
+      const stale = git(repo, 'rev-parse', 'refs/remotes/origin/feature-x');
+      commit(wt, 'a');
+      git(wt, 'push', '-q', 'origin', 'feat:feature-x');
+      git(repo, 'update-ref', 'refs/remotes/origin/feature-x', stale);
+      expect(await remove(wt)).toEqual(DONE);
+      expect(existsSync(wt)).toBe(false);
+    });
+
+    it('reports only the failed fetch of feature-x when main fetches', async () => {
+      const origin = withOrigin();
+      const wt = stacked();
+      commit(wt, 'a');
+      git(origin, 'branch', '-D', 'feature-x');
+      expect(await remove(wt)).toMatchObject({
+        t: 'worktreeAtRisk',
+        bases: FOUR,
+        ahead: 1,
+        fetchFailed: [{ ref: 'origin/feature-x', reason: "fatal: couldn't find remote ref refs/heads/feature-x" }],
+      });
+      expect(existsSync(wt)).toBe(true);
+    });
   });
 
   it('removes a worktree at risk when forced, closing its running terminals without trying the remote', async () => {

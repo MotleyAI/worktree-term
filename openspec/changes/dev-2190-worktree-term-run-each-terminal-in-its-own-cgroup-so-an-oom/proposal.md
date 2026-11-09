@@ -11,7 +11,7 @@ worktree-term runs the hub, the daemon and every terminal (with all their childr
 - Terminal shells run with `oom_score_adj` raised to at least 500, so a global kernel OOM picks a terminal process before the daemon or hub.
 - Optional memory limits for terminal scopes: top-level `terminalMemory` and per-preset `memory` (`high`, `max`, `swapMax`) in `config.json`, sent with each preset and with `createTerm`.
 - The daemon memory log gains each terminal scope's cgroup figures.
-- **BREAKING** (wire): `DAEMON_PROTOCOL_VERSION` 8 → 9 and `BROWSER_PROTOCOL_VERSION` 11 → 12.
+- **BREAKING** (wire): `DAEMON_PROTOCOL_VERSION` 10 → 11 and `BROWSER_PROTOCOL_VERSION` 13 → 14.
 
 ## Capabilities
 

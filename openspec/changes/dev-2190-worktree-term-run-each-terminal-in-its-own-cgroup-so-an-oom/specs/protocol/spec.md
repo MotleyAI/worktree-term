@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 9, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 12, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 11, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 14, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -29,7 +29,7 @@ The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal
 
 ### Requirement: Daemon-link message catalogue
 Client-to-daemon messages SHALL be exactly: `hello`; `shutdown`; `watchRepo{req, repo}`; `unwatchRepo{req, repo}`; `discoverRepos{req, roots, depth}`; `createTerm{req, worktree, preset, command, cols, rows, memory}`; `attach{req, termId}`; `detach{req, termId}`; `resize{termId, cols, rows}`; `closeTerm{req, termId}`; `ack{termId, offset}`; `setVisible{termIds}`; `setChecked{req, worktree, checked}`; `setLayout{req, worktree, layout}`; `removeWorktree{req, worktree, force}` with `force` a boolean.
-Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}` with `req` a request id or null; `termExited{termId, code, signal, oom}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, state}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}`; `worktreeAtRisk{req, worktree, local, remote, ahead, fetchFailed, changes, running}` where `local` and `remote` are each null or at most 4096 characters, `ahead` is null or an integer from 0 to 2^32−1 and is null exactly when `local` and `remote` are both null, `fetchFailed` is null or `{ref, reason}` with `ref` at most 4096 characters and `reason` at most 1024 characters, `changes` is an integer from 0 to 2^32−1 and `running` is at most 1024 terminal ids.
+Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}` with `req` a request id or null; `termExited{termId, code, signal, oom}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, state}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}`; `worktreeAtRisk{req, worktree, bases, ahead, fetchFailed, changes, running}` where `bases` is a list of at most 4 distinct strings of 1–4096 characters, `ahead` is null or an integer from 0 to 2^32−1 and is null exactly when `bases` is empty, `fetchFailed` is a list of at most 2 `{ref, reason}` with distinct `ref`s, each `ref` of 1–4096 characters and `reason` at most 1024 characters, `changes` is an integer from 0 to 2^32−1 and `running` is at most 1024 terminal ids.
 A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main}`; a terminal SHALL be `{termId, worktree, preset, cols, rows, exit, unseen, state}` where `exit` is null or `{code, signal, oom}`; `state` SHALL be one of `working`, `idle`, `input`; a `layouts` entry SHALL be `{worktree, layout}`; `reason` SHALL be `"lagging"`; `detached`, `locked`, `prunable`, `bare`, `main`, `checked`, `unseen`, `oom` and a host entry's `remote` SHALL be booleans; `code` SHALL be an integer; `error.req` SHALL be a request id or null; `memory` SHALL be memory limits: an object with optional keys `high`, `max` and `swapMax`, each a memory size, and no other key.
 
 #### Scenario: Broadcast termCreated carries a null req
@@ -65,19 +65,27 @@ A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main
 - **THEN** decoding fails with a protocol error
 
 #### Scenario: Commit count present exactly with a base
-- **WHEN** a `worktreeAtRisk` with `ahead` null and `local` "main", or with `ahead` 0 and both `local` and `remote` null, is encoded or decoded
+- **WHEN** a `worktreeAtRisk` with `ahead` null and `bases` ["main"], or with `ahead` 0 and `bases` empty, is encoded or decoded
 - **THEN** it fails with a protocol error
 
+#### Scenario: Four bases round-trip
+- **WHEN** a `worktreeAtRisk` with `bases` ["feature-x", "origin/feature-x", "main", "origin/main"] and `ahead` 3 is encoded and decoded
+- **THEN** the decoded value equals the original
+
 #### Scenario: Failed fetch carries its ref and reason
-- **WHEN** a `worktreeAtRisk` with `fetchFailed` `{ref: "origin/main", reason: "ssh: connect to host github.com port 22: No route to host"}` is encoded and decoded
+- **WHEN** a `worktreeAtRisk` with `fetchFailed` [`{ref: "origin/feature-x", reason: "fatal: couldn't find remote ref feature-x"}`, `{ref: "origin/main", reason: "ssh: connect to host github.com port 22: No route to host"}`] is encoded and decoded
 - **THEN** the decoded value equals the original
 
 #### Scenario: Worktree risks are bounded and complete
-- **WHEN** a `worktreeAtRisk` without `fetchFailed`, or whose `local`, `remote` or `fetchFailed.ref` exceeds 4096 characters, or whose `fetchFailed.reason` exceeds 1024 characters, is encoded or decoded
+- **WHEN** a `worktreeAtRisk` without `bases` or `fetchFailed`, with 5 bases or 3 fetch failures, with an empty base or `ref`, or whose base or `fetchFailed.ref` exceeds 4096 characters, or whose `fetchFailed.reason` exceeds 1024 characters, is encoded or decoded
+- **THEN** it fails with a protocol error
+
+#### Scenario: Duplicates rejected
+- **WHEN** a `worktreeAtRisk` whose `bases` lists "main" twice, or whose `fetchFailed` has two entries with `ref` "origin/main", is encoded or decoded
 - **THEN** it fails with a protocol error
 
 #### Scenario: Old risk shape rejected
-- **WHEN** a `worktreeAtRisk` carrying `base` instead of `local` and `remote` is decoded
+- **WHEN** a `worktreeAtRisk` carrying `local` and `remote` instead of `bases`, carrying `base`, or with `fetchFailed` null or a single `{ref, reason}` object, is decoded
 - **THEN** decoding fails with a protocol error
 
 #### Scenario: Out-of-memory flag required

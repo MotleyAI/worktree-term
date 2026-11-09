@@ -372,8 +372,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 10 and browser protocol 13', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 10, browser: 13 });
+  it('is blessed for daemon protocol 11 and browser protocol 14', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 11, browser: 14 });
   });
 
   it('records every sample as valid in its own direction', () => {

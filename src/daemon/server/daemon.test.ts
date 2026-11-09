@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../../../test/support/daemon-client.js';
 import { sleep } from '../../../test/support/daemon-host.js';
+import { writeFileAtomic } from '../../platform/files/index.js';
 import type { Layout, Worktree } from '../../protocol/index.js';
 import { StateStore } from '../state/index.js';
 import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalLauncher, type TerminalSpec } from '../terminals/index.js';
@@ -38,6 +39,8 @@ let clients: DaemonClient[];
 let spawns: PendingSpawn[];
 /** Watch starts held back until released, when set. */
 let heldWatches: (() => void)[] | null;
+/** State writes held back until released, when set. */
+let heldWrites: (() => void)[] | null;
 let watchHandlers: WorktreeHandlers[];
 /** What the risk check answers; a held promise keeps a removal in progress. */
 let risks: Promise<WorktreeRisks>;
@@ -51,6 +54,7 @@ beforeEach(async () => {
   clients = [];
   spawns = [];
   heldWatches = null;
+  heldWrites = null;
   watchHandlers = [];
   risks = Promise.resolve(NO_RISK);
   riskChecks = 0;
@@ -81,7 +85,15 @@ beforeEach(async () => {
         spawns.push({ spec, events, resolve, reject });
       }),
   };
-  store = await StateStore.load(join(dir, 'state.json'));
+  store = await StateStore.load(join(dir, 'state.json'), {
+    write: async (path, data) => {
+      if (heldWrites !== null) {
+        const held = heldWrites;
+        await new Promise<void>((resolve) => held.push(resolve));
+      }
+      await writeFileAtomic(path, data);
+    },
+  });
   daemon = new Daemon({
     services,
     version: '0.0.0-test',
@@ -230,7 +242,9 @@ it('refuses to start a terminal in a worktree while it is being removed', async 
   const from = client.mark();
   client.send({ t: 'removeWorktree', req: 1, worktree: WT, force: false });
   await sleep(50);
-  expect(await client.fails({ t: 'createTerm', worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe('busy');
+  expect(await client.fails({ t: 'createTerm', worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe(
+    'busy',
+  );
   expect(spawns).toHaveLength(0);
   release(NO_RISK);
   await client.waitFor('done', (m) => m.req === 1, { from });
@@ -491,6 +505,38 @@ describe('ending terminals', () => {
     expect(reported).toContain(failure);
   });
 
+  it('sends layout changes written in one batch in the order they were made', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const left = await start(client, WT, 'exec sleep 60');
+    const right = await start(client, WT, 'exec sleep 60');
+    await client.ok({ t: 'setLayout', worktree: WT, layout: twoPanes(left, right) });
+    const held: (() => void)[] = [];
+    heldWrites = held;
+    const checked = client.request({ t: 'setChecked', worktree: WT, checked: true });
+    await vi.waitFor(() => {
+      expect(held).toHaveLength(1);
+    });
+    const from = client.mark();
+    const named: Layout = {
+      tabs: [{ id: 'main', name: 'build', root: { split: 'right', ratio: 0.5, a: { term: left }, b: { term: right } } }],
+      active: 0,
+    };
+    const renamed = client.request({ t: 'setLayout', worktree: WT, layout: named });
+    const closed = client.request({ t: 'closeTerm', termId: right });
+    const leaf: Layout = { tabs: [{ id: 'main', name: 'build', root: { term: left } }], active: 0 };
+    await vi.waitFor(() => {
+      expect(store.layout(REPO, WT)).toEqual(leaf);
+    });
+    heldWrites = null;
+    for (const release of held.splice(0)) release();
+    await Promise.all([checked, renamed, closed]);
+    expect(client.messages.slice(from).filter((m) => m.t === 'layoutChanged')).toEqual([
+      { t: 'layoutChanged', worktree: WT, layout: named },
+      { t: 'layoutChanged', worktree: WT, layout: leaf },
+    ]);
+  });
+
   it('writes the layout of a removed worktree once, then sends termClosed for each of its terminals', async () => {
     const client = await connected();
     await client.watch(REPO);
@@ -525,7 +571,12 @@ describe('memory limits and out-of-memory exits', () => {
   };
 
   /** Creates a terminal in WT with `memory` whose spawn runs `command` in bash through `launcher`; resolves with its id. */
-  const start = async (client: DaemonClient, command: string, memory: Record<string, string>, launcher?: TerminalLauncher): Promise<number> => {
+  const start = async (
+    client: DaemonClient,
+    command: string,
+    memory: Record<string, string>,
+    launcher?: TerminalLauncher,
+  ): Promise<number> => {
     const count = spawns.length;
     const reply = client.request({ t: 'createTerm', worktree: WT, preset: 'tests', command: null, cols: 80, rows: 24, memory });
     await vi.waitFor(() => {
@@ -534,7 +585,9 @@ describe('memory limits and out-of-memory exits', () => {
     const pending = spawns[count];
     if (pending === undefined) throw new Error('no spawn');
     const spec = { ...pending.spec, cwd: dir, command, env: { ...process.env, HOME: dir, SHELL: '/bin/bash' } };
-    pending.resolve(await (launcher === undefined ? TerminalProcess.spawn(spec, pending.events) : TerminalProcess.spawn(spec, pending.events, launcher)));
+    pending.resolve(
+      await (launcher === undefined ? TerminalProcess.spawn(spec, pending.events) : TerminalProcess.spawn(spec, pending.events, launcher)),
+    );
     const created = await reply;
     if (created.t !== 'termCreated') throw new Error(`createTerm failed: ${JSON.stringify(created)}`);
     return created.term.termId;
@@ -543,7 +596,16 @@ describe('memory limits and out-of-memory exits', () => {
   it("starts a terminal with its createTerm's memory limits and its terminal id", async () => {
     const client = await connected();
     await client.watch(REPO);
-    client.send({ t: 'createTerm', req: 1, worktree: WT, preset: 'tests', command: null, cols: 80, rows: 24, memory: { max: '64M', swapMax: '0' } });
+    client.send({
+      t: 'createTerm',
+      req: 1,
+      worktree: WT,
+      preset: 'tests',
+      command: null,
+      cols: 80,
+      rows: 24,
+      memory: { max: '64M', swapMax: '0' },
+    });
     await vi.waitFor(() => {
       expect(spawns).toHaveLength(1);
     });

@@ -4,7 +4,7 @@
 
 ## 2. Protocol
 
-- [x] 2.1 Memory size and memory-limits schemas, `createTerm.memory`, `termExited.oom`, `exit.oom`, preset `memory`; raise `DAEMON_PROTOCOL_VERSION` to 9 and `BROWSER_PROTOCOL_VERSION` to 12; re-bless the wire golden (frozen golden unchanged); verify the protocol delta's scenarios in `src/protocol/*.test.ts`.
+- [x] 2.1 Memory size and memory-limits schemas, `createTerm.memory`, `termExited.oom`, `exit.oom`, preset `memory`; raise `DAEMON_PROTOCOL_VERSION` to 11 and `BROWSER_PROTOCOL_VERSION` to 14; re-bless the wire golden (frozen golden unchanged); verify the protocol delta's scenarios in `src/protocol/*.test.ts`.
 
 ## 3. Platform
 

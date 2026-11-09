@@ -135,6 +135,32 @@ describe('layout validity', () => {
     expect(accepts({ tabs: [{ id: 'i'.repeat(64), root: { term: 1 } }], active: 0 })).toBe(true);
   });
 
+  it('accepts a named tab and keeps its name', () => {
+    const named = { tabs: [{ id: 't', name: 'build', root: { term: 1 } }], active: 0 };
+    expect(accepts(named)).toBe(true);
+    expect(layoutSchema.parse(named)).toEqual(named);
+  });
+
+  it('accepts a tab without a name', () => {
+    expect(layoutSchema.parse(oneTab({ term: 1 })).tabs[0]).not.toHaveProperty('name');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['65 characters', 'n'.repeat(65)],
+  ])('rejects a tab name that is %s', (_name, name) => {
+    expect(accepts({ tabs: [{ id: 't', name, root: { term: 1 } }], active: 0 })).toBe(false);
+  });
+
+  it('accepts a 64-character tab name with surrounding spaces', () => {
+    expect(accepts({ tabs: [{ id: 't', name: ` ${'n'.repeat(62)} `, root: { term: 1 } }], active: 0 })).toBe(true);
+  });
+
+  it('rejects a null tab name', () => {
+    expect(accepts({ tabs: [{ id: 't', name: null, root: { term: 1 } }], active: 0 })).toBe(false);
+  });
+
   it.each([
     [0.05, true],
     [0.95, true],

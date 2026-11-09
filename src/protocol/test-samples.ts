@@ -58,7 +58,7 @@ export const exitedTerminal: Terminal = {
 export const layout: Layout = {
   tabs: [
     { id: 'main', root: { split: 'right', ratio: 0.5, a: { term: 1 }, b: { split: 'down', ratio: 0.25, a: { term: 2 }, b: { term: 3 } } } },
-    { id: 'logs', root: { term: 4 } },
+    { id: 'logs', name: 'tail logs', root: { term: 4 } },
   ],
   active: 1,
 };

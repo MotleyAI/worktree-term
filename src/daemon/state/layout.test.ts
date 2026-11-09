@@ -64,6 +64,22 @@ describe('pruneLayout', () => {
     expect(pruneLayout(layout, live())).toEqual({ tabs: [], active: 0 });
   });
 
+  it('keeps the id and name of a tab that lost a pane', () => {
+    const layout: Layout = { tabs: [{ id: 'a', name: 'build', root: right(t(1), t(2)) }, ...tabsOf(3)], active: 0 };
+    expect(pruneLayout(layout, live(2, 3))).toEqual({ tabs: [{ id: 'a', name: 'build', root: t(2) }, ...tabsOf(3)], active: 0 });
+  });
+
+  it('keeps the names of the remaining tabs when a named tab is removed', () => {
+    const layout: Layout = {
+      tabs: [
+        { id: 'a', name: 'gone', root: t(1) },
+        { id: 'b', name: 'kept', root: t(2) },
+      ],
+      active: 1,
+    };
+    expect(pruneLayout(layout, live(2))).toEqual({ tabs: [{ id: 'b', name: 'kept', root: t(2) }], active: 0 });
+  });
+
   it('keeps an empty layout empty', () => {
     expect(pruneLayout({ tabs: [], active: 0 }, live(1))).toEqual({ tabs: [], active: 0 });
   });

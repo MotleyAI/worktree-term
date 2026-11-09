@@ -422,11 +422,25 @@ input:focus-visible,
   color: #f48771;
 }
 
-.term-tab {
+.term-tab-strip {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 4px 4px 9px;
+  flex: 0 1 auto;
+  align-self: stretch;
+  max-height: 38px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.term-tab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
   border-radius: 5px;
   border: 1px solid transparent;
   cursor: pointer;
@@ -434,6 +448,24 @@ input:focus-visible,
 
 .term-tab .close {
   padding: 0 4px;
+}
+
+.term-tab-name {
+  width: 12em;
+  padding: 0 4px;
+  font: inherit;
+}
+
+.tab-controls {
+  flex-shrink: 0;
+}
+
+.new-tab {
+  position: sticky;
+  right: 0;
+  flex-shrink: 0;
+  padding: 4px 9px;
+  background: var(--panel);
 }
 
 .terminal-area {
@@ -454,6 +486,7 @@ input:focus-visible,
   pointer-events: auto;
 }
 
+.new-tab:disabled,
 .tab-controls button:disabled {
   color: var(--muted);
   cursor: default;

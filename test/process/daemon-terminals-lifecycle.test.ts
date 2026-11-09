@@ -315,6 +315,25 @@ describe('checked state and layouts', () => {
     ]);
   });
 
+  it('keeps the name of a tab whose split loses a pane', async () => {
+    const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const two = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
+    const named: Layout = {
+      tabs: [{ id: 'main', name: 'build', root: { split: 'right', ratio: 0.5, a: { term: one.termId }, b: { term: two.termId } } }],
+      active: 0,
+    };
+    const fromSet = fx.b.mark();
+    await fx.a.ok({ t: 'setLayout', worktree: fx.wt, layout: named });
+    await fx.b.waitFor('layoutChanged', () => true, { from: fromSet });
+    const from = fx.b.mark();
+    await fx.a.ok({ t: 'closeTerm', termId: one.termId });
+    expect(await fx.b.waitFor('layoutChanged', () => true, { from })).toEqual({
+      t: 'layoutChanged',
+      worktree: fx.wt,
+      layout: { tabs: [{ id: 'main', name: 'build', root: { term: two.termId } }], active: 0 },
+    });
+  });
+
   it('removes a tab left empty when its last terminal is closed', async () => {
     const one = await fx.a.create(fx.wt, { command: 'exec sleep 60' });
     const fromSet = fx.b.mark();

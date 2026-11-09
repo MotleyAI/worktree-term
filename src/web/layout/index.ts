@@ -5,6 +5,7 @@ export {
   MAX_DEPTH,
   MAX_PANES,
   MAX_TABS,
+  nameTab,
   pruneTo,
   selectTab,
   setRatio,

@@ -1,0 +1,18 @@
+export {
+  cgroupPath,
+  daemonUnit,
+  enterScope,
+  findUserManager,
+  hostScopeRoots,
+  hubUnit,
+  outOfMemory,
+  resetFailedScopes,
+  SCOPE_SLICE,
+  scopeCommand,
+  terminalUnit,
+  unitPrefix,
+  type Report,
+  type ScopeLimits,
+  type ScopeRoots,
+  type UserManager,
+} from './scopes.js';

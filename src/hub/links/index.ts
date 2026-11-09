@@ -3,6 +3,7 @@ import { connect, type Socket } from 'node:net';
 import type { Readable, Writable } from 'node:stream';
 import { dial, LineScanner, spawnDetached, sshCommand, StderrTail, tailscaleLoginUrl } from '../../platform/dialer/index.js';
 import { installRemote, type InstalledRemote } from '../../platform/install/index.js';
+import { enterScope, findUserManager, hostScopeRoots, hubUnit } from '../../platform/scopes/index.js';
 import { ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
 
 export { forwardToHub, HubOpener, PRINT_CODE_COMMAND, type HubForward, type HubOpening, type HubOpenResult } from './hub.js';
@@ -348,6 +349,11 @@ export class LocalDaemon {
     return link;
   }
 }
+
+/** Moves this hub into a scope of its own when it has a lasting user manager; a failure to enter is reported. */
+export const placeHub = async (stateDir: string, report: (error: unknown) => void): Promise<void> => {
+  if ((await findUserManager(hostScopeRoots())).lasting) await enterScope(hubUnit(stateDir), process.pid).catch(report);
+};
 
 /** Starts `command` detached in its own session, appending its output to `log` (ignored when null). */
 export const startDetached = (command: readonly string[], log: string | null): Promise<void> => spawnDetached(command, log);

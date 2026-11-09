@@ -36,9 +36,18 @@ export const aggregate = (terminals: readonly Terminal[], level: MarkLevel): Agg
 export const markTitle = (counts: Aggregate['counts']): string =>
   MARK_ORDER.flatMap((m) => (counts[m] === undefined ? [] : [`${m}: ${String(counts[m])}`])).join('\n');
 
+const OUT_OF_MEMORY = 'killed: out of memory';
+
+/** What a tab or pane header says of a terminal's exit; null while it runs. */
+export const exitNote = (t: Terminal): string | null => {
+  if (t.exit === null) return null;
+  return t.exit.oom ? OUT_OF_MEMORY : 'exited';
+};
+
 /** What a terminal is doing, in words: waiting for input, running, done, idle, or how it exited. */
 export const terminalStatus = (t: Terminal): string => {
   if (t.exit !== null) {
+    if (t.exit.oom) return OUT_OF_MEMORY;
     return t.exit.signal === null ? `exited with code ${String(t.exit.code)}` : `killed by ${t.exit.signal}`;
   }
   if (t.state === 'input') return 'waiting for input';

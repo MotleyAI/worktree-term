@@ -13,6 +13,8 @@ import { HOG, NO_USER_MANAGER, SMALL, terminalUnit, userManagerEnv, withUserMana
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
+const ANY_TS: unknown = expect.any(String);
+
 const SAMPLE_MS = 200;
 const ENV = { WTD_MEMORY_SAMPLE_MS: String(SAMPLE_MS) };
 const MiB = 1024 * 1024;
@@ -348,7 +350,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon memory log wit
       10_000,
     );
     expect(line).toEqual({
-      ts: expect.any(String),
+      ts: ANY_TS,
       source: 'daemon',
       event: 'oom-kill',
       pid: daemon.pid,

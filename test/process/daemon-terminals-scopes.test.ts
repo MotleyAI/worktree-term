@@ -139,7 +139,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('terminal scopes on'),
     const from = client.mark();
     const fromWatcher = watcher.mark();
     const hog = await run(HOG, SMALL);
-    const expected = { t: 'termExited', termId: hog, code: expect.any(Number), signal: 'SIGKILL', oom: true };
+    const anyCode: unknown = expect.any(Number);
+    const expected = { t: 'termExited', termId: hog, code: anyCode, signal: 'SIGKILL', oom: true };
     expect(await client.waitFor('termExited', (m) => m.termId === hog, { from, timeout: 20_000 })).toEqual(expected);
     expect(await watcher.waitFor('termExited', (m) => m.termId === hog, { from: fromWatcher })).toEqual(expected);
     expect(client.view(hog).text()).not.toContain('SURVIVED');
@@ -281,7 +282,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
     const { stdout, stdin } = bridge.child;
     if (stdout === null || stdin === null) throw new Error('wtd connect has no stdio pipes');
     const via = DaemonClient.over(stdout, stdin);
-    await via.waitFor('hello', () => true, { timeout: 10_000 });
+    await via.handshake();
     const pid = await servingPid(via);
     expect(cgroupOf(pid)).toMatch(scopePath(host.stateDir, 'daemon'));
     expect(cgroupOf(pid)).not.toBe(cgroupOf(bridge.pid));
@@ -292,7 +293,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
     await startDaemon(userManagerEnv());
     const inner = DaemonHost.create();
     others.push(inner);
-    await run(`echo $$ > sh.pid; XDG_STATE_HOME='${inner.stateHome}' HOME='${inner.home}' ${process.execPath} ${BUNDLE} daemon`);
+    // A trailing command, so bash does not exec the daemon in place of the shell.
+    await run(`echo $$ > sh.pid; XDG_STATE_HOME='${inner.stateHome}' HOME='${inner.home}' ${process.execPath} ${BUNDLE} daemon; true`);
     const shell = await pidIn('sh.pid');
     await waitUntil(() => canConnect(inner.socket), 'the inner daemon socket', 10_000);
     const [pid] = inner.daemonPids();

@@ -439,7 +439,8 @@ describe('preset memory limits', () => {
   it('stores the memory an added preset carries', async () => {
     const client = await fx.host.session();
     expect((await client.hubRequest({ t: 'addPreset', preset: TESTS })).m).toEqual({ t: 'done', req: 1 });
-    expect(configFile()).toMatchObject({ presets: expect.arrayContaining([TESTS]) });
+    const withTests: unknown = expect.arrayContaining([TESTS]);
+    expect(configFile()).toMatchObject({ presets: withTests });
   });
 
   it("relays a createTerm's memory limits to the daemon", async () => {

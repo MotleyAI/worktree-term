@@ -417,14 +417,14 @@ export class Daemon {
     const termId = this.nextTermId++;
     const env = { ...this.options.env, WTD_TERMINAL: `${String(process.pid)}/${this.options.instance}/${String(termId)}` };
     const spawn = this.options.services.spawnTerminal(
-      { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env },
+      { termId, memory: m.memory, cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env },
       {
         activity: (unseen, state) => {
           this.broadcast(repo, { t: 'activity', termId, unseen, state });
         },
-        exited: (code, signal) => {
+        exited: (code, signal, oom) => {
           if (code !== 0 || signal !== null) {
-            this.broadcast(repo, { t: 'termExited', termId, code, signal });
+            this.broadcast(repo, { t: 'termExited', termId, code, signal, oom });
             return;
           }
           const term = this.terminals.get(termId);

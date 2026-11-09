@@ -1,7 +1,7 @@
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { readFileIfExists } from '../../platform/files/index.js';
-import { discoveryRootSchema, presetSchema, type Preset } from '../../protocol/index.js';
+import { discoveryRootSchema, memoryLimitsSchema, presetSchema, type MemoryLimits, type Preset } from '../../protocol/index.js';
 
 export const DEFAULT_PORT = 7417;
 
@@ -36,6 +36,8 @@ export interface HubConfig {
   roots: string[];
   presets: Preset[];
   hosts: RemoteHostConfig[];
+  /** Memory limits of every preset's terminals, each overridden by the preset's own. */
+  terminalMemory: MemoryLimits;
 }
 
 /** An unusable configuration; the message is one line. */
@@ -85,6 +87,20 @@ const configSchema = z
       .max(MAX_PRESETS)
       .refine((list) => new Set(list.map((p) => p.name)).size === list.length, 'preset names must be unique')
       .optional(),
+    terminalMemory: memoryLimitsSchema.optional(),
+  })
+  .superRefine((config, ctx) => {
+    const terminalMemory = config.terminalMemory ?? {};
+    for (const [i, preset] of (config.presets ?? DEFAULT_PRESETS).entries()) {
+      const { high, max } = effectiveLimits(terminalMemory, preset.memory);
+      if (high === undefined || max === undefined || high.endsWith('%') || max.endsWith('%') || bytes(high) <= bytes(max)) continue;
+      ctx.addIssue({
+        code: 'custom',
+        path: config.presets === undefined ? ['terminalMemory'] : ['presets', i, 'memory'],
+        message: `preset ${preset.name}: effective high ${high} exceeds max ${max}`,
+      });
+      return;
+    }
   })
   .superRefine((config, ctx) => {
     const taken = new Set([config.port ?? DEFAULT_PORT]);
@@ -95,6 +111,27 @@ const configSchema = z
       }
       taken.add(host.port);
     }
+  });
+
+const UNITS: Readonly<Record<string, bigint>> = { K: 1n << 10n, M: 1n << 20n, G: 1n << 30n, T: 1n << 40n };
+
+/** A memory size without `%` in bytes. */
+const bytes = (size: string): bigint => {
+  const unit = UNITS[size.slice(-1)];
+  return unit === undefined ? BigInt(size) : BigInt(size.slice(0, -1)) * unit;
+};
+
+/** `terminalMemory` with each key `memory` holds replaced. */
+const effectiveLimits = (terminalMemory: MemoryLimits, memory: MemoryLimits | undefined): MemoryLimits => ({
+  ...terminalMemory,
+  ...memory,
+});
+
+/** The presets with their effective memory limits, omitted where empty. */
+export const effectivePresets = (config: Pick<HubConfig, 'presets' | 'terminalMemory'>): Preset[] =>
+  config.presets.map(({ name, command, memory }) => {
+    const limits = effectiveLimits(config.terminalMemory, memory);
+    return Object.keys(limits).length === 0 ? { name, command } : { name, command, memory: limits };
   });
 
 const oneLine = (text: string): string => text.replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
@@ -119,7 +156,8 @@ const expand = (path: string, home: string): string => {
 
 /** Parses `config.json` text (null for a missing file); throws ConfigError naming the first problem. */
 export const parseConfig = (text: string | null, home: string): HubConfig => {
-  if (text === null) return { port: DEFAULT_PORT, repos: [], roots: [...DEFAULT_ROOTS], presets: [...DEFAULT_PRESETS], hosts: [] };
+  if (text === null)
+    return { port: DEFAULT_PORT, repos: [], roots: [...DEFAULT_ROOTS], presets: [...DEFAULT_PRESETS], hosts: [], terminalMemory: {} };
   const result = configSchema.safeParse(parseJson(text));
   if (!result.success) {
     const [issue] = result.error.issues;
@@ -138,6 +176,7 @@ export const parseConfig = (text: string | null, home: string): HubConfig => {
       repos: h.repos ?? [],
       roots: h.roots ?? [...DEFAULT_ROOTS],
     })),
+    terminalMemory: result.data.terminalMemory ?? {},
   };
 };
 

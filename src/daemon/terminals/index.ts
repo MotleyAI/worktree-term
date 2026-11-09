@@ -7,5 +7,6 @@ export {
   type MirrorStats,
   type OutputSink,
   type TerminalEvents,
+  type TerminalLauncher,
   type TerminalSpec,
 } from './terminal.js';

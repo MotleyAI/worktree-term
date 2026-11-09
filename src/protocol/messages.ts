@@ -21,6 +21,7 @@ import {
   MAX_PRESETS,
   MAX_ROOTS,
   MAX_VISIBLE,
+  memoryLimits,
   name,
   offset,
   path,
@@ -61,20 +62,20 @@ const terminal = z.strictObject({
   preset: name,
   cols: size,
   rows: size,
-  exit: z.strictObject({ code: z.int(), signal }).nullable(),
+  exit: z.strictObject({ code: z.int(), signal, oom: z.boolean() }).nullable(),
   unseen: z.boolean(),
   state: attentionState,
 });
 
 const repos = z.array(path).max(MAX_DISCOVERED);
 
-export const preset = z.strictObject({ name: presetName, command: presetCommand });
+export const preset = z.strictObject({ name: presetName, command: presetCommand, memory: memoryLimits.optional() });
 
 const daemonRequests = [
   message('watchRepo', { req, repo: path }),
   message('unwatchRepo', { req, repo: path }),
   message('discoverRepos', { req, roots: z.array(root).min(1).max(MAX_ROOTS), depth }),
-  message('createTerm', { req, worktree: path, preset: name, command: longText, cols: size, rows: size }),
+  message('createTerm', { req, worktree: path, preset: name, command: longText, cols: size, rows: size, memory: memoryLimits }),
   message('attach', { req, termId }),
   message('detach', { req, termId }),
   message('resize', { termId, cols: size, rows: size }),
@@ -98,7 +99,7 @@ const daemonEvents = [
   }),
   message('worktreesChanged', { repo: path, worktrees: z.array(worktree).max(MAX_ENTRIES) }),
   message('termCreated', { req: req.nullable(), term: terminal }),
-  message('termExited', { termId, code: z.int(), signal }),
+  message('termExited', { termId, code: z.int(), signal, oom: z.boolean() }),
   message('termClosed', { termId }),
   message('detached', { termId, reason: z.literal('lagging') }),
   message('activity', { termId, unseen: z.boolean(), state: attentionState }),
@@ -185,6 +186,7 @@ export type HostEntry = z.infer<typeof hostEntry>;
 export type Terminal = z.infer<typeof terminal>;
 export type AttentionState = z.infer<typeof attentionState>;
 export type Preset = z.infer<typeof preset>;
+export type MemoryLimits = z.infer<typeof memoryLimits>;
 
 function validate<D extends Direction>(dir: D, value: unknown): MessageOf<D>;
 function validate(dir: Direction, value: unknown): MessageOf<Direction> {

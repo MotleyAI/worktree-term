@@ -325,7 +325,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real us
     const child = spawn(file, args, { stdio: ['ignore', 'pipe', 'inherit'] });
     children.push(child);
     let out = '';
-    child.stdout?.on('data', (chunk: Buffer) => (out += chunk.toString()));
+    child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
     const pid = Number(await waitUntil(() => /^(\d+)\n/.exec(out)?.[1], 'the pid it prints'));
     expect(pid).toBe(child.pid);
     const path = cgroupOf(pid);

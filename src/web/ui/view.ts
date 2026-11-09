@@ -885,7 +885,7 @@ export class View {
     const { host, repo, worktree, op } = context;
     const { cols, rows } = this.manager.sizeFor(this.newPaneBox(op));
     this.client
-      .request(host, { t: 'createTerm', worktree, preset: preset.name, command: preset.command, cols, rows })
+      .request(host, { t: 'createTerm', worktree, preset: preset.name, command: preset.command, cols, rows, memory: preset.memory ?? {} })
       .then((reply) => {
         if (reply.t === 'termCreated') this.place(host, repo, worktree, op, reply.term.termId);
       })

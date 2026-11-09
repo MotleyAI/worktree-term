@@ -2,6 +2,7 @@ export {
   ConfigError,
   ConfigSource,
   DEFAULT_PORT,
+  effectivePresets,
   expandHome,
   loadConfig,
   nextHostPort,

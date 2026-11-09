@@ -558,7 +558,7 @@ describe('memory limits and out-of-memory exits', () => {
     const from = client.mark();
     const fromOther = other.mark();
     client.sendInput(term, '\r');
-    const expected = { t: 'termExited', termId: term, code: expect.any(Number), signal: 'SIGKILL', oom: true };
+    const expected = { t: 'termExited', termId: term, code: ANY_REQ, signal: 'SIGKILL', oom: true };
     expect(await client.waitFor('termExited', (m) => m.termId === term, { from })).toEqual(expected);
     expect(await other.waitFor('termExited', (m) => m.termId === term, { from: fromOther })).toEqual(expected);
     const later = (await (await connected()).watch(REPO)).terminals.find((t) => t.termId === term);

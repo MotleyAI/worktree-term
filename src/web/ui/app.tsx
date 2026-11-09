@@ -6,7 +6,7 @@ import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction, statusText } from './hosts.js';
 import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
-import { aggregate, markTitle, worktreeTitle, type Aggregate } from './marks.js';
+import { aggregate, exitNote, markTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
@@ -35,6 +35,12 @@ const report =
   };
 
 const px = (n: number): string => `${String(n)}px`;
+
+/** ` (<exit note>)` for an exited terminal, else nothing. */
+const exitSuffix = (terminal: Terminal | null | undefined): string => {
+  const note = terminal == null ? null : exitNote(terminal);
+  return note === null ? '' : ` (${note})`;
+};
 
 const AuthMessage = () => (
   <div class="message" data-testid="auth-message">
@@ -569,7 +575,7 @@ const TermTab = ({ tab, active, view }: { tab: ShownTab; active: boolean; view: 
     }}
   >
     {tab.terminal?.preset ?? 'terminal'} {tab.termId}
-    {tab.terminal?.exit != null ? ' (exited)' : ''}
+    {exitSuffix(tab.terminal)}
     <Mark of={aggregate(tab.terminals, 'tab')} />
     <button
       type="button"
@@ -636,7 +642,7 @@ const PaneFrame = ({ pane, focused, header, view }: { pane: ShownPane; focused: 
       >
         <span class="pane-label">
           {pane.terminal?.preset ?? 'terminal'} {pane.termId}
-          {pane.terminal?.exit != null ? ' (exited)' : ''}
+          {exitSuffix(pane.terminal)}
         </span>
         <Mark of={aggregate(pane.terminal === null ? [] : [pane.terminal], 'tab')} />
         <button

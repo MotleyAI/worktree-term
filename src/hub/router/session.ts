@@ -11,7 +11,7 @@ import {
   type MessageOf,
   type Preset,
 } from '../../protocol/index.js';
-import { ConfigError, type ConfigSnapshot, type PresetEdit, type RepoEdit } from '../config/index.js';
+import { ConfigError, effectivePresets, type ConfigSnapshot, type PresetEdit, type RepoEdit } from '../config/index.js';
 import type { DaemonEndpoint, Link } from '../links/index.js';
 import type { HostCoordinator } from './coordinator.js';
 import { hostKey, hostTransition, initialHostState, retryDelay, type HostEvent, type HostState } from './hosts.js';
@@ -267,7 +267,7 @@ export class Session {
   /** Sends the configuration problem, if any, the presets and the hosts, then connects every host. */
   start(): void {
     if (this.snapshot.problem !== null) this.error(null, null, 'internal', `invalid configuration: ${this.snapshot.problem}`);
-    this.message({ t: 'presets', presets: this.snapshot.config.presets });
+    this.message({ t: 'presets', presets: effectivePresets(this.snapshot.config) });
     this.hostsChanged();
     for (const host of this.hosts) host.connect();
   }
@@ -312,9 +312,10 @@ export class Session {
     }
   }
 
-  /** Sends presets changed by an edit. */
+  /** Sends presets changed by an edit, with this session's effective limits. */
   showPresets(presets: Preset[]): void {
-    if (!this.closed) this.message({ t: 'presets', presets });
+    const { terminalMemory } = this.snapshot.config;
+    if (!this.closed) this.message({ t: 'presets', presets: effectivePresets({ presets, terminalMemory }) });
   }
 
   /** Replaces the repos of the session's matching host after an edit and sends `hosts`. */

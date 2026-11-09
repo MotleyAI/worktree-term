@@ -922,7 +922,8 @@ describe('memory limits', () => {
   it('are optional in a preset, which then has none', () => {
     const decoded = decodeMessage('hubToBrowser', raw({ t: 'presets', presets: [{ name: 'shell', command: null }] }));
     expect(decoded).toEqual({ t: 'presets', presets: [{ name: 'shell', command: null }] });
-    expect(decoded.t === 'presets' && 'memory' in (decoded.presets[0] ?? {})).toBe(false);
+    if (decoded.t !== 'presets') throw new Error(`decoded ${decoded.t}`);
+    expect('memory' in (decoded.presets[0] ?? {})).toBe(false);
   });
 
   it('travel in an added preset', () => {

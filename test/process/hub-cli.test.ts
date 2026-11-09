@@ -516,7 +516,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement under t
     const client = await host.client();
     const repo = makeRepo(join(host.dir, 'repo'));
     await client.watch(repo);
-    await client.create(repo, { command: `echo $$ > sh.pid; ${process.execPath} ${BUNDLE} hub` });
+    // A trailing command, so bash does not exec the hub in place of the shell.
+    await client.create(repo, { command: `echo $$ > sh.pid; ${process.execPath} ${BUNDLE} hub; true` });
     await waitUntil(() => host.serving(), 'the hub to serve', 15_000);
     const shell = Number(readFileSync(join(repo, 'sh.pid'), 'utf8'));
     const pid = host.record()?.pid;

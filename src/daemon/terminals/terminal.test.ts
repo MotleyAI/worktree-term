@@ -345,7 +345,7 @@ describe('launcher', () => {
 
   it.each([
     ['a non-zero code', 'exit 3', { code: 3, signal: null }],
-    ['SIGTERM', 'kill -TERM $$', { signal: 'SIGTERM' }],
+    ['SIGTERM', "exec sh -c 'kill -TERM $$'", { signal: 'SIGTERM' }],
   ])('does not ask the launcher about an exit with %s, reporting oom false', async (_name, command, exit) => {
     const { launcher, asked } = recording(true);
     const { term, exited } = await run(command, launcher);

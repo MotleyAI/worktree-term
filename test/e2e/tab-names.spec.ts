@@ -166,6 +166,19 @@ test.describe('tab names', () => {
       .not.toHaveProperty('name');
   });
 
+  test('Enter confirming an IME composition keeps the field open', async ({ hub, page, wire }) => {
+    const term = await oneTab(hub, page);
+    const field = await startRename(page, term);
+    await field.fill('名前');
+    const mark = wire.markSent();
+    await field.dispatchEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true });
+    await settle(page);
+    await expect(field).toBeFocused();
+    expect(layoutsSent(wire, mark)).toEqual([]);
+    await field.press('Enter');
+    await expect.poll(() => nameIn(layoutsSent(wire).at(-1), term)).toBe('名前');
+  });
+
   test('keys typed in the field reach only the field', async ({ hub, page, wire }) => {
     const first = await oneTab(hub, page);
     await ready(page, first);

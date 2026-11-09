@@ -103,22 +103,21 @@ const splitsAtRightEnd = async (page: Page): Promise<boolean> => {
   return gap >= 0 && gap <= 16;
 };
 
-/** Whether each tab-bar control lies inside the tab bar and is what the page finds at its centre. */
-const controlsUsable = (page: Page): Promise<boolean[]> =>
-  page.evaluate(
-    (ids) => {
-      const bar = document.querySelector('.term-tabs')?.getBoundingClientRect();
-      return ids.map((id) => {
-        const control = document.querySelector(id);
-        if (bar === undefined || control === null) return false;
-        const box = control.getBoundingClientRect();
-        const inside = box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom;
-        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-        return inside && box.width > 0 && hit !== null && control.contains(hit);
-      });
-    },
-    [byTestId(TID.newTab), byTestId(TID.splitRight), byTestId(TID.splitDown)],
-  );
+const CONTROLS = [byTestId(TID.newTab), byTestId(TID.splitRight), byTestId(TID.splitDown)];
+
+/** Whether each element lies inside the tab bar and is what the page finds at its centre. */
+const usableInTabBar = (page: Page, selectors: string[]): Promise<boolean[]> =>
+  page.evaluate((ids) => {
+    const bar = document.querySelector('.term-tabs')?.getBoundingClientRect();
+    return ids.map((id) => {
+      const control = document.querySelector(id);
+      if (bar === undefined || control === null) return false;
+      const box = control.getBoundingClientRect();
+      const inside = box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return inside && box.width > 0 && hit !== null && control.contains(hit);
+    });
+  }, selectors);
 
 /** Scrolls the element holding the terminal tabs to its start or its end; returns whether it overflows. */
 const scrollTabs = (page: Page, to: 'start' | 'end'): Promise<boolean> =>
@@ -631,8 +630,10 @@ test.describe('tab-bar controls', () => {
 
     for (const end of ['start', 'end'] as const) {
       expect(await scrollTabs(page, end), end).toBe(true);
-      expect(await controlsUsable(page), end).toEqual([true, true, true]);
+      expect(await usableInTabBar(page, CONTROLS), end).toEqual([true, true, true]);
     }
+    const last = termTab(rest.at(-1) ?? 0);
+    expect(await usableInTabBar(page, [last, `${last} ${byTestId(TID.termTabClose)}`])).toEqual([true, true]);
     await page.locator(byTestId(TID.newTab)).click();
     await expect(page.locator(byTestId(TID.presetPicker))).toBeVisible();
   });

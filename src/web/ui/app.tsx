@@ -581,6 +581,7 @@ const TabNameField = ({ tab, view, onEnd }: { tab: ShownTab; view: View; onEnd: 
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === 'Enter') {
+          if (event.isComposing) return;
           event.preventDefault();
           end(event.currentTarget.value);
         } else if (event.key === 'Escape') {

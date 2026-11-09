@@ -194,8 +194,8 @@ export const lowerOomScoreAdj = async (file = '/proc/self/oom_score_adj'): Promi
   let low = OOM_SCORE_ADJ_MIN - 1;
   while (high - low > 1) {
     const mid = Math.floor((low + high) / 2);
-    if (await permitted(file, mid))
-      high = mid; // NOSONAR(S9382) — each write narrows the search
+    const accepted = await permitted(file, mid); // NOSONAR(S9382) — each write narrows the search
+    if (accepted) high = mid;
     else low = mid;
   }
 };

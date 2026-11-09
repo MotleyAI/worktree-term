@@ -23,6 +23,7 @@ import {
   HOG,
   isFailed,
   NO_USER_MANAGER,
+  atOomFloor,
   oomScoreAdj,
   resetFailed,
   scopePath,
@@ -212,7 +213,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('terminal scopes on, b
     await run('exec sleep 60');
     await run('exec sleep 60');
     const probes = wrapper.calls().filter((args) => args.at(-1) === 'true' && args.includes('--collect'));
-    expect(probes).toHaveLength(1);
+    expect(probes.map((args) => args.includes('--expand-environment=no'))).toEqual([false, true]);
   });
 });
 
@@ -305,7 +306,9 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
     expect(cgroupOf(pid)).toMatch(scopePath(inner.stateDir, 'daemon'));
     expect(cgroupOf(pid)).not.toBe(cgroupOf(shell));
     expect(oomScoreAdj(shell)).toBeGreaterThanOrEqual(500);
-    expect(oomScoreAdj(pid)).toBeLessThan(500);
+    expect(atOomFloor(pid)).toBe(true);
+    // This runner shares the user manager's floor, so its own value bounds the floor from above.
+    if (oomScoreAdj(process.pid) < 500) expect(oomScoreAdj(pid)).toBeLessThan(500);
   });
 
   const UNIT = 'worktree-term-daemon.service';

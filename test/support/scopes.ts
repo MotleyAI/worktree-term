@@ -139,3 +139,16 @@ export const failingSystemdRun = (dir: string): { program: string; calls: () => 
 
 /** The `oom_score_adj` of `pid`. */
 export const oomScoreAdj = (pid: number): number => Number(readFileSync(`/proc/${String(pid)}/oom_score_adj`, 'utf8').trim());
+
+/** Whether `pid`'s `oom_score_adj` is the lowest the kernel permits it: -1000, or one less is refused. */
+export const atOomFloor = (pid: number): boolean => {
+  const adj = oomScoreAdj(pid);
+  if (adj === -1000) return true;
+  try {
+    writeFileSync(`/proc/${String(pid)}/oom_score_adj`, String(adj - 1));
+    return false;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'EACCES') return true;
+    throw error;
+  }
+};

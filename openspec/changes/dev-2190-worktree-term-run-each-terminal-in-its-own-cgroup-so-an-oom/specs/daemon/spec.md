@@ -13,7 +13,7 @@ Once it holds the start lock and before it serves its socket, the daemon SHALL f
 
 #### Scenario: Daemon started in a terminal gives up the terminal's adjustment
 - **WHEN** the user runs `wtd daemon` in a terminal of another daemon
-- **THEN** the new daemon's `oom_score_adj` is below 500
+- **THEN** the new daemon's `oom_score_adj` is the lowest value the kernel permits it, below 500 where that floor is lower
 
 #### Scenario: Daemon unit stays
 - **WHEN** the daemon is started as `worktree-term-daemon.service`

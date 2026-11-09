@@ -14,6 +14,7 @@ import {
   failingSystemdRun,
   fakeProgram,
   NO_USER_MANAGER,
+  atOomFloor,
   oomScoreAdj,
   scopePath,
   userManagerEnv,
@@ -536,7 +537,9 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement under t
     expect(cgroupOf(pid)).toMatch(scopePath(host.stateDir, 'hub'));
     expect(cgroupOf(pid)).not.toBe(cgroupOf(shell));
     expect(oomScoreAdj(shell)).toBeGreaterThanOrEqual(500);
-    expect(oomScoreAdj(pid)).toBeLessThan(500);
+    expect(atOomFloor(pid)).toBe(true);
+    // This runner shares the user manager's floor, so its own value bounds the floor from above.
+    if (oomScoreAdj(process.pid) < 500) expect(oomScoreAdj(pid)).toBeLessThan(500);
   });
 });
 

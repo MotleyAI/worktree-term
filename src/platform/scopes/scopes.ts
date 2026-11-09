@@ -9,8 +9,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 export const SCOPE_SLICE = 'app-wtd.slice';
 
 const PROBE_TIMEOUT_MS = 2000;
-/** The first systemd whose systemd-run takes `--expand-environment`. */
-const EXPAND_ENVIRONMENT_SINCE = 254;
 const OUTCOME_TIMEOUT_MS = 2000;
 const START_TIMEOUT_MS = 2000;
 const POLL_MS = 50;
@@ -24,8 +22,8 @@ export interface ScopeRoots {
   user: string;
 }
 
-/** `version` is systemd-run's major version, null when unreadable. */
-export type UserManager = { lasting: true; version: number | null } | { lasting: false; reason: string };
+/** `noExpand`: systemd-run takes `--expand-environment=no`, without which newer ones expand `$` in a scope's command. */
+export type UserManager = { lasting: true; noExpand: boolean } | { lasting: false; reason: string };
 
 /** Memory limits of a scope, in systemd size syntax. */
 export interface ScopeLimits {
@@ -110,27 +108,16 @@ const failure = (file: string, ran: Ran, timeoutMs = PROBE_TIMEOUT_MS): string |
   return said === '' ? `${file} ${status}` : `${file} ${status}: ${said}`;
 };
 
-/** Why the scope probe fails, or null when it succeeds. */
-const probeFailure = async (): Promise<string | null> => {
+/** Why the scope probe, with `extra` options after `--collect`, fails, or null when it succeeds. */
+const probeFailure = async (extra: readonly string[] = []): Promise<string | null> => {
   const file = systemdRunProgram();
   try {
     return failure(
       file,
-      await run(file, ['--user', '--scope', '--quiet', '--collect', `--slice=${SCOPE_SLICE}`, '--', 'true'], PROBE_TIMEOUT_MS),
+      await run(file, ['--user', '--scope', '--quiet', '--collect', ...extra, `--slice=${SCOPE_SLICE}`, '--', 'true'], PROBE_TIMEOUT_MS),
     );
   } catch (error) {
     return oneLine(error instanceof Error ? error.message : String(error));
-  }
-};
-
-/** systemd-run's major version; null when it cannot be read. */
-const systemdRunVersion = async (): Promise<number | null> => {
-  try {
-    const ran = await run(systemdRunProgram(), ['--version'], PROBE_TIMEOUT_MS);
-    const major = ran.code === 0 ? /^systemd (\d+)/.exec(ran.stdout)?.[1] : undefined;
-    return major === undefined ? null : Number(major);
-  } catch {
-    return null;
   }
 };
 
@@ -161,7 +148,8 @@ const lingers = (roots: ScopeRoots): Promise<boolean> =>
 export const findUserManager = async (roots: ScopeRoots): Promise<UserManager> => {
   const probe = await probeFailure();
   if (probe !== null) return { lasting: false, reason: probe };
-  if ((await underUserManager(roots)) || (await lingers(roots))) return { lasting: true, version: await systemdRunVersion() };
+  if ((await underUserManager(roots)) || (await lingers(roots)))
+    return { lasting: true, noExpand: (await probeFailure(['--expand-environment=no'])) === null };
   return { lasting: false, reason: 'not under the user manager and not lingering' };
 };
 
@@ -216,8 +204,8 @@ const PROPERTIES: readonly (readonly [keyof ScopeLimits, string])[] = [
   ['swapMax', 'MemorySwapMax'],
 ];
 
-/** `command` started through systemd-run of `version` in the scope `unit`, keeping its pid, environment and arguments. */
-export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonly string[], version: number | null): string[] => [
+/** `command` started through systemd-run in the scope `unit`, keeping its pid, environment and, with `noExpand`, arguments. */
+export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonly string[], noExpand: boolean): string[] => [
   systemdRunProgram(),
   '--user',
   '--scope',
@@ -226,7 +214,7 @@ export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonl
   `--slice=${SCOPE_SLICE}`,
   '-p',
   'OOMPolicy=kill',
-  ...(version !== null && version >= EXPAND_ENVIRONMENT_SINCE ? ['--expand-environment=no'] : []),
+  ...(noExpand ? ['--expand-environment=no'] : []),
   ...PROPERTIES.flatMap(([key, property]) => {
     const value = limits[key];
     return value === undefined ? [] : ['-p', `${property}=${value}`];

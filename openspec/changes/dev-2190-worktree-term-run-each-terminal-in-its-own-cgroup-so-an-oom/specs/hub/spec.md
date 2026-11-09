@@ -13,7 +13,7 @@ Once it holds the hub start lock and before it listens, the hub SHALL find wheth
 
 #### Scenario: Hub started in a terminal gives up the terminal's adjustment
 - **WHEN** the user runs `wtd hub` in a terminal
-- **THEN** the hub's `oom_score_adj` is below 500
+- **THEN** the hub's `oom_score_adj` is the lowest value the kernel permits it, below 500 where that floor is lower
 
 #### Scenario: No lasting user manager
 - **WHEN** the hub starts without a lasting user manager

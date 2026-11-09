@@ -72,7 +72,7 @@ const placeDaemon = async (paths: HostPaths, report: Report): Promise<UserManage
 /** Starts terminals in their scopes when `unitOf` is given, else as they are, saying once that limits are ignored. */
 const terminalLauncher = (
   unitOf: UnitOf,
-  systemdRunVersion: number | null,
+  noExpand: boolean,
   oomKilled: (termId: number, unit: string) => void,
   report: Report,
 ): TerminalLauncher => {
@@ -90,7 +90,7 @@ const terminalLauncher = (
     };
   }
   return {
-    command: (termId, memory, shell, args) => scopeCommand(unitOf(termId), memory, [shell, ...args], systemdRunVersion),
+    command: (termId, memory, shell, args) => scopeCommand(unitOf(termId), memory, [shell, ...args], noExpand),
     outOfMemory: async (termId) => {
       const unit = unitOf(termId);
       const oom = await outOfMemory(unit, report);
@@ -185,7 +185,7 @@ export const runDaemon = async (run: DaemonRun): Promise<void> => {
         };
         writeMemoryLog(JSON.stringify(line)).catch(report);
       };
-      const launcher = terminalLauncher(unitOf, manager.lasting ? manager.version : null, oomKilled, report);
+      const launcher = terminalLauncher(unitOf, manager.lasting && manager.noExpand, oomKilled, report);
       const daemon = new Daemon({
         services: {
           watchWorktrees,

@@ -23,6 +23,7 @@ import {
   scopeCommand,
   terminalUnit,
   unitPrefix,
+  type UserManager,
 } from '../../platform/scopes/index.js';
 import { bindSocket, Daemon } from '../server/index.js';
 import { StateStore } from '../state/index.js';
@@ -53,7 +54,7 @@ type UnitOf = ((termId: number) => string) | null;
  * Moves the daemon into a scope of its own unless it runs as its systemd unit; whether terminals get
  * scopes of their own, said on standard error.
  */
-const placeDaemon = async (paths: HostPaths, report: Report): Promise<boolean> => {
+const placeDaemon = async (paths: HostPaths, report: Report): Promise<UserManager> => {
   const roots = hostScopeRoots();
   const found = await findUserManager(roots);
   if (found.lasting) {
@@ -63,11 +64,16 @@ const placeDaemon = async (paths: HostPaths, report: Report): Promise<boolean> =
     await resetFailedScopes(`${unitPrefix(paths.stateDir)}term-`, report);
   }
   console.error(found.lasting ? 'terminal scopes: on' : `terminal scopes: off (${found.reason})`);
-  return found.lasting;
+  return found;
 };
 
 /** Starts terminals in their scopes when `unitOf` is given, else as they are, saying once that limits are ignored. */
-const terminalLauncher = (unitOf: UnitOf, oomKilled: (termId: number, unit: string) => void, report: Report): TerminalLauncher => {
+const terminalLauncher = (
+  unitOf: UnitOf,
+  systemdRunVersion: number | null,
+  oomKilled: (termId: number, unit: string) => void,
+  report: Report,
+): TerminalLauncher => {
   if (unitOf === null) {
     let warned = false;
     return {
@@ -82,7 +88,7 @@ const terminalLauncher = (unitOf: UnitOf, oomKilled: (termId: number, unit: stri
     };
   }
   return {
-    command: (termId, memory, shell, args) => scopeCommand(unitOf(termId), memory, [shell, ...args]),
+    command: (termId, memory, shell, args) => scopeCommand(unitOf(termId), memory, [shell, ...args], systemdRunVersion),
     outOfMemory: async (termId) => {
       const unit = unitOf(termId);
       const oom = await outOfMemory(unit, report);
@@ -149,14 +155,15 @@ export const runDaemon = async (run: DaemonRun): Promise<void> => {
   process.on('SIGHUP', ignore);
   for (const signal of STOP_SIGNALS) process.on(signal, stop);
   try {
-    const placed = { scopes: false };
+    const placed: { manager: UserManager } = { manager: { lasting: false, reason: 'not placed' } };
     const listener = await bindSocket(paths, async () => {
-      placed.scopes = await placeDaemon(paths, report);
+      placed.manager = await placeDaemon(paths, report);
     });
     try {
       const store = await StateStore.load(paths.state);
       const instance = randomBytes(12).toString('base64url');
-      const unitOf: UnitOf = placed.scopes ? (termId) => terminalUnit(paths.stateDir, instance, termId) : null;
+      const { manager } = placed;
+      const unitOf: UnitOf = manager.lasting ? (termId) => terminalUnit(paths.stateDir, instance, termId) : null;
       const writeMemoryLog = logWriter(paths.memoryLog, report);
       const oomKilled = (termId: number, unit: string): void => {
         const term = daemon.memoryView().terminals.find((t) => t.termId === termId);
@@ -176,7 +183,7 @@ export const runDaemon = async (run: DaemonRun): Promise<void> => {
         };
         writeMemoryLog(JSON.stringify(line)).catch(report);
       };
-      const launcher = terminalLauncher(unitOf, oomKilled, report);
+      const launcher = terminalLauncher(unitOf, manager.lasting ? manager.version : null, oomKilled, report);
       const daemon = new Daemon({
         services: {
           watchWorktrees,

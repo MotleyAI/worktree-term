@@ -64,14 +64,22 @@ const sliceStart = (): number => {
   return 20_000 + (worker % PORT_SLICES) * SLICE_SIZE;
 };
 
-/** A free TCP port on 127.0.0.1, below the ephemeral range so outgoing connections never take it meanwhile. */
-export const freePort = async (): Promise<number> => {
+/**
+ * A free TCP port on 127.0.0.1, below the ephemeral range so outgoing connections never take it meanwhile;
+ * with `span`, the `span - 1` ports above it are free too.
+ */
+export const freePort = async (span = 1): Promise<number> => {
   const start = sliceStart();
   for (let attempt = 0; attempt < 100; attempt++) {
-    const port = randomInt(start, start + SLICE_SIZE);
-    if (await canBind(port)) return port; // NOSONAR(S9382) — retries until a port is free
+    const port = randomInt(start, start + SLICE_SIZE - span + 1);
+    if (await allBind(port, span)) return port; // NOSONAR(S9382) — retries until the ports are free
   }
   throw new Error('no free port');
+};
+
+const allBind = async (port: number, span: number): Promise<boolean> => {
+  for (let at = port; at < port + span; at++) if (!(await canBind(at))) return false; // NOSONAR(S9382) — stops at the first port taken
+  return true;
 };
 
 const HTTP_TIMEOUT_MS = 10_000;
@@ -202,9 +210,9 @@ export class HubHost extends DaemonHost {
     this.writeConfig({ port });
   }
 
-  /** A host on a free port with `config.json` = `{port}`. */
+  /** A host on a free port, the next two free for its first remote hosts, with `config.json` = `{port}`. */
   static async createHub(): Promise<HubHost> {
-    return new HubHost(realpathSync(mkdtempSync(join(tmpdir(), 'wtd-hub-'))), await freePort());
+    return new HubHost(realpathSync(mkdtempSync(join(tmpdir(), 'wtd-hub-'))), await freePort(3));
   }
 
   get origin(): string {

@@ -631,8 +631,8 @@ describe('hub tunnels', () => {
       configure([{ name: 'box', ssh: 'box', port: newPort }]);
       expect(opened(await openHub(client, 1)).port).toBe(newPort);
       await waitUntil(() => pids.every((pid) => !alive(pid)), 'the retired listener’s forwards to end', 5000);
-      expect(await refused(oldPort)).toBe(true);
-      page.close();
+      // The freed port may be bound by any other process, so the retirement is observed on the page's connection.
+      expect(await Promise.race([page.closed.then(() => true), sleep(5000).then(() => false)])).toBe(true);
     },
     INSTALL_TIMEOUT,
   );
@@ -666,9 +666,8 @@ describe('hub tunnels', () => {
       const pids = await waitUntil(() => fx.ssh.forwardPids('box').length > 0 && fx.ssh.forwardPids('box'), 'the page’s forward');
       fx.hub.kill('SIGTERM');
       expect(await fx.hub.exited).toEqual({ code: 0, signal: null });
-      expect(await refused(port)).toBe(true);
+      expect(await Promise.race([page.closed.then(() => true), sleep(5000).then(() => false)])).toBe(true);
       await waitUntil(() => pids.every((pid) => !alive(pid)), 'the forwards to end', 5000);
-      page.close();
     },
     INSTALL_TIMEOUT,
   );

@@ -30,7 +30,7 @@ const expectOomTab = async (page: Page, termId: number): Promise<void> => {
 };
 
 test.describe('out-of-memory exits', () => {
-  test.skip(NO_USER_MANAGER !== null, SKIP_REASON);
+  test.skip(NO_USER_MANAGER !== null, SKIP_REASON); // NOSONAR(S1607) — conditional skip whose reason is SKIP_REASON
 
   test.beforeEach(({ hub }) => {
     hub.extraEnv = userManagerEnv();

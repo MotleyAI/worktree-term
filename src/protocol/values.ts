@@ -28,7 +28,7 @@ export const presetCommand = z.string().min(1).max(4096).nullable();
 export const longText = z.string().max(4096).nullable();
 export const signal = z.string().max(32).nullable();
 export const version = z.string().min(1).max(64);
-const SIZE = /^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$/;
+const SIZE = /^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$/; // NOSONAR(S6353) — the pattern is pinned by the wire golden
 /** A systemd memory size: bytes with an optional K/M/G/T suffix, or a percentage of physical memory. */
 export const memorySize = z.string().regex(SIZE);
 /** Memory limits of a terminal scope. */

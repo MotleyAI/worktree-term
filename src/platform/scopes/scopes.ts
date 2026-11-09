@@ -9,6 +9,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 export const SCOPE_SLICE = 'app-wtd.slice';
 
 const PROBE_TIMEOUT_MS = 2000;
+/** The first systemd whose systemd-run takes `--expand-environment`. */
+const EXPAND_ENVIRONMENT_SINCE = 254;
 const OUTCOME_TIMEOUT_MS = 2000;
 const START_TIMEOUT_MS = 2000;
 const POLL_MS = 50;
@@ -22,7 +24,8 @@ export interface ScopeRoots {
   user: string;
 }
 
-export type UserManager = { lasting: true } | { lasting: false; reason: string };
+/** `version` is systemd-run's major version, null when unreadable. */
+export type UserManager = { lasting: true; version: number | null } | { lasting: false; reason: string };
 
 /** Memory limits of a scope, in systemd size syntax. */
 export interface ScopeLimits {
@@ -110,6 +113,17 @@ const probeFailure = async (): Promise<string | null> => {
   }
 };
 
+/** systemd-run's major version; null when it cannot be read. */
+const systemdRunVersion = async (): Promise<number | null> => {
+  try {
+    const ran = await run(systemdRunProgram(), ['--version'], PROBE_TIMEOUT_MS);
+    const major = ran.code === 0 ? /^systemd (\d+)/.exec(ran.stdout)?.[1] : undefined;
+    return major === undefined ? null : Number(major);
+  } catch {
+    return null;
+  }
+};
+
 /** This process's cgroup v2 path; null without one. */
 export const cgroupPath = async (roots: ScopeRoots): Promise<string | null> => {
   let text: string;
@@ -127,7 +141,7 @@ const underUserManager = async (roots: ScopeRoots): Promise<boolean> => {
   return (await cgroupPath(roots))?.startsWith(`/user.slice/user-${uid}.slice/user@${uid}.service/`) ?? false;
 };
 
-const lingers = async (roots: ScopeRoots): Promise<boolean> =>
+const lingers = (roots: ScopeRoots): Promise<boolean> =>
   access(join(roots.lingerDir, roots.user)).then(
     () => true,
     () => false,
@@ -137,7 +151,7 @@ const lingers = async (roots: ScopeRoots): Promise<boolean> =>
 export const findUserManager = async (roots: ScopeRoots): Promise<UserManager> => {
   const probe = await probeFailure();
   if (probe !== null) return { lasting: false, reason: probe };
-  if ((await underUserManager(roots)) || (await lingers(roots))) return { lasting: true };
+  if ((await underUserManager(roots)) || (await lingers(roots))) return { lasting: true, version: await systemdRunVersion() };
   return { lasting: false, reason: 'not under the user manager and not lingering' };
 };
 
@@ -157,8 +171,8 @@ const PROPERTIES: readonly (readonly [keyof ScopeLimits, string])[] = [
   ['swapMax', 'MemorySwapMax'],
 ];
 
-/** `command` started through systemd-run in the scope `unit`, keeping its pid and environment. */
-export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonly string[]): string[] => [
+/** `command` started through systemd-run of `version` in the scope `unit`, keeping its pid, environment and arguments. */
+export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonly string[], version: number | null): string[] => [
   systemdRunProgram(),
   '--user',
   '--scope',
@@ -167,6 +181,7 @@ export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonl
   `--slice=${SCOPE_SLICE}`,
   '-p',
   'OOMPolicy=kill',
+  ...(version !== null && version >= EXPAND_ENVIRONMENT_SINCE ? ['--expand-environment=no'] : []),
   ...PROPERTIES.flatMap(([key, property]) => {
     const value = limits[key];
     return value === undefined ? [] : ['-p', `${property}=${value}`];
@@ -236,7 +251,7 @@ export const enterScope = async (unit: string, pid: number): Promise<void> => {
     const { active } = await unitState(unit);
     if (active === 'active') return;
     if (active === 'failed' || Date.now() >= deadline) throw new Error(`${unit} did not start: ${active}`);
-    await sleep(POLL_MS);
+    await sleep(POLL_MS); // NOSONAR(S9382) — sequential polling
   }
 };
 
@@ -256,7 +271,7 @@ export const outOfMemory = async (unit: string, report: Report): Promise<boolean
       return state.result === 'oom-kill';
     }
     if (Date.now() >= deadline) return false;
-    await sleep(POLL_MS);
+    await sleep(POLL_MS); // NOSONAR(S9382) — sequential polling
   }
 };
 

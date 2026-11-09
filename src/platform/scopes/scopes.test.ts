@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitUntil } from '../../../test/support/daemon-host.js';
 import {
   cgroupFile,
@@ -37,6 +37,7 @@ const USER = 'wtd-tester';
 const MANAGED = `0::/user.slice/user-${String(UID)}.slice/user@${String(UID)}.service/app.slice/app-x.scope\n`;
 const SESSION = `0::/user.slice/user-${String(UID)}.slice/session-3.scope\n`;
 const PROBE = ['--user', '--scope', '--quiet', '--collect', '--slice=app-wtd.slice', '--', 'true'];
+const VERSION = ['--version'];
 
 let dir: string;
 let roots: ScopeRoots;
@@ -82,7 +83,26 @@ const hash = (): string => createHash('sha256').update(dir).digest('hex').slice(
 describe('lasting user manager', () => {
   it('is found under the user manager when the scope probe succeeds, probing with the scope command', async () => {
     const run = systemdRun('exit 0');
-    expect(await findUserManager(roots)).toEqual({ lasting: true });
+    expect(await findUserManager(roots)).toEqual({ lasting: true, version: null });
+    expect(run.calls()).toEqual([PROBE, VERSION]);
+  });
+
+  it("reads systemd-run's major version once the user manager is found lasting", async () => {
+    systemdRun(`case "$1" in --version) printf 'systemd 259 (259.2-1ubuntu1)\\n+PAM +AUDIT\\n';; esac`);
+    expect(await findUserManager(roots)).toEqual({ lasting: true, version: 259 });
+  });
+
+  it('gives a null version when systemd-run --version fails or prints no version', async () => {
+    systemdRun('case "$1" in --version) exit 1;; esac');
+    expect(await findUserManager(roots)).toEqual({ lasting: true, version: null });
+    systemdRun(`case "$1" in --version) echo 'something else';; esac`);
+    expect(await findUserManager(roots)).toEqual({ lasting: true, version: null });
+  });
+
+  it('reads no version when the user manager is not lasting', async () => {
+    const run = systemdRun('exit 0');
+    writeFileSync(roots.cgroupFile, SESSION);
+    await findUserManager(roots);
     expect(run.calls()).toEqual([PROBE]);
   });
 
@@ -96,7 +116,7 @@ describe('lasting user manager', () => {
     systemdRun('exit 0');
     writeFileSync(roots.cgroupFile, SESSION);
     writeFileSync(join(roots.lingerDir, USER), '');
-    expect(await findUserManager(roots)).toEqual({ lasting: true });
+    expect(await findUserManager(roots)).toEqual({ lasting: true, version: null });
   });
 
   it("does not count another user's manager", async () => {
@@ -145,8 +165,8 @@ describe('lasting user manager', () => {
     const run = fake('systemd-run', 'exit 0');
     vi.stubEnv('WTD_SYSTEMD_RUN', '');
     vi.stubEnv('PATH', `${dir}:${process.env['PATH'] ?? ''}`);
-    expect(await findUserManager(roots)).toEqual({ lasting: true });
-    expect(run.calls()).toEqual([PROBE]);
+    expect(await findUserManager(roots)).toEqual({ lasting: true, version: null });
+    expect(run.calls()).toEqual([PROBE, VERSION]);
   });
 
   it('reads the real cgroup, linger directory and user of this process', () => {
@@ -185,7 +205,7 @@ describe('scope command', () => {
 
   it('runs the command through systemd-run with each limit given as a property', () => {
     vi.stubEnv('WTD_SYSTEMD_RUN', '/opt/fake run');
-    expect(scopeCommand(unit, { high: '8G', max: '16G', swapMax: '0' }, ['/bin/sh', '-c', 'x'])).toEqual([
+    expect(scopeCommand(unit, { high: '8G', max: '16G', swapMax: '0' }, ['/bin/sh', '-c', 'x'], null)).toEqual([
       '/opt/fake run',
       ...head,
       '-p',
@@ -203,12 +223,25 @@ describe('scope command', () => {
 
   it('gives no memory property without limits', () => {
     vi.stubEnv('WTD_SYSTEMD_RUN', undefined);
-    expect(scopeCommand(unit, {}, ['bash'])).toEqual(['systemd-run', ...head, '--', 'bash']);
+    expect(scopeCommand(unit, {}, ['bash'], null)).toEqual(['systemd-run', ...head, '--', 'bash']);
   });
 
   it('gives only the limits given', () => {
     vi.stubEnv('WTD_SYSTEMD_RUN', '');
-    expect(scopeCommand(unit, { max: '50%' }, ['bash'])).toEqual(['systemd-run', ...head, '-p', 'MemoryMax=50%', '--', 'bash']);
+    expect(scopeCommand(unit, { max: '50%' }, ['bash'], null)).toEqual(['systemd-run', ...head, '-p', 'MemoryMax=50%', '--', 'bash']);
+  });
+
+  it('turns off argument expansion for systemd-run 254 or later, before the limits', () => {
+    vi.stubEnv('WTD_SYSTEMD_RUN', undefined);
+    const off = ['--expand-environment=no'];
+    expect(scopeCommand(unit, { max: '1G' }, ['bash'], 254)).toEqual(['systemd-run', ...head, ...off, '-p', 'MemoryMax=1G', '--', 'bash']);
+    expect(scopeCommand(unit, {}, ['bash'], 259)).toEqual(['systemd-run', ...head, ...off, '--', 'bash']);
+  });
+
+  it('leaves argument expansion alone for an older or unknown systemd-run', () => {
+    vi.stubEnv('WTD_SYSTEMD_RUN', undefined);
+    expect(scopeCommand(unit, {}, ['bash'], 253)).toEqual(['systemd-run', ...head, '--', 'bash']);
+    expect(scopeCommand(unit, {}, ['bash'], null)).toEqual(['systemd-run', ...head, '--', 'bash']);
   });
 });
 
@@ -315,13 +348,27 @@ describe('scope outcome', () => {
 });
 
 describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real user manager'), () => {
-  it('finds a lasting user manager for this process', async () => {
-    expect(await findUserManager(hostScopeRoots())).toEqual({ lasting: true });
+  let version: number | null = null;
+
+  beforeAll(async () => {
+    const found = await findUserManager(hostScopeRoots());
+    if (found.lasting) version = found.version;
+  });
+
+  it('finds a lasting user manager for this process, with the version of its systemd-run', async () => {
+    const anyVersion: unknown = expect.any(Number);
+    expect(await findUserManager(hostScopeRoots())).toEqual({ lasting: true, version: anyVersion });
+  });
+
+  it('passes a command its arguments as given', () => {
+    const unit = terminalUnit(dir, 'verbatim', 1);
+    const [file = '', ...args] = scopeCommand(unit, {}, ['sh', '-c', 'printf "%s|%s" "$1" "$2"', 'sh', '$$', '${HOME}'], version);
+    expect(spawnSync(file, args, { encoding: 'utf8' }).stdout).toBe('$$|${HOME}');
   });
 
   it('starts a command in a terminal scope with its own pid, limits and whole-scope OOM kills', async () => {
     const unit = terminalUnit(dir, 'started', 1);
-    const [file = '', ...args] = scopeCommand(unit, SMALL, ['sh', '-c', 'echo $$; exec sleep 30']);
+    const [file = '', ...args] = scopeCommand(unit, SMALL, ['sh', '-c', 'echo $$; exec sleep 30'], version);
     const child = spawn(file, args, { stdio: ['ignore', 'pipe', 'inherit'] });
     children.push(child);
     let out = '';
@@ -346,7 +393,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real us
 
   it('reads the outcome of a scope killed for exceeding its memory.max as out of memory, then resets it', async () => {
     const unit = terminalUnit(dir, 'hog', 1);
-    const [file = '', ...args] = scopeCommand(unit, SMALL, ['bash', '-c', HOG]);
+    const [file = '', ...args] = scopeCommand(unit, SMALL, ['bash', '-c', HOG], version);
     expect(spawnSync(file, args, { stdio: 'ignore' }).signal).toBe('SIGKILL');
     expect(await outOfMemory(unit, report)).toBe(true);
     expect(isFailed(unit)).toBe(false);
@@ -355,7 +402,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real us
 
   it('reads the outcome of a scope whose only process exits with code 1 as not out of memory', async () => {
     const unit = terminalUnit(dir, 'fails', 1);
-    const [file = '', ...args] = scopeCommand(unit, {}, ['sh', '-c', 'exit 1']);
+    const [file = '', ...args] = scopeCommand(unit, {}, ['sh', '-c', 'exit 1'], version);
     expect(spawnSync(file, args, { stdio: 'ignore' }).status).toBe(1);
     expect(await outOfMemory(unit, report)).toBe(false);
   });

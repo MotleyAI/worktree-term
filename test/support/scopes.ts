@@ -10,7 +10,7 @@ export const SLICE = 'app-wtd.slice';
 export const SKIP_REASON = 'skipped: no lasting systemd user manager';
 
 /** Bash that allocates 300 MiB in the shell itself. */
-export const HOG = "s=$(head -c 314572800 /dev/zero | tr '\\0' x); echo SURVIVED";
+export const HOG = String.raw`s=$(head -c 314572800 /dev/zero | tr '\0' x); echo SURVIVED`;
 
 /** Limits whose terminal the hog drives out of memory, without swapping. */
 export const SMALL = { max: '64M', swapMax: '0' } as const;
@@ -32,7 +32,8 @@ const uid = (): number => process.getuid?.() ?? -1;
 
 /** Why this process finds no lasting user manager, or null when it does. */
 const missingUserManager = (): string | null => {
-  const probe = spawnSync('systemd-run', ['--user', '--scope', '--quiet', '--collect', `--slice=${SLICE}`, '--', 'true'], {
+  // prettier-ignore
+  const probe = spawnSync('systemd-run', ['--user', '--scope', '--quiet', '--collect', `--slice=${SLICE}`, '--', 'true'], { // NOSONAR(S4036) — the host's own systemd-run, as the product uses
     encoding: 'utf8',
     timeout: 2000,
   });
@@ -56,11 +57,11 @@ export const withUserManager = (name: string): string => {
 /** The 8 hex digits unit names of the state directory `stateDir` carry. */
 export const stateHash = (stateDir: string): string => createHash('sha256').update(stateDir).digest('hex').slice(0, 8);
 
-const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 /** The cgroup path of a scope of `kind` under the slice, for the state directory `stateDir`. */
 export const scopePath = (stateDir: string, kind: 'daemon' | 'hub'): RegExp =>
-  new RegExp(`/${escape(SLICE)}/wtd-${stateHash(stateDir)}-${kind}-[0-9a-f]{8}\\.scope$`);
+  new RegExp(String.raw`/${escape(SLICE)}/wtd-${stateHash(stateDir)}-${kind}-[0-9a-f]{8}\.scope$`);
 
 /** The unit name of terminal `termId` of daemon instance `instance`. */
 export const terminalUnit = (stateDir: string, instance: string, termId: number): string =>
@@ -71,7 +72,8 @@ export const cgroupFile = (path: string, name: string): string => readFileSync(`
 
 /** The `ActiveState`, `Result` and `LoadState` of a user unit. */
 export const unitState = (unit: string): Record<string, string> => {
-  const shown = spawnSync('systemctl', ['--user', 'show', unit, '-p', 'ActiveState', '-p', 'Result', '-p', 'LoadState'], {
+  // prettier-ignore
+  const shown = spawnSync('systemctl', ['--user', 'show', unit, '-p', 'ActiveState', '-p', 'Result', '-p', 'LoadState'], { // NOSONAR(S4036) — the host's own systemctl, as the product uses
     encoding: 'utf8',
   });
   return Object.fromEntries(
@@ -85,13 +87,13 @@ export const unitState = (unit: string): Record<string, string> => {
 export const isFailed = (unit: string): boolean => unitState(unit)['ActiveState'] === 'failed';
 
 export const resetFailed = (unit: string): void => {
-  spawnSync('systemctl', ['--user', 'reset-failed', unit], { stdio: 'ignore' });
+  spawnSync('systemctl', ['--user', 'reset-failed', unit], { stdio: 'ignore' }); // NOSONAR(S4036) — the host's own systemctl, as the product uses
 };
 
 /** Leaves `unit` failed, its process killed for lack of memory. */
 export const failUnit = (unit: string): void => {
   spawnSync(
-    'systemd-run',
+    'systemd-run', // NOSONAR(S4036) — the host's own systemd-run, as the product uses
     [
       '--user',
       '--scope',

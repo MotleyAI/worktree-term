@@ -120,7 +120,7 @@ describe('single instance', () => {
 });
 
 describe('handshake', () => {
-  it('greets every connection with hello for protocol 8, the package version and one instance id', async () => {
+  it('greets every connection with hello for protocol 9, the package version and one instance id', async () => {
     await fx.host.start();
     const a = await fx.host.rawClient();
     const b = await fx.host.rawClient();

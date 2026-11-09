@@ -8,6 +8,7 @@ import {
   MAX_DEPTH,
   MAX_PANES,
   MAX_TABS,
+  nameTab,
   neighbour,
   paneRects,
   pruneTo,
@@ -484,5 +485,87 @@ describe('pruneTo', () => {
   it('gives nothing when no terminal is live', () => {
     expect(pruneTo(right(leaf(1), leaf(2)), new Set([9]))).toBeNull();
     expect(pruneTo(leaf(1), new Set())).toBeNull();
+  });
+});
+
+describe('tab names', () => {
+  const named: Layout = {
+    tabs: [
+      { id: 'a', name: 'build', root: leaf(1) },
+      { id: 'b', name: 'logs', root: right(leaf(2), leaf(3)) },
+    ],
+    active: 0,
+  };
+
+  it('are kept by splitting a pane of a named tab and by the other tabs', () => {
+    expect(split(named, 1, 'right', 5).tabs).toEqual([{ id: 'a', name: 'build', root: right(leaf(1), leaf(5)) }, named.tabs[1]]);
+    expect(split(named, 3, 'down', 5).tabs).toEqual([
+      named.tabs[0],
+      { id: 'b', name: 'logs', root: right(leaf(2), down(leaf(3), leaf(5))) },
+    ]);
+  });
+
+  it('are kept by a divider drag', () => {
+    expect(setRatio(named, 1, [], 0.3).tabs).toEqual([named.tabs[0], { id: 'b', name: 'logs', root: right(leaf(2), leaf(3), 0.3) }]);
+  });
+
+  it('are kept by selecting a tab', () => {
+    expect(selectTab(named, 2)).toEqual({ ...named, active: 1 });
+  });
+
+  it('are not given to a tab added for a terminal missing from the layout', () => {
+    expect(selectTab(named, 9).tabs[2]).not.toHaveProperty('name');
+    expect(split(named, 9, 'right', 10).tabs[2]).not.toHaveProperty('name');
+    expect(selectTab(named, 9).tabs.slice(0, 2)).toEqual(named.tabs);
+  });
+
+  it('are not given to the first tab of a new layout', () => {
+    expect(selectTab(null, 1).tabs[0]).not.toHaveProperty('name');
+    expect(split(null, 1, 'down', 2).tabs[0]).not.toHaveProperty('name');
+  });
+});
+
+describe('nameTab', () => {
+  const plain: Layout = { tabs: [tab('a', 1), { id: 'b', root: right(leaf(2), leaf(3)) }], active: 0 };
+
+  it('names the tab holding the terminal, keeping the active tab', () => {
+    expect(nameTab(plain, 3, 'build')).toEqual({ tabs: [plain.tabs[0], { ...plain.tabs[1], name: 'build' }], active: 0 });
+  });
+
+  it('replaces a name', () => {
+    const once = nameTab(plain, 1, 'build');
+    expect(nameTab(once, 1, 'logs').tabs[0]).toEqual({ id: 'a', name: 'logs', root: leaf(1) });
+  });
+
+  it('removes a name, leaving no name field', () => {
+    const once = nameTab(plain, 1, 'build');
+    expect(nameTab(once, 1, null).tabs[0]).toEqual({ id: 'a', root: leaf(1) });
+    expect(nameTab(once, 1, null).tabs[0]).not.toHaveProperty('name');
+  });
+
+  it('adds a named tab for a terminal missing from the layout, as selecting it does', () => {
+    const next = nameTab(plain, 9, 'build');
+    const selected = selectTab(plain, 9);
+    expect(next).toEqual({ ...selected, tabs: [...plain.tabs, { ...selected.tabs[2], name: 'build' }] });
+    expect(layoutSchema.safeParse(next).success).toBe(true);
+  });
+
+  it('creates a layout for a terminal when there is none', () => {
+    const next = nameTab(null, 4, 'build');
+    expect(next.tabs).toEqual([{ id: next.tabs[0]?.id, name: 'build', root: leaf(4) }]);
+    expect(layoutSchema.safeParse(next).success).toBe(true);
+  });
+
+  it('refuses to add a tab to a layout of 64 tabs', () => {
+    const full = manyTabs(MAX_TABS);
+    expect(() => nameTab(full, 100, 'build')).toThrow(Error);
+    expect(nameTab(full, 1, 'build').tabs[0]).toEqual({ id: 't1', name: 'build', root: leaf(1) });
+  });
+
+  it('does not change the layout it is given', () => {
+    const copy = structuredClone(plain);
+    nameTab(plain, 1, 'build');
+    nameTab(plain, 9, 'build');
+    expect(plain).toEqual(copy);
   });
 });

@@ -155,6 +155,8 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'presets', presets: [{ name: '   ', command: null }] },
   { t: 'presets', presets: [{ name: 'p', command: '' }] },
   { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', root: ninePanes }], active: 0 } },
+  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', name: '  ', root: { term: 1 } }], active: 0 } },
+  { t: 'setLayout', req: 1, worktree: WT, layout: { tabs: [{ id: 'a', name: 'n'.repeat(65), root: { term: 1 } }], active: 0 } },
   { t: 'discoverRepos', req: 1, roots: ['GitHub'], depth: 3 },
   { t: 'discoverRepos', req: 1, roots: ['~user/x'], depth: 3 },
   { t: 'discoverRepos', req: 1, roots: ['~/'], depth: 3 },

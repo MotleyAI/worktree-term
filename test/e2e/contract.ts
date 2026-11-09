@@ -78,11 +78,13 @@ export const TID = {
   confirmNote: 'confirm-note',
   /** Separator on the sidebar's right edge; dragging or ArrowLeft/ArrowRight resizes the sidebar; `aria-valuenow` = its width in px, kept across reloads. */
   sidebarResizer: 'sidebar-resizer',
-  /** Terminal tab; `data-term` = its first live terminal's id, `aria-selected`, text contains "exited" once that terminal exited. */
+  /** Terminal tab; `data-term` = its first live terminal's id, `aria-selected`; text starts with its name, else `<preset> <termId>`, and contains "exited" once that terminal exited. */
   termTab: 'term-tab',
   /** Close button inside a terminal tab; closes every terminal of the tab, confirming first when any is running. */
   termTabClose: 'term-tab-close',
-  /** Tab-bar button: new tab through the preset picker; `title` names Ctrl+Shift+T; `disabled` when not possible. */
+  /** Text field replacing a terminal tab's label while it is renamed; opened by double-clicking the tab outside its close button. */
+  termTabName: 'term-tab-name',
+  /** Tab-bar button: new tab through the preset picker; `title` names Ctrl+Shift+T; `disabled` when not possible; the next element after the last `termTab`. */
   newTab: 'new-tab',
   /** Tab-bar button: split the focused pane right; `title` names Ctrl+Shift+D; `disabled` when not possible. */
   splitRight: 'split-right',

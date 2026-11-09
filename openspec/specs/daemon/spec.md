@@ -326,7 +326,7 @@ Every change of `unseen` or `state` SHALL be sent as `activity{termId, unseen, s
 - **THEN** its `state` stays "input"
 
 ### Requirement: Checked state and layouts
-`setChecked` and `setLayout` SHALL fail with `unknown-worktree` unless the worktree is in the current list of a repo this connection watches. Every leaf of a layout SHALL be a live terminal of that worktree; `setLayout` with any other leaf SHALL fail with `unknown-term` and change nothing. A successful change SHALL be persisted durably, then sent as `checkedChanged` or `layoutChanged` to every watcher of the repo including the requester, then answered with `done`. A failed write SHALL answer `internal`, keep the previous state and send no change. When a terminal is closed it SHALL be removed from its worktree's layout: a split SHALL be replaced by its remaining child, a tab left empty SHALL be removed, and `active` SHALL keep the same tab if it remains, else the nearest preceding remaining tab, else 0; a changed layout SHALL be sent as `layoutChanged`.
+`setChecked` and `setLayout` SHALL fail with `unknown-worktree` unless the worktree is in the current list of a repo this connection watches. Every leaf of a layout SHALL be a live terminal of that worktree; `setLayout` with any other leaf SHALL fail with `unknown-term` and change nothing. A successful change SHALL be persisted durably, then sent as `checkedChanged` or `layoutChanged` to every watcher of the repo including the requester, then answered with `done`. A failed write SHALL answer `internal`, keep the previous state and send no change. When a terminal is closed it SHALL be removed from its worktree's layout: a split SHALL be replaced by its remaining child, a tab left empty SHALL be removed, a remaining tab SHALL keep its id and name, and `active` SHALL keep the same tab if it remains, else the nearest preceding remaining tab, else 0; a changed layout SHALL be sent as `layoutChanged`.
 
 #### Scenario: Checkbox broadcast
 - **WHEN** client A checks a worktree that client B also watches
@@ -339,6 +339,10 @@ Every change of `unseen` or `state` SHALL be sent as `activity{termId, unseen, s
 #### Scenario: Closing a split pane
 - **WHEN** a terminal in one half of a split is closed
 - **THEN** watchers receive `layoutChanged` in which the split is replaced by the other half
+
+#### Scenario: Closing a pane keeps the tab's name
+- **WHEN** a terminal in one half of a split in a tab named "build" is closed
+- **THEN** watchers receive `layoutChanged` in which that tab is still named "build"
 
 ### Requirement: Persistence and pruning
 Checked state and layouts SHALL be stored in `state.json` and survive daemon restarts; entries with default values SHALL NOT be stored. On start, every layout SHALL lose its terminal leaves, because no terminal survives a restart. A state file that cannot be parsed SHALL be renamed to `state.json.corrupt-<timestamp>` and the daemon SHALL start with empty state. Whenever a repo's worktree list is read, and whenever a terminal closes, entries for worktrees of that repo that are no longer listed and have no live terminals SHALL be removed.

@@ -5,6 +5,7 @@ import {
   canAddTab,
   canSplit,
   dividers,
+  nameTab,
   neighbour,
   paneRects,
   pruneTo,
@@ -121,6 +122,8 @@ const resolveFocus = (records: Map<string, { termId: number; root: Pane }>, tab:
 
 /** A terminal tab with what its label, marks and panes need. */
 export interface ShownTab extends TerminalTab {
+  /** The stored name; null labels the tab by `terminal`. */
+  name: string | null;
   /** The terminal the tab is labelled by. */
   terminal: Terminal | null;
   /** The tab's live terminals in tab order. */
@@ -131,6 +134,12 @@ export interface ShownTab extends TerminalTab {
   key: string;
   root: Pane;
 }
+
+/** Longest tab name. */
+export const MAX_TAB_NAME = 64;
+
+/** A tab's label without its exit note and marks: its name, else its terminal's preset and id. */
+export const tabLabel = (tab: ShownTab): string => tab.name ?? `${tab.terminal?.preset ?? 'terminal'} ${String(tab.termId)}`;
 
 /** A pane of the shown tab. */
 export interface ShownPane extends PaneRect {
@@ -289,6 +298,7 @@ export class View {
         const terminalsOfTab = termsOf(root).flatMap((id) => byId(id) ?? []);
         return {
           ...t,
+          name: stored?.name ?? null,
           terminal: byId(t.termId),
           terminals: terminalsOfTab,
           index: stored === undefined ? null : index,
@@ -444,6 +454,27 @@ export class View {
     const full = tabOf(layout, termId) < 0 && !canAddTab(layout);
     this.showOutside(tab.host, worktree, full ? termId : null);
     if (!full) this.storeLayout(tab.host, worktree, selectTab(layout, termId));
+  }
+
+  /** Whether the tab of `termId` can be named: the layout holds it or can take it. */
+  canRename(termId: number): boolean {
+    const tab = this.tab.value;
+    const worktree = this.worktree.value;
+    if (tab === null || worktree === null) return false;
+    const layout = this.storedLayout(tab.host, tab.repo, worktree);
+    return tabOf(layout, termId) >= 0 || canAddTab(layout);
+  }
+
+  /** Stores the trimmed `text` as the name of `termId`'s tab, empty removing it; its unchanged label stores nothing. */
+  renameTab(termId: number, text: string): void {
+    const tab = this.tab.value;
+    const worktree = this.worktree.value;
+    const shown = this.termTabs.value.tabs.find((t) => t.termId === termId);
+    if (tab === null || worktree === null || shown === undefined || !this.canRename(termId)) return;
+    const trimmed = text.slice(0, MAX_TAB_NAME).trim();
+    const name = trimmed === '' ? null : trimmed;
+    if (trimmed === tabLabel(shown) || name === shown.name) return;
+    this.storeLayout(tab.host, worktree, nameTab(this.storedLayout(tab.host, tab.repo, worktree), termId, name));
   }
 
   /** Shows `termId` in the worktree although its layout misses it; null shows the layout's active tab. */

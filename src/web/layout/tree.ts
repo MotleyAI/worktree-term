@@ -81,6 +81,24 @@ export const selectTab = (layout: Layout | null, termId: number): Layout => {
   return { tabs: [...tabs, { id: freeId(layout, termId), root: { term: termId } }], active: tabs.length };
 };
 
+type Tab = Layout['tabs'][number];
+
+const withName = (tab: Tab, name: string | null): Tab => {
+  if (name !== null) return { ...tab, name };
+  const unnamed = { ...tab };
+  delete unnamed.name;
+  return unnamed;
+};
+
+/** The layout with the tab holding `termId` named `name`, null removing it, adding a tab as `selectTab` does; throws when full. */
+export const nameTab = (layout: Layout | null, termId: number, name: string | null): Layout => {
+  const held = tabOf(layout, termId);
+  if (held < 0 && !canAddTab(layout)) throw new Error(`no tab can be added for terminal ${String(termId)}`);
+  const base = layout !== null && held >= 0 ? layout : selectTab(layout, termId);
+  const index = held >= 0 ? held : base.active;
+  return { ...base, tabs: base.tabs.map((tab, i) => (i === index ? withName(tab, name) : tab)) };
+};
+
 /** Whether the pane of `termId` can be split, giving it its own tab first when the layout misses it. */
 export const canSplit = (layout: Layout | null, termId: number): boolean => {
   const tab = layout?.tabs[tabOf(layout, termId)];

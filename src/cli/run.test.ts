@@ -64,7 +64,7 @@ describe('wtd --version', () => {
   it('prints the package and both protocol versions', async () => {
     expect(await wtd('--version')).toEqual({
       code: 0,
-      stdout: `wtd ${packageVersion()} (daemon protocol 8, browser protocol 11)\n`,
+      stdout: `wtd ${packageVersion()} (daemon protocol 9, browser protocol 12)\n`,
       stderr: '',
     });
   });

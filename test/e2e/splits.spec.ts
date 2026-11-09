@@ -26,6 +26,7 @@ import {
 import {
   activeRoot,
   balanced,
+  boxOf,
   createdTerm,
   createsSent,
   createTerms,
@@ -57,6 +58,78 @@ const quietTerms = async (client: DaemonClient, worktree: string, count: number)
 /** Ids of the terminals created in reply to this page's own `createTerm` since `from`. */
 const createdTerms = (wire: WireRecorder, from: number): number[] =>
   wire.receivedFromHost(LOCAL, from).flatMap((m) => (m.t === 'termCreated' && m.req !== null ? [m.term.termId] : []));
+
+interface TabBarOrder {
+  /** `data-testid` of the element right after the last terminal tab; null without tabs. */
+  afterLastTab: string | null;
+  tabs: number;
+  newTabFirstInParent: boolean;
+  newTabBeforeSpacer: boolean;
+  splitsAfterSpacer: boolean;
+}
+
+/** Where the tab-bar controls sit in the document relative to the tabs and the spacer. */
+const tabBarOrder = (page: Page): Promise<TabBarOrder> =>
+  page.evaluate(
+    ({ termTab, newTab, splitRight, splitDown }) => {
+      const tabs = [...document.querySelectorAll(termTab)];
+      const last = tabs.at(-1);
+      const after = last?.nextElementSibling;
+      const spacer = document.querySelector('.term-tabs .spacer');
+      const plus = document.querySelector(newTab);
+      const follows = (a: Element | null, b: Element | null): boolean =>
+        a !== null && b !== null && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      return {
+        afterLastTab: after instanceof HTMLElement ? (after.dataset['testid'] ?? null) : null,
+        tabs: tabs.length,
+        newTabFirstInParent: plus !== null && plus.parentElement?.firstElementChild === plus,
+        newTabBeforeSpacer: follows(plus, spacer),
+        splitsAfterSpacer: follows(spacer, document.querySelector(splitRight)) && follows(spacer, document.querySelector(splitDown)),
+      };
+    },
+    {
+      termTab: byTestId(TID.termTab),
+      newTab: byTestId(TID.newTab),
+      splitRight: byTestId(TID.splitRight),
+      splitDown: byTestId(TID.splitDown),
+    },
+  );
+
+/** Whether the split-down control ends at the tab bar's right end. */
+const splitsAtRightEnd = async (page: Page): Promise<boolean> => {
+  const bar = await boxOf(page.locator('.term-tabs'));
+  const down = await boxOf(page.locator(byTestId(TID.splitDown)));
+  const gap = bar.x + bar.width - (down.x + down.width);
+  return gap >= 0 && gap <= 16;
+};
+
+const CONTROLS = [byTestId(TID.newTab), byTestId(TID.splitRight), byTestId(TID.splitDown)];
+
+/** Whether each element lies inside the tab bar and is what the page finds at its centre. */
+const usableInTabBar = (page: Page, selectors: string[]): Promise<boolean[]> =>
+  page.evaluate((ids) => {
+    const bar = document.querySelector('.term-tabs')?.getBoundingClientRect();
+    return ids.map((id) => {
+      const control = document.querySelector(id);
+      if (bar === undefined || control === null) return false;
+      const box = control.getBoundingClientRect();
+      const inside = box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return inside && box.width > 0 && hit !== null && control.contains(hit);
+    });
+  }, selectors);
+
+/** Scrolls the element holding the terminal tabs to its start or its end; returns whether it overflows. */
+const scrollTabs = (page: Page, to: 'start' | 'end'): Promise<boolean> =>
+  page.evaluate(
+    ([newTab, end]) => {
+      const strip = document.querySelector(newTab)?.parentElement;
+      if (strip === null || strip === undefined) return false;
+      strip.scrollLeft = end ? strip.scrollWidth : 0;
+      return strip.scrollWidth > strip.clientWidth;
+    },
+    [byTestId(TID.newTab), to === 'end'] as const,
+  );
 
 test.describe('split panes', () => {
   test('splitting right shows the old terminal left and the new one right, focused, on every page', async ({
@@ -491,6 +564,78 @@ test.describe('pane limit and concurrent splits', () => {
     for (const p of [page, other.page]) {
       for (const term of created) await expect.poll(() => reachable(p, term)).toBe(true);
     }
+  });
+});
+
+test.describe('tab-bar controls', () => {
+  test('the new-tab control follows the last tab as tabs open and close; the split controls stay at the right end', async ({
+    hub,
+    page,
+  }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const terms = await createTerms(client, repo, 2);
+    await storeTabs(client, repo, terms.map(leaf));
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(2);
+    const placed = { afterLastTab: TID.newTab, newTabBeforeSpacer: true, splitsAfterSpacer: true };
+    expect(await tabBarOrder(page)).toMatchObject({ ...placed, tabs: 2 });
+    expect(await splitsAtRightEnd(page)).toBe(true);
+
+    const third = await newTerminal(page);
+    await expect.poll(() => tabBarOrder(page)).toMatchObject({ ...placed, tabs: 3 });
+    expect(await splitsAtRightEnd(page)).toBe(true);
+
+    await page.locator(termTab(third)).locator(byTestId(TID.termTabClose)).click();
+    await confirmClose(page);
+    await expect(page.locator(termTab(third))).toHaveCount(0);
+    await expect.poll(() => tabBarOrder(page)).toMatchObject({ ...placed, tabs: 2 });
+    expect(await splitsAtRightEnd(page)).toBe(true);
+  });
+
+  test('without terminals the new-tab control sits at the left end and the split controls at the right end', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await expect(page.locator(byTestId(TID.presetChoices))).toBeVisible();
+    expect(await tabBarOrder(page)).toMatchObject({
+      tabs: 0,
+      newTabFirstInParent: true,
+      newTabBeforeSpacer: true,
+      splitsAfterSpacer: true,
+    });
+    const bar = await boxOf(page.locator('.term-tabs'));
+    const plus = await boxOf(page.locator(byTestId(TID.newTab)));
+    expect(plus.x - bar.x).toBeGreaterThanOrEqual(0);
+    expect(plus.x - bar.x).toBeLessThanOrEqual(16);
+    expect(await splitsAtRightEnd(page)).toBe(true);
+  });
+
+  test('overflowing tabs scroll while the controls stay visible and clickable, without a taller tab bar', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const [first = 0] = await quietTerms(client, repo, 1);
+    await storeTabs(client, repo, [leaf(first)]);
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(1);
+    const height = (await boxOf(page.locator('.term-tabs'))).height;
+
+    const rest = await quietTerms(client, repo, MAX_TABS - 2);
+    await storeTabs(client, repo, [first, ...rest].map(leaf));
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(MAX_TABS - 1);
+    await expect(page.locator(byTestId(TID.newTab))).toBeEnabled();
+    expect((await boxOf(page.locator('.term-tabs'))).height).toBe(height);
+
+    for (const end of ['start', 'end'] as const) {
+      expect(await scrollTabs(page, end), end).toBe(true);
+      expect(await usableInTabBar(page, CONTROLS), end).toEqual([true, true, true]);
+    }
+    const last = termTab(rest.at(-1) ?? 0);
+    expect(await usableInTabBar(page, [last, `${last} ${byTestId(TID.termTabClose)}`])).toEqual([true, true]);
+    await page.locator(byTestId(TID.newTab)).click();
+    await expect(page.locator(byTestId(TID.presetPicker))).toBeVisible();
   });
 });
 

@@ -26,6 +26,8 @@ export const name = z.string().min(1).max(64);
 export const presetName = name.regex(/\S/, 'must contain a non-whitespace character');
 export const presetCommand = z.string().min(1).max(4096).nullable();
 export const longText = z.string().max(4096).nullable();
+/** A git ref as the daemon names it, e.g. `main` or `origin/main`. */
+export const refName = z.string().min(1).max(4096);
 export const signal = z.string().max(32).nullable();
 export const version = z.string().min(1).max(64);
 export const instance = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
@@ -56,6 +58,10 @@ export const hostName = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
 export const port = z.int().min(1024).max(65535);
 
 export const MAX_ENTRIES = 1024;
+/** Most refs a worktree's commits are compared with: its base and the default branch, each local and on origin. */
+export const MAX_BASES = 4;
+/** Most fetches before comparing again: the base and the default branch. */
+export const MAX_FETCHES = 2;
 export const MAX_ROOTS = 32;
 export const MAX_DISCOVERED = 4096;
 export const MAX_VISIBLE = 4096;

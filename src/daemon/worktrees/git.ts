@@ -3,6 +3,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { Worktree } from '../../protocol/index.js';
+import { branchCandidate, createdFrom } from './base.js';
 import { parsePorcelain } from './porcelain.js';
 
 /** Most worktrees a repo may have. */
@@ -63,31 +64,29 @@ export const checkRepo = async (repo: string): Promise<string> => {
 const DEFAULT_BRANCHES = ['main', 'master'];
 const ORIGIN_PREFIX = 'refs/remotes/origin/';
 
-/** A fetch of the default branch that failed: the remote-tracking ref, e.g. `origin/main`, and why. */
+/** A fetch that failed: the remote-tracking ref, e.g. `origin/main`, and why. */
 export interface FetchFailure {
   ref: string;
   reason: string;
 }
 
-/** The bases a worktree's head is compared with, and its commits in neither. */
+/** The refs a worktree's head is compared with, and its commits in none of them. */
 interface Comparison {
-  /** The local default branch, e.g. `main`; null when it does not exist. */
-  local: string | null;
-  /** Its `origin` remote-tracking ref, e.g. `origin/main`; null when it does not exist. */
-  remote: string | null;
-  /** Commits of the head in neither base; null without either, 0 without a head. */
+  /** The base's and the default branch's local branch and `origin` ref that exist, e.g. `feature-x`, `origin/main`. */
+  bases: string[];
+  /** Commits of the head in none of `bases`; null without bases, 0 without a head. */
   ahead: number | null;
 }
 
 /** What deleting a worktree would lose, apart from its terminals. */
 export interface WorktreeRisks extends Comparison {
-  /** Set when fetching the default branch to compare again failed. */
-  fetchFailed: FetchFailure | null;
+  /** The fetches before comparing again that failed, the base's first. */
+  fetchFailed: FetchFailure[];
   /** Uncommitted changes, untracked files included; 0 when its directory is gone. */
   changes: number;
 }
 
-/** The output of a `--quiet` git query, or null when it exits with 1 for a missing ref. */
+/** The output of a `--quiet` git query, or null when it exits with 1 for a missing ref or config key. */
 const gitOrNull = async (cwd: string, args: readonly string[]): Promise<string | null> => {
   try {
     return (await git(cwd, args)).trim();
@@ -110,20 +109,56 @@ const defaultBranch = async (repo: string): Promise<string | null> => {
   return null;
 };
 
-/** Compares `head` with the local `branch` and `origin/<branch>`, whichever exist. */
-const compare = async (repo: string, branch: string, head: string | null): Promise<Comparison> => {
-  const localRef = `refs/heads/${branch}`;
-  const remoteRef = `${ORIGIN_PREFIX}${branch}`;
-  const [hasLocal, hasRemote] = await Promise.all([refExists(repo, localRef), refExists(repo, remoteRef)]);
-  const local = hasLocal ? branch : null;
-  const remote = hasRemote ? `origin/${branch}` : null;
-  if (!hasLocal && !hasRemote) return { local, remote, ahead: null };
-  if (head === null) return { local, remote, ahead: 0 };
-  const bases = [...(hasLocal ? [localRef] : []), ...(hasRemote ? [remoteRef] : [])];
-  return { local, remote, ahead: Number(await git(repo, ['rev-list', '--count', head, '--not', ...bases])) };
+/** Remotes whose upstream branch can be a base: `origin`, and `.` for a local branch. */
+const UPSTREAM_REMOTES = new Set(['origin', '.']);
+
+/** The single `refs/heads/` ref `branch` tracks on `origin` or locally, if any. */
+const upstreamOf = async (repo: string, branch: string): Promise<string | null> => {
+  const remote = await gitOrNull(repo, ['config', '--get', `branch.${branch}.remote`]);
+  if (remote === null || !UPSTREAM_REMOTES.has(remote)) return null;
+  const merges = (await gitOrNull(repo, ['config', '--get-all', `branch.${branch}.merge`]))?.split('\n') ?? [];
+  const [merge] = merges;
+  return merges.length === 1 && merge?.startsWith('refs/heads/') === true ? merge : null;
 };
 
-/** How long fetching the default branch may take. */
+/** The branch `ref` names when it can be the base of `branch`: not itself, not also a tag, and existing locally or under `origin`. */
+const usableBase = async (repo: string, branch: string, ref: string | null): Promise<string | null> => {
+  const name = ref === null ? null : branchCandidate(ref);
+  if (name === null || name === branch) return null;
+  const [tagged, local, remote] = await Promise.all([
+    refExists(repo, `refs/tags/${name}`),
+    refExists(repo, `refs/heads/${name}`),
+    refExists(repo, `${ORIGIN_PREFIX}${name}`),
+  ]);
+  return !tagged && (local || remote) ? name : null;
+};
+
+/** The branch `worktree` is based on: its upstream, else the branch it was created from; null when detached or neither. */
+const baseOf = async (repo: string, worktree: Worktree): Promise<string | null> => {
+  const { branch } = worktree;
+  if (branch === null) return null;
+  const upstream = await usableBase(repo, branch, await upstreamOf(repo, branch));
+  if (upstream !== null) return upstream;
+  // An unborn branch has no ref, so no reflog.
+  const reflog = worktree.head === null ? '' : await git(repo, ['reflog', 'show', '--format=%gs', `refs/heads/${branch}`, '--']);
+  return usableBase(repo, branch, createdFrom(reflog));
+};
+
+/** Compares `head` with the local branch and `origin` ref of each of `branches` that exist. */
+const compare = async (repo: string, branches: readonly string[], head: string | null): Promise<Comparison> => {
+  const candidates = branches.flatMap((branch) => [
+    { name: branch, ref: `refs/heads/${branch}` },
+    { name: `origin/${branch}`, ref: `${ORIGIN_PREFIX}${branch}` },
+  ]);
+  const exists = await Promise.all(candidates.map(({ ref }) => refExists(repo, ref)));
+  const found = candidates.filter((_, i) => exists[i]);
+  const bases = found.map(({ name }) => name);
+  if (found.length === 0) return { bases, ahead: null };
+  if (head === null) return { bases, ahead: 0 };
+  return { bases, ahead: Number(await git(repo, ['rev-list', '--count', head, '--not', ...found.map(({ ref }) => ref)])) };
+};
+
+/** How long fetching a branch may take. */
 const FETCH_MS = 20_000;
 const MAX_REASON = 1024;
 // eslint-disable-next-line no-control-regex -- control characters are what it replaces
@@ -145,12 +180,13 @@ export const fetchFailureReason = (error: unknown, timeoutMs: number): string =>
 };
 
 /**
- * Fetches `branch` from `origin` into `origin/<branch>`, whatever origin's configured refspec;
- * the reason when that failed.
+ * Fetches `branch` from `origin` into `origin/<branch>`, whatever origin's configured refspec, sharing no
+ * file with a concurrent fetch; the reason when that failed.
  */
-const fetchDefault = async (repo: string, branch: string, timeoutMs: number): Promise<string | null> => {
+const fetchBranch = async (repo: string, branch: string, timeoutMs: number): Promise<string | null> => {
+  const refspec = `+refs/heads/${branch}:${ORIGIN_PREFIX}${branch}`;
   try {
-    await run('git', ['fetch', '--quiet', '--no-tags', '--', 'origin', `+refs/heads/${branch}:${ORIGIN_PREFIX}${branch}`], {
+    await run('git', ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--no-auto-maintenance', '--', 'origin', refspec], {
       cwd: repo,
       timeout: timeoutMs,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', SSH_ASKPASS_REQUIRE: 'never' },
@@ -177,28 +213,35 @@ const changesIn = async (path: string): Promise<number> => {
   return status.split('\n').filter((line) => line !== '').length;
 };
 
-/** The worktree's current head: `worktree` may predate its latest commit. */
-const headOf = async (repo: string, worktree: Worktree): Promise<string | null> =>
-  (await listWorktrees(repo)).find((w) => w.path === worktree.path)?.head ?? worktree.head;
+/** The worktree as listed now: `worktree` may predate its latest commit. */
+const currentOf = async (repo: string, worktree: Worktree): Promise<Worktree> =>
+  (await listWorktrees(repo)).find((w) => w.path === worktree.path) ?? worktree;
 
 /**
- * What deleting `worktree` of `repo` would lose: commits in neither the local default branch nor its
- * `origin` remote-tracking ref, compared again after fetching it when some are, and uncommitted changes.
+ * What deleting `worktree` of `repo` would lose: commits in none of its base's and the default branch's local
+ * branch and `origin` ref, compared again after fetching both when some are, and uncommitted changes.
  */
 export const worktreeRisks = async (repo: string, worktree: Worktree, fetchMs = FETCH_MS): Promise<WorktreeRisks> => {
-  const branch = await defaultBranch(repo);
-  if (branch === null) return { local: null, remote: null, ahead: null, fetchFailed: null, changes: await changesIn(worktree.path) };
-  const before = await compare(repo, branch, await headOf(repo, worktree));
+  const current = await currentOf(repo, worktree);
+  const [base, fallback] = await Promise.all([baseOf(repo, current), defaultBranch(repo)]);
+  const branches = [...new Set([base, fallback].filter((b) => b !== null))];
+  const before = await compare(repo, branches, current.head);
   if ((before.ahead ?? 0) === 0 || !(await hasOrigin(repo)))
-    return { ...before, fetchFailed: null, changes: await changesIn(worktree.path) };
-  const ref = `origin/${branch}`;
-  const reason = await fetchDefault(repo, branch, fetchMs);
-  // Head and changes are read again after the fetch, which may take a while, so work done meanwhile counts.
-  const changes = await changesIn(worktree.path);
-  if (reason !== null) return { ...before, fetchFailed: { ref, reason }, changes };
-  const after = await compare(repo, branch, await headOf(repo, worktree));
-  if (after.remote === null) return { ...before, fetchFailed: { ref, reason: `${ref} is missing after the fetch` }, changes };
-  return { ...after, fetchFailed: null, changes };
+    return { ...before, fetchFailed: [], changes: await changesIn(worktree.path) };
+  const trackedBase = base !== null && base !== fallback && before.bases.includes(`origin/${base}`) ? [base] : [];
+  const fetched = [...trackedBase, ...(fallback === null ? [] : [fallback])];
+  const reasons = await Promise.all(fetched.map((branch) => fetchBranch(repo, branch, fetchMs)));
+  // Head and changes are read again after the fetches, which may take a while, so work done meanwhile counts.
+  const [after, changes] = await Promise.all([
+    currentOf(repo, worktree).then(({ head }) => compare(repo, branches, head)),
+    changesIn(worktree.path),
+  ]);
+  const fetchFailed = fetched.flatMap((branch, i) => {
+    const ref = `origin/${branch}`;
+    const reason = reasons[i] ?? (after.bases.includes(ref) ? null : `${ref} is missing after the fetch`);
+    return reason === null ? [] : [{ ref, reason }];
+  });
+  return { ...after, fetchFailed, changes };
 };
 
 /** Removes `worktree` of `repo`, also when its directory is gone, `force` also discarding its changes. */

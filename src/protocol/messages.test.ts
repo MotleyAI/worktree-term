@@ -34,14 +34,15 @@ const RISK: Risk = {
   t: 'worktreeAtRisk',
   req: 1,
   worktree: WT,
-  local: 'main',
-  remote: 'origin/main',
+  bases: ['main', 'origin/main'],
   ahead: 1,
-  fetchFailed: null,
+  fetchFailed: [],
   changes: 0,
   running: [2],
 };
 const FETCH_FAILED = { ref: 'origin/main', reason: 'ssh: connect to host github.com port 22: No route to host' };
+const BASE_FETCH_FAILED = { ref: 'origin/feature-x', reason: "fatal: couldn't find remote ref feature-x" };
+const FOUR_BASES = ['feature-x', 'origin/feature-x', 'main', 'origin/main'];
 
 const decodes = (dir: Direction, value: unknown): boolean => {
   try {
@@ -66,7 +67,7 @@ describe('handshake', () => {
   });
 
   it('decodes a hello from another protocol version', () => {
-    expect(decodeMessage('daemonToClient', raw({ ...hello, protocol: 9 }))).toEqual({ ...hello, protocol: 9 });
+    expect(decodeMessage('daemonToClient', raw({ ...hello, protocol: 99 }))).toEqual({ ...hello, protocol: 99 });
   });
 
   it.each([
@@ -542,20 +543,36 @@ describe('value limits', () => {
     ['with terminal id 0', 'daemonToClient', { ...RISK, running: [0] }],
     ['without req', 'daemonToClient', { ...RISK, req: undefined }],
     ['without fetchFailed', 'daemonToClient', { ...RISK, fetchFailed: undefined }],
-    ['carrying base instead of local and remote', 'daemonToClient', { ...RISK, local: undefined, remote: undefined, base: 'origin/main' }],
-    ['with an extra fetchFailed field', 'daemonToClient', { ...RISK, fetchFailed: { ...FETCH_FAILED, code: 128 } }],
-    ['with fetchFailed without a reason', 'daemonToClient', { ...RISK, fetchFailed: { ref: 'origin/main' } }],
+    ['without bases', 'daemonToClient', { ...RISK, bases: undefined }],
+    [
+      'carrying local and remote instead of bases',
+      'daemonToClient',
+      { ...RISK, bases: undefined, local: 'main', remote: 'origin/main', fetchFailed: null },
+    ],
+    ['carrying local and remote beside bases', 'daemonToClient', { ...RISK, local: 'main', remote: 'origin/main' }],
+    ['carrying base instead of bases', 'daemonToClient', { ...RISK, bases: undefined, base: 'origin/main' }],
+    ['with fetchFailed null', 'daemonToClient', { ...RISK, fetchFailed: null }],
+    ['with fetchFailed a single object', 'daemonToClient', { ...RISK, fetchFailed: FETCH_FAILED }],
+    ['with an extra fetchFailed field', 'daemonToClient', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, code: 128 }] }],
+    ['with fetchFailed without a reason', 'daemonToClient', { ...RISK, fetchFailed: [{ ref: 'origin/main' }] }],
+    ['with fetchFailed without a ref', 'daemonToClient', { ...RISK, fetchFailed: [{ reason: 'r' }] }],
+    ['with a null base', 'daemonToClient', { ...RISK, bases: [null] }],
   ] as const)('rejects a worktree removal message %s', (_name, dir, message) => {
     expectRejected(dir, raw(message));
   });
 
   it('carries worktree removal through the browser envelopes', () => {
     expect(decodes('browserToHub', { t: 'host', host: 0, m: { t: 'removeWorktree', req: 1, worktree: WT, force: true } })).toBe(true);
-    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: { ...RISK, fetchFailed: FETCH_FAILED } })).toBe(true);
+    expect(decodes('hubToBrowser', { t: 'host', host: 0, m: { ...RISK, fetchFailed: [FETCH_FAILED] } })).toBe(true);
   });
 
-  it('round-trips a failed fetch in worktreeAtRisk', () => {
-    const risk: Risk = { ...RISK, fetchFailed: FETCH_FAILED };
+  it('round-trips four bases in worktreeAtRisk', () => {
+    const risk: Risk = { ...RISK, bases: FOUR_BASES, ahead: 3 };
+    expect(decodeMessage('daemonToClient', encodeMessage('daemonToClient', risk))).toEqual(risk);
+  });
+
+  it('round-trips two failed fetches in worktreeAtRisk', () => {
+    const risk: Risk = { ...RISK, bases: FOUR_BASES, fetchFailed: [BASE_FETCH_FAILED, FETCH_FAILED] };
     expect(decodeMessage('daemonToClient', encodeMessage('daemonToClient', risk))).toEqual(risk);
   });
 
@@ -573,29 +590,37 @@ describe('value limits', () => {
     return decoded;
   };
 
-  it.each([
-    ['ahead null with local', { ...RISK, ahead: null, remote: null }, false],
-    ['ahead null with remote', { ...RISK, ahead: null, local: null }, false],
-    ['ahead 0 without a base', { ...RISK, ahead: 0, local: null, remote: null }, false],
-    ['ahead null without a base', { ...RISK, ahead: null, local: null, remote: null }, true],
-    ['only local', { ...RISK, remote: null }, true],
-    ['only remote', { ...RISK, local: null }, true],
-    ['4096-char local', { ...RISK, local: 'l'.repeat(4096) }, true],
-    ['4097-char local', { ...RISK, local: 'l'.repeat(4097) }, false],
-    ['4096-char remote', { ...RISK, remote: 'r'.repeat(4096) }, true],
-    ['4097-char remote', { ...RISK, remote: 'r'.repeat(4097) }, false],
-    ['4096-char fetchFailed.ref', { ...RISK, fetchFailed: { ...FETCH_FAILED, ref: 'f'.repeat(4096) } }, true],
-    ['4097-char fetchFailed.ref', { ...RISK, fetchFailed: { ...FETCH_FAILED, ref: 'f'.repeat(4097) } }, false],
-    ['1024-char fetchFailed.reason', { ...RISK, fetchFailed: { ...FETCH_FAILED, reason: 'r'.repeat(1024) } }, true],
-    ['1025-char fetchFailed.reason', { ...RISK, fetchFailed: { ...FETCH_FAILED, reason: 'r'.repeat(1025) } }, false],
-  ] as const)('worktreeAtRisk with %s', (_name, risk, ok) => {
+  const riskCases: [string, Risk, boolean][] = [
+    ['ahead null with one base', { ...RISK, ahead: null, bases: ['main'] }, false],
+    ['ahead 0 without a base', { ...RISK, ahead: 0, bases: [] }, false],
+    ['ahead null without a base', { ...RISK, ahead: null, bases: [] }, true],
+    ['one base', { ...RISK, bases: ['origin/main'] }, true],
+    ['four bases', { ...RISK, bases: FOUR_BASES }, true],
+    ['five bases', { ...RISK, bases: [...FOUR_BASES, 'master'] }, false],
+    ['an empty base', { ...RISK, bases: ['main', ''] }, false],
+    ['4096-char base', { ...RISK, bases: ['b'.repeat(4096)] }, true],
+    ['4097-char base', { ...RISK, bases: ['b'.repeat(4097)] }, false],
+    ['a duplicate base', { ...RISK, bases: ['main', 'origin/main', 'main'] }, false],
+    ['two failed fetches', { ...RISK, bases: FOUR_BASES, fetchFailed: [BASE_FETCH_FAILED, FETCH_FAILED] }, true],
+    ['three failed fetches', { ...RISK, fetchFailed: [BASE_FETCH_FAILED, FETCH_FAILED, { ref: 'origin/x', reason: 'r' }] }, false],
+    ['two failed fetches of one ref', { ...RISK, fetchFailed: [FETCH_FAILED, { ...FETCH_FAILED, reason: 'r' }] }, false],
+    ['a failed ref not among the bases', { ...RISK, bases: ['main'], fetchFailed: [FETCH_FAILED] }, true],
+    ['a failed fetch without bases', { ...RISK, bases: [], ahead: null, fetchFailed: [FETCH_FAILED] }, true],
+    ['an empty fetchFailed.ref', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, ref: '' }] }, false],
+    ['4096-char fetchFailed.ref', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, ref: 'f'.repeat(4096) }] }, true],
+    ['4097-char fetchFailed.ref', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, ref: 'f'.repeat(4097) }] }, false],
+    ['an empty fetchFailed.reason', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, reason: '' }] }, true],
+    ['1024-char fetchFailed.reason', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, reason: 'r'.repeat(1024) }] }, true],
+    ['1025-char fetchFailed.reason', { ...RISK, fetchFailed: [{ ...FETCH_FAILED, reason: 'r'.repeat(1025) }] }, false],
+  ];
+
+  it.each(riskCases)('worktreeAtRisk with %s', (_name, risk, ok) => {
     expect(riskValid(risk)).toBe(ok);
   });
 
-  it('refuses to encode a worktreeAtRisk without fetchFailed', () => {
-    const risk: Partial<Risk> = { ...RISK };
-    delete risk.fetchFailed;
-    // @ts-expect-error -- fetchFailed is deliberately missing
+  it.each(['fetchFailed', 'bases'])('refuses to encode a worktreeAtRisk without %s', (field) => {
+    const risk = Object.fromEntries(Object.entries(RISK).filter(([key]) => key !== field));
+    // @ts-expect-error -- the field is deliberately missing
     expect(() => encodeMessage('daemonToClient', risk)).toThrow(ProtocolError);
   });
 

@@ -9,7 +9,15 @@ import { decodePrintCode } from '../../src/protocol/index.js';
 import { REPO_ROOT } from '../support/exec.js';
 import { UpgradeRefused } from '../support/hub-client.js';
 import { HubHost } from '../support/hub-host.js';
-import { cgroupOf, failingSystemdRun, fakeProgram, NO_USER_MANAGER, scopePath, userManagerEnv, withUserManager } from '../support/scopes.js';
+import {
+  cgroupOf,
+  failingSystemdRun,
+  fakeProgram,
+  NO_USER_MANAGER,
+  scopePath,
+  userManagerEnv,
+  withUserManager,
+} from '../support/scopes.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
@@ -519,7 +527,9 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement under t
     // A trailing command, so bash does not exec the hub in place of the shell.
     await client.create(repo, { command: `echo $$ > sh.pid; ${process.execPath} ${BUNDLE} hub; true` });
     await waitUntil(() => host.serving(), 'the hub to serve', 15_000);
-    const shell = Number(readFileSync(join(repo, 'sh.pid'), 'utf8'));
+    const text = readFileSync(join(repo, 'sh.pid'), 'utf8');
+    if (!/^\d+\n$/.test(text)) throw new Error(`sh.pid holds ${JSON.stringify(text)}, not a pid`);
+    const shell = Number(text);
     const pid = host.record()?.pid;
     if (pid === undefined) throw new Error('no hub record');
     expect(cgroupOf(pid)).toMatch(scopePath(host.stateDir, 'hub'));

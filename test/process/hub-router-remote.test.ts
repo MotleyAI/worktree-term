@@ -129,7 +129,7 @@ describe('remote hosts', () => {
       daemonVersion: null,
       instance: null,
     });
-    expect(client.hosts()[0]?.status).toBe('connected');
+    expect(await client.waitHost(0, (h) => h.status === 'connected', { timeout: 10_000 })).toMatchObject({ status: 'connected' });
   });
 
   it('reports a remote without wtd as down, with a reason', async () => {

@@ -282,6 +282,22 @@ describe('entering a scope', () => {
     vi.stubEnv('WTD_BUSCTL', join(dir, 'missing-busctl'));
     await expect(enterScope('wtd-x.scope', 4321)).rejects.toThrow(join(dir, 'missing-busctl'));
   });
+
+  it('rejects with the timeout when busctl exits at once but a descendant holds its output past 2 s', async () => {
+    vi.stubEnv('WTD_BUSCTL', fake('busctl', 'sleep 30 & exit 0').program);
+    const started = Date.now();
+    await expect(enterScope('wtd-x.scope', 4321)).rejects.toThrow('timed out after 2000 ms');
+    expect(Date.now() - started).toBeLessThan(3500);
+  });
+
+  it('kills a busctl still running after 2 s, rejecting with the timeout though a descendant holds its output', async () => {
+    const pidFile = join(dir, 'busctl.pid');
+    vi.stubEnv('WTD_BUSCTL', fake('busctl', `echo $$ > '${pidFile}'; sleep 30 & exec sleep 30`).program);
+    const started = Date.now();
+    await expect(enterScope('wtd-x.scope', 4321)).rejects.toThrow('timed out after 2000 ms');
+    expect(Date.now() - started).toBeLessThan(3500);
+    expect(existsSync(`/proc/${readFileSync(pidFile, 'utf8').trim()}`)).toBe(false);
+  });
 });
 
 describe('scope outcome', () => {
@@ -345,9 +361,18 @@ describe('scope outcome', () => {
     expect(await outOfMemory(unit, report)).toBe(false);
     expect(reported).toHaveLength(1);
   });
+
+  it('kills a query still running after 2 s, counting it as not out of memory and reporting the timeout', async () => {
+    vi.stubEnv('WTD_SYSTEMCTL', fake('systemctl', 'sleep 30 & exec sleep 30').program);
+    const started = Date.now();
+    expect(await outOfMemory(unit, report)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(3500);
+    expect(String(reported[0])).toContain('timed out after 2000 ms');
+  });
 });
 
-describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real user manager'), () => {
+// Real scopes and memory hogs outlast the unit default timeout on a loaded host.
+describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real user manager'), { timeout: 30_000 }, () => {
   let version: number | null = null;
 
   beforeAll(async () => {
@@ -373,7 +398,10 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real us
     children.push(child);
     let out = '';
     child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
-    const pid = Number(await waitUntil(() => /^(\d+)\n/.exec(out)?.[1], 'the pid it prints'));
+    const printed = await waitUntil(() => /^(\d+)\n/.exec(out)?.[1], 'the pid it prints', 15_000).catch((error: unknown) => {
+      throw new Error(`no pid in its output ${JSON.stringify(out)}`, { cause: error });
+    });
+    const pid = Number(printed);
     expect(pid).toBe(child.pid);
     const path = cgroupOf(pid);
     expect(path.endsWith(`/app-wtd.slice/${unit}`)).toBe(true);

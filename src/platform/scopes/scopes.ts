@@ -67,16 +67,26 @@ const run = (file: string, args: readonly string[], timeoutMs: number | null = n
     let timedOut = false;
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    // A descendant may hold the pipes open, which would keep `close` from ever coming.
+    const release = (): void => {
+      child.stdout.destroy();
+      child.stderr.destroy();
+    };
+    const exited = (): boolean => child.exitCode !== null || child.signalCode !== null;
     const timer =
       timeoutMs === null
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            child.kill('SIGKILL');
+            if (exited()) release();
+            else child.kill('SIGKILL');
           }, timeoutMs);
     child.once('error', (error) => {
       clearTimeout(timer);
       reject(new Error(`cannot start ${file}: ${error.message}`, { cause: error }));
+    });
+    child.once('exit', () => {
+      if (timedOut) release();
     });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
@@ -92,8 +102,8 @@ const oneLine = (text: string): string =>
     .join(' ');
 
 /** Why `ran` failed, in one line; null when it exited 0. */
-const failure = (file: string, ran: Ran): string | null => {
-  if (ran.timedOut) return `${file} timed out after ${String(PROBE_TIMEOUT_MS)} ms`;
+const failure = (file: string, ran: Ran, timeoutMs = PROBE_TIMEOUT_MS): string | null => {
+  if (ran.timedOut) return `${file} timed out after ${String(timeoutMs)} ms`;
   if (ran.code === 0) return null;
   const status = ran.code === null ? `was killed by ${String(ran.signal)}` : `exited ${String(ran.code)}`;
   const said = oneLine(ran.stderr);
@@ -190,11 +200,11 @@ export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonl
   ...command,
 ];
 
-/** Runs systemctl with `args`, rejecting when it cannot start or exits non-zero. */
+/** Runs systemctl with `args`, rejecting when it cannot start, exits non-zero or outlasts 2 s. */
 const systemctl = async (args: readonly string[]): Promise<string> => {
   const file = systemctlProgram();
-  const ran = await run(file, ['--user', ...args]);
-  const failed = failure(file, ran);
+  const ran = await run(file, ['--user', ...args], OUTCOME_TIMEOUT_MS);
+  const failed = failure(file, ran, OUTCOME_TIMEOUT_MS);
   if (failed !== null) throw new Error(failed);
   return ran.stdout;
 };
@@ -244,7 +254,7 @@ export const enterScope = async (unit: string, pid: number): Promise<void> => {
     SCOPE_SLICE,
     '0',
   ];
-  const failed = failure(file, await run(file, args));
+  const failed = failure(file, await run(file, args, START_TIMEOUT_MS), START_TIMEOUT_MS);
   if (failed !== null) throw new Error(failed);
   const deadline = Date.now() + START_TIMEOUT_MS;
   for (;;) {

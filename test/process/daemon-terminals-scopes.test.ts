@@ -73,13 +73,16 @@ const pidIn = (name: string): Promise<number> =>
     const file = join(wt, name);
     if (!existsSync(file)) return undefined;
     const text = readFileSync(file, 'utf8');
-    return text.endsWith('\n') ? Number(text) : undefined;
+    if (!text.endsWith('\n')) return undefined;
+    if (!/^\d+\n$/.test(text)) throw new Error(`${name} holds ${JSON.stringify(text)}, not a pid`);
+    return Number(text);
   }, `pid file ${name}`);
 
 /** The pid of the live process of this host whose argv is `argv`. */
 const pidOf = (argv: readonly string[]): Promise<number> =>
   waitUntil(
-    () => livePidsWhere((cmdline, environ) => cmdline.slice(0, -1).join(' ') === argv.join(' ') && environ.includes(`HOME=${host.home}`))[0],
+    () =>
+      livePidsWhere((cmdline, environ) => cmdline.slice(0, -1).join(' ') === argv.join(' ') && environ.includes(`HOME=${host.home}`))[0],
     argv.join(' '),
     10_000,
   );
@@ -309,9 +312,13 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
   it.skipIf(unitTaken)(`leaves a daemon running as ${UNIT} in that unit's cgroup`, async () => {
     const env = host.env(userManagerEnv());
     const setenv = Object.entries(env).flatMap(([key, value]) => ['-E', `${key}=${value ?? ''}`]);
-    const started = spawnSync('systemd-run', ['--user', '--quiet', '--collect', `--unit=${UNIT}`, ...setenv, process.execPath, BUNDLE, 'daemon'], {
-      encoding: 'utf8',
-    });
+    const started = spawnSync(
+      'systemd-run',
+      ['--user', '--quiet', '--collect', `--unit=${UNIT}`, ...setenv, process.execPath, BUNDLE, 'daemon'],
+      {
+        encoding: 'utf8',
+      },
+    );
     expect(started.status, started.stderr).toBe(0);
     try {
       await waitUntil(() => canConnect(host.socket), 'the daemon socket', 10_000);

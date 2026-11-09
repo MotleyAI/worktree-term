@@ -14,8 +14,10 @@ import {
   instance,
   loginUrl,
   longText,
+  MAX_BASES,
   MAX_DISCOVERED,
   MAX_ENTRIES,
+  MAX_FETCHES,
   MAX_HOST_REPOS,
   MAX_HOSTS,
   MAX_PRESETS,
@@ -28,6 +30,7 @@ import {
   presetCommand,
   presetName,
   reason,
+  refName,
   req,
   root,
   secret,
@@ -36,6 +39,8 @@ import {
   termId,
   version,
 } from './values.js';
+
+const distinct = (values: readonly string[]): boolean => new Set(values).size === values.length;
 
 const message = <T extends string, S extends z.core.$ZodLooseShape>(t: T, shape: S) => z.strictObject({ t: z.literal(t), ...shape });
 
@@ -109,14 +114,19 @@ const daemonEvents = [
   message('worktreeAtRisk', {
     req,
     worktree: path,
-    local: longText,
-    remote: longText,
+    bases: z
+      .array(refName)
+      .max(MAX_BASES)
+      .refine((bases) => distinct(bases), 'bases repeat a ref'),
     ahead: count.nullable(),
-    fetchFailed: z.strictObject({ ref: longText.unwrap(), reason: errorMessage }).nullable(),
+    fetchFailed: z
+      .array(z.strictObject({ ref: refName, reason: errorMessage }))
+      .max(MAX_FETCHES)
+      .refine((failures) => distinct(failures.map((f) => f.ref)), 'fetchFailed repeats a ref'),
     changes: count,
     running: z.array(termId).max(MAX_ENTRIES),
-  }).refine((m) => (m.ahead === null) === (m.local === null && m.remote === null), {
-    message: 'ahead is null exactly without local and remote',
+  }).refine((m) => (m.ahead === null) === (m.bases.length === 0), {
+    message: 'ahead is null exactly without bases',
     path: ['ahead'],
   }),
 ] as const;

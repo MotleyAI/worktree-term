@@ -172,6 +172,45 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'worktreeAtRisk', req: 1, worktree: WT, local: null, remote: null, ahead: -1, fetchFailed: null, changes: 0, running: [] },
   { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: null, ahead: null, fetchFailed: null, changes: 0, running: [] },
   { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: null, ahead: 1, changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, local: 'main', remote: 'origin/main', ahead: 1, fetchFailed: null, changes: 0, running: [] },
+  {
+    t: 'worktreeAtRisk',
+    req: 1,
+    worktree: WT,
+    local: 'main',
+    remote: null,
+    ahead: 1,
+    fetchFailed: { ref: 'origin/main', reason: 'r' },
+    changes: 0,
+    running: [],
+  },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, bases: ['main'], ahead: 1, fetchFailed: null, changes: 0, running: [] },
+  {
+    t: 'worktreeAtRisk',
+    req: 1,
+    worktree: WT,
+    bases: ['main'],
+    ahead: 1,
+    fetchFailed: { ref: 'origin/main', reason: 'r' },
+    changes: 0,
+    running: [],
+  },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, bases: ['main', 'main'], ahead: 1, fetchFailed: [], changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, bases: ['a', 'b', 'c', 'd', 'e'], ahead: 1, fetchFailed: [], changes: 0, running: [] },
+  { t: 'worktreeAtRisk', req: 1, worktree: WT, bases: [], ahead: 0, fetchFailed: [], changes: 0, running: [] },
+  {
+    t: 'worktreeAtRisk',
+    req: 1,
+    worktree: WT,
+    bases: ['main'],
+    ahead: 1,
+    fetchFailed: [
+      { ref: 'origin/main', reason: 'a' },
+      { ref: 'origin/main', reason: 'b' },
+    ],
+    changes: 0,
+    running: [],
+  },
   {
     t: 'hosts',
     hosts: [{ idx: 0, name: 'local', remote: false, status: 'connected', daemonVersion: '0.1.0', instance: 'd_1-A', repos: [] }],
@@ -333,8 +372,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 9 and browser protocol 12', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 9, browser: 12 });
+  it('is blessed for daemon protocol 10 and browser protocol 13', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 10, browser: 13 });
   });
 
   it('records every sample as valid in its own direction', () => {

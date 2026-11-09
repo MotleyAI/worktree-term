@@ -19,7 +19,7 @@ const worktrees: Worktree[] = [
   { path: WT, head: null, branch: 'feat', detached: false, locked: false, prunable: false, bare: false, main: false },
 ];
 const ANY_REQ: unknown = expect.any(Number);
-const NO_RISK: WorktreeRisks = { local: 'main', remote: 'origin/main', ahead: 0, fetchFailed: null, changes: 0 };
+const NO_RISK: WorktreeRisks = { bases: ['main', 'origin/main'], ahead: 0, fetchFailed: [], changes: 0 };
 
 interface PendingSpawn {
   spec: TerminalSpec;
@@ -237,12 +237,14 @@ it('refuses to start a terminal in a worktree while it is being removed', async 
   expect(removed).toEqual([WT]);
 });
 
-it('sends the risks it was given unchanged, failed fetch included', async () => {
+it('sends the risks it was given unchanged, failed fetches included', async () => {
   const at: WorktreeRisks = {
-    local: 'main',
-    remote: null,
+    bases: ['feature-x', 'origin/feature-x', 'main'],
     ahead: 1,
-    fetchFailed: { ref: 'origin/main', reason: "fatal: 'origin' does not appear to be a git repository" },
+    fetchFailed: [
+      { ref: 'origin/feature-x', reason: "fatal: couldn't find remote ref feature-x" },
+      { ref: 'origin/main', reason: "fatal: 'origin' does not appear to be a git repository" },
+    ],
     changes: 0,
   };
   risks = Promise.resolve(at);

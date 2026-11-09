@@ -40,7 +40,7 @@ describe('dist/wtd.mjs', () => {
   it('prints its version', () => {
     expect(wtd('--version')).toEqual({
       status: 0,
-      stdout: `wtd ${packageVersion()} (daemon protocol 9, browser protocol 12)\n`,
+      stdout: `wtd ${packageVersion()} (daemon protocol 10, browser protocol 13)\n`,
       stderr: '',
     });
   });

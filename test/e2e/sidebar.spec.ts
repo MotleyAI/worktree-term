@@ -553,6 +553,34 @@ test.describe('worktree status and deletion', () => {
     await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText('Its branch is kept.');
   });
 
+  test('deleting a worktree branched off feature-x names feature-x first among the bases', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    withOrigin(hub, repo);
+    git(repo, 'branch', 'feature-x');
+    git(repo, 'push', '-q', 'origin', 'feature-x');
+    const feat = join(hub.dir, 'repos', 'app.worktrees', 'feat');
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat', feat, 'feature-x');
+    commit(feat, 'a');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const dialog = await askToDelete(page, feat);
+    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText([
+      'It has 1 commit not in feature-x, origin/feature-x, main or origin/main.',
+    ]);
+    await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText('Its branch is kept.');
+  });
+
+  test('deleting a worktree without a base says there is no base branch to check', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    git(repo, 'branch', '-m', 'main', 'trunk');
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const dialog = await askToDelete(page, feat);
+    await expect(dialog.locator(byTestId(TID.confirmReason))).toHaveText(['There is no base branch to check that its commits are merged.']);
+    await expect(dialog.locator(byTestId(TID.confirmNote))).toHaveText('Its branch is kept.');
+  });
+
   test("a failed fetch's reason is shown as text, not markup", async ({ hub, page }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
     const feat = worktrees[0] ?? '';

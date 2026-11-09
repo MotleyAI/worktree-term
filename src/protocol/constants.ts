@@ -2,9 +2,9 @@ const KiB = 1024;
 const MiB = 1024 * KiB;
 
 /** Version of the daemon link (client ↔ daemon), whose two ends can run different releases. */
-export const DAEMON_PROTOCOL_VERSION = 9;
+export const DAEMON_PROTOCOL_VERSION = 10;
 /** Version of the browser link (browser ↔ hub); the hub serves the page, so a bump needs no daemon restart. */
-export const BROWSER_PROTOCOL_VERSION = 12;
+export const BROWSER_PROTOCOL_VERSION = 13;
 
 /** Largest stream frame payload. */
 export const MAX_FRAME = 16 * MiB;

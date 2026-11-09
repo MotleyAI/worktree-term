@@ -1,7 +1,7 @@
 {
   "protocolVersions": {
-    "daemon": 9,
-    "browser": 12
+    "daemon": 10,
+    "browser": 13
   },
   "constants": {
     "MAX_FRAME": 16777216,

@@ -1,7 +1,7 @@
 ## 1. Protocol
 
 - [x] 1.1 Replace `local`, `remote` and nullable `fetchFailed` with `bases` (≤4 distinct strings of 1–4096 chars) and `fetchFailed` (≤2 `{ref, reason}` with distinct `ref`s of 1–4096 chars) in `worktreeAtRisk` (`src/protocol/messages.ts`), `ahead` null exactly when `bases` is empty (design D7, D16); verify `src/protocol/messages.test.ts` on encode and decode: the coupling both ways, 4 bases and 2 failures round-trip, 5 bases / 3 failures / empty or oversized base or `ref` / oversized `reason` / missing `bases` or `fetchFailed` rejected, duplicates rejected, old `local`/`remote`, `base`, null and single-object `fetchFailed` shapes rejected
-- [x] 1.2 Raise `DAEMON_PROTOCOL_VERSION` to 9 and `BROWSER_PROTOCOL_VERSION` to 12 (design D12); update `test-samples.ts` (four bases, empty bases, two failures, a failure whose ref is not among the bases), move the "hello from another version" sample from 9 to 99, add the old shapes to the golden's invalid corpus and re-bless `wire.golden.json`; verify `wire.golden.test.ts` and the constants test pass
+- [x] 1.2 Raise `DAEMON_PROTOCOL_VERSION` to 10 and `BROWSER_PROTOCOL_VERSION` to 13 (design D12); update `test-samples.ts` (four bases, empty bases, two failures, a failure whose ref is not among the bases), move the "hello from another version" sample from 9 to 99, add the old shapes to the golden's invalid corpus and re-bless `wire.golden.json`; verify `wire.golden.test.ts` and the constants test pass
 
 ## 2. Daemon — base discovery
 

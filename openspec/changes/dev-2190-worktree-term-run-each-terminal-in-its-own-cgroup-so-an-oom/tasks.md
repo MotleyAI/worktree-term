@@ -17,12 +17,14 @@
 - [x] 4.2 Terminal launcher injected from `daemon.main` into terminals: scope command with limits when on, plain spawn when off, `/bin/sh` oom_score_adj trampoline in both modes; start-up log line, limits-ignored line once, start-up sweep; verify the "Terminal scopes" scenarios in `test/process/daemon-terminals-scopes.test.ts`.
 - [x] 4.3 Exit: await the scope outcome for `SIGKILL` exits when on; `termExited`/`exit` carry `oom`; verify the "Terminal lifetime" scenarios.
 - [x] 4.4 Memory log: per-terminal `scope` figures and the `oom-kill` line; verify the "Memory log" scenarios in `src/daemon/main/memory.test.ts` and `test/process/memory-log.test.ts`.
+- [x] 4.5 Daemon lowers its own `oom_score_adj` at start; verify the new Daemon placement scenario.
 
 ## 5. Hub
 
 - [x] 5.1 Hub placement in `hub.main` (after the hub start lock, before listening), entering the scope through a `hub.links` call that uses `platform.scopes`; verify the "Hub placement" scenarios, asserting the hub record's pid's cgroup.
 - [x] 5.2 Config: `terminalMemory`, preset `memory`, effective limits and the high-above-max refusal; verify the "Configuration" scenarios in `src/hub/config/*.test.ts`.
 - [x] 5.3 Effective limits in `presets`; config edits keep stored `memory`; `createTerm.memory` relayed; verify the "Preset memory limits" scenarios.
+- [x] 5.4 Hub likewise; verify the new Hub placement scenario.
 
 ## 6. CLI
 

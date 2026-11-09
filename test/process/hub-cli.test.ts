@@ -14,6 +14,7 @@ import {
   failingSystemdRun,
   fakeProgram,
   NO_USER_MANAGER,
+  oomScoreAdj,
   scopePath,
   userManagerEnv,
   withUserManager,
@@ -519,7 +520,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement under t
     expect(cgroupOf(pid)).not.toMatch(/-term-/);
   });
 
-  it("puts a hub started in a daemon's terminal into a hub scope, not that terminal's scope", async () => {
+  it("puts a hub started in a daemon's terminal into a hub scope, not that terminal's scope, without its adjustment", async () => {
     await host.start(userManagerEnv());
     const client = await host.client();
     const repo = makeRepo(join(host.dir, 'repo'));
@@ -534,6 +535,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('hub placement under t
     if (pid === undefined) throw new Error('no hub record');
     expect(cgroupOf(pid)).toMatch(scopePath(host.stateDir, 'hub'));
     expect(cgroupOf(pid)).not.toBe(cgroupOf(shell));
+    expect(oomScoreAdj(shell)).toBeGreaterThanOrEqual(500);
+    expect(oomScoreAdj(pid)).toBeLessThan(500);
   });
 });
 

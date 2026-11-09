@@ -5,6 +5,7 @@ export {
   findUserManager,
   hostScopeRoots,
   hubUnit,
+  lowerOomScoreAdj,
   outOfMemory,
   resetFailedScopes,
   SCOPE_SLICE,

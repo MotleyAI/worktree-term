@@ -292,7 +292,7 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
     via.close();
   });
 
-  it("puts a daemon started in a terminal of another daemon into a daemon scope, not that terminal's scope", async () => {
+  it("puts a daemon started in a terminal of another daemon into a daemon scope, not that terminal's scope, without its adjustment", async () => {
     await startDaemon(userManagerEnv());
     const inner = DaemonHost.create();
     others.push(inner);
@@ -304,6 +304,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
     if (pid === undefined) throw new Error('no inner daemon');
     expect(cgroupOf(pid)).toMatch(scopePath(inner.stateDir, 'daemon'));
     expect(cgroupOf(pid)).not.toBe(cgroupOf(shell));
+    expect(oomScoreAdj(shell)).toBeGreaterThanOrEqual(500);
+    expect(oomScoreAdj(pid)).toBeLessThan(500);
   });
 
   const UNIT = 'worktree-term-daemon.service';

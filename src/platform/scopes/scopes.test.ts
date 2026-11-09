@@ -23,6 +23,7 @@ import {
   findUserManager,
   hostScopeRoots,
   hubUnit,
+  lowerOomScoreAdj,
   outOfMemory,
   resetFailedScopes,
   SCOPE_SLICE,
@@ -174,6 +175,41 @@ describe('lasting user manager', () => {
     expect(real.cgroupFile).toBe('/proc/self/cgroup');
     expect(real.lingerDir).toBe('/var/lib/systemd/linger');
     expect(real.uid).toBe(process.getuid?.());
+  });
+});
+
+describe('lowering oom_score_adj', () => {
+  const OWN = '/proc/self/oom_score_adj';
+  const own = (): number => Number(readFileSync(OWN, 'utf8').trim());
+
+  it("lowers this process's adjustment to the lowest value the kernel permits it", async () => {
+    const original = own();
+    try {
+      writeFileSync(OWN, '500');
+      await lowerOomScoreAdj();
+      const floor = own();
+      expect(floor).toBeLessThan(500);
+      if (floor > -1000) {
+        const below = String(floor - 1);
+        expect(() => {
+          writeFileSync(OWN, below);
+        }).toThrow(/EACCES/);
+      }
+    } finally {
+      // Raising is always permitted, and later tests' children must not inherit the floor.
+      writeFileSync(OWN, String(original));
+    }
+  });
+
+  it('searches down to -1000 when every value is accepted', async () => {
+    const file = join(dir, 'adj');
+    writeFileSync(file, '500\n');
+    await lowerOomScoreAdj(file);
+    expect(readFileSync(file, 'utf8')).toBe('-1000');
+  });
+
+  it('does nothing without the file', async () => {
+    await expect(lowerOomScoreAdj(join(dir, 'missing'))).resolves.toBeUndefined();
   });
 });
 

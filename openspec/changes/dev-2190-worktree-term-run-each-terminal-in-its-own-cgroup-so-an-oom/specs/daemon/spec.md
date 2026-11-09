@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Daemon placement
-Once it holds the start lock and before it serves its socket, the daemon SHALL find whether it has a lasting user manager (see `platform`) and, when it has one and its cgroup is not that of `worktree-term-daemon.service`, enter a daemon scope; however it was started — by dialing, by `wtd daemon` in the foreground, or by a script. A failure to enter SHALL be reported on its standard error and the daemon SHALL run on in its cgroup.
+Once it holds the start lock and before it serves its socket, the daemon SHALL find whether it has a lasting user manager (see `platform`) and, when it has one and its cgroup is not that of `worktree-term-daemon.service`, enter a daemon scope; however it was started — by dialing, by `wtd daemon` in the foreground, or by a script. A failure to enter SHALL be reported on its standard error and the daemon SHALL run on in its cgroup. In every case it SHALL then lower its own `oom_score_adj` to the lowest value the kernel permits it, so that a daemon started from a terminal does not keep the terminal's adjustment.
 
 #### Scenario: Auto-started daemon in its own scope
 - **WHEN** dialing starts the daemon from a process under the user manager
@@ -10,6 +10,10 @@ Once it holds the start lock and before it serves its socket, the daemon SHALL f
 #### Scenario: Foreground daemon in its own scope
 - **WHEN** the user runs `wtd daemon` in a terminal of another daemon
 - **THEN** the new daemon's cgroup is a daemon scope, not that terminal's scope
+
+#### Scenario: Daemon started in a terminal gives up the terminal's adjustment
+- **WHEN** the user runs `wtd daemon` in a terminal of another daemon
+- **THEN** the new daemon's `oom_score_adj` is below 500
 
 #### Scenario: Daemon unit stays
 - **WHEN** the daemon is started as `worktree-term-daemon.service`

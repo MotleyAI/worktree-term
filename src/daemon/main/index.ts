@@ -18,6 +18,7 @@ import {
   enterScope,
   findUserManager,
   hostScopeRoots,
+  lowerOomScoreAdj,
   outOfMemory,
   resetFailedScopes,
   scopeCommand,
@@ -51,8 +52,8 @@ type Report = (error: unknown) => void;
 type UnitOf = ((termId: number) => string) | null;
 
 /**
- * Moves the daemon into a scope of its own unless it runs as its systemd unit; whether terminals get
- * scopes of their own, said on standard error.
+ * Moves the daemon into a scope of its own unless it runs as its systemd unit, and lowers its `oom_score_adj` as far
+ * as permitted; whether terminals get scopes of their own, said on standard error.
  */
 const placeDaemon = async (paths: HostPaths, report: Report): Promise<UserManager> => {
   const roots = hostScopeRoots();
@@ -63,6 +64,7 @@ const placeDaemon = async (paths: HostPaths, report: Report): Promise<UserManage
     }
     await resetFailedScopes(`${unitPrefix(paths.stateDir)}term-`, report);
   }
+  await lowerOomScoreAdj().catch(report);
   console.error(found.lasting ? 'terminal scopes: on' : `terminal scopes: off (${found.reason})`);
   return found;
 };

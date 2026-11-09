@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -163,6 +163,41 @@ export const findUserManager = async (roots: ScopeRoots): Promise<UserManager> =
   if (probe !== null) return { lasting: false, reason: probe };
   if ((await underUserManager(roots)) || (await lingers(roots))) return { lasting: true, version: await systemdRunVersion() };
   return { lasting: false, reason: 'not under the user manager and not lingering' };
+};
+
+const OOM_SCORE_ADJ_MIN = -1000;
+
+const errorCode = (error: unknown): unknown => (error instanceof Error && 'code' in error ? error.code : undefined);
+
+/** Writes `value` to `file`; false when the kernel refuses it as below this process's floor. */
+const permitted = async (file: string, value: number): Promise<boolean> => {
+  try {
+    await writeFile(file, String(value));
+    return true;
+  } catch (error) {
+    if (errorCode(error) === 'EACCES') return false;
+    throw error;
+  }
+};
+
+/** Lowers this process's `oom_score_adj` in `file` to the lowest value the kernel permits it; without the file, does nothing. */
+export const lowerOomScoreAdj = async (file = '/proc/self/oom_score_adj'): Promise<void> => {
+  let text: string;
+  try {
+    text = await readFile(file, 'utf8');
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return;
+    throw error;
+  }
+  // `high` is always permitted; the floor lies in (low, high].
+  let high = Number(text.trim());
+  let low = OOM_SCORE_ADJ_MIN - 1;
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (await permitted(file, mid))
+      high = mid; // NOSONAR(S9382) — each write narrows the search
+    else low = mid;
+  }
 };
 
 /** The prefix of every unit name of the state directory `stateDir`. */

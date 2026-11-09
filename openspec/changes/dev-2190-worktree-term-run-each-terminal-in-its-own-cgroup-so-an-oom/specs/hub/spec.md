@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Hub placement
-Once it holds the hub start lock and before it listens, the hub SHALL find whether it has a lasting user manager (see `platform`) and, when it has one, enter a hub scope; however it was started — by `wtd ui`, by `wtd hub` in the foreground, or by a script. A failure to enter SHALL be reported on its standard error and the hub SHALL run on in its cgroup.
+Once it holds the hub start lock and before it listens, the hub SHALL find whether it has a lasting user manager (see `platform`) and, when it has one, enter a hub scope; however it was started — by `wtd ui`, by `wtd hub` in the foreground, or by a script. A failure to enter SHALL be reported on its standard error and the hub SHALL run on in its cgroup. In every case it SHALL then lower its own `oom_score_adj` to the lowest value the kernel permits it, so that a hub started from a terminal does not keep the terminal's adjustment.
 
 #### Scenario: Hub started by the UI command in its own scope
 - **WHEN** `wtd ui --print-code` starts a hub from a process under the user manager
@@ -10,6 +10,10 @@ Once it holds the hub start lock and before it listens, the hub SHALL find wheth
 #### Scenario: Foreground hub in its own scope
 - **WHEN** the user runs `wtd hub` in a terminal
 - **THEN** the hub's cgroup is a hub scope, not that terminal's scope
+
+#### Scenario: Hub started in a terminal gives up the terminal's adjustment
+- **WHEN** the user runs `wtd hub` in a terminal
+- **THEN** the hub's `oom_score_adj` is below 500
 
 #### Scenario: No lasting user manager
 - **WHEN** the hub starts without a lasting user manager

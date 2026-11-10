@@ -123,6 +123,8 @@ export class Daemon {
   private stopping = false;
   private nextTermId = 1;
   private nextPeerId = 1;
+  /** Settles once every state change made so far was written and sent. */
+  private sent: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: DaemonOptions) {}
 
@@ -417,14 +419,14 @@ export class Daemon {
     const termId = this.nextTermId++;
     const env = { ...this.options.env, WTD_TERMINAL: `${String(process.pid)}/${this.options.instance}/${String(termId)}` };
     const spawn = this.options.services.spawnTerminal(
-      { cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env },
+      { termId, memory: m.memory, cwd: m.worktree, command: m.command, cols: m.cols, rows: m.rows, env },
       {
         activity: (unseen, state) => {
           this.broadcast(repo, { t: 'activity', termId, unseen, state });
         },
-        exited: (code, signal) => {
+        exited: (code, signal, oom) => {
           if (code !== 0 || signal !== null) {
-            this.broadcast(repo, { t: 'termExited', termId, code, signal });
+            this.broadcast(repo, { t: 'termExited', termId, code, signal, oom });
             return;
           }
           const term = this.terminals.get(termId);
@@ -518,8 +520,9 @@ export class Daemon {
     );
     const pruned = pruneLayout(layout, live);
     if (JSON.stringify(pruned) === JSON.stringify(layout)) return;
-    await this.options.store.setLayout(repo, worktree, pruned);
-    this.broadcast(repo, { t: 'layoutChanged', worktree, layout: pruned });
+    await this.sendAfter(this.options.store.setLayout(repo, worktree, pruned), () => {
+      this.broadcast(repo, { t: 'layoutChanged', worktree, layout: pruned });
+    });
   }
 
   /**
@@ -615,8 +618,9 @@ export class Daemon {
 
   private async setChecked(peer: Peer, worktree: string, checked: boolean): Promise<void> {
     const repo = this.repoOfWorktree(peer, worktree);
-    await this.persist(this.options.store.setChecked(repo, worktree, checked));
-    this.broadcast(repo, { t: 'checkedChanged', worktree, checked });
+    await this.sendAfter(this.persist(this.options.store.setChecked(repo, worktree, checked)), () => {
+      this.broadcast(repo, { t: 'checkedChanged', worktree, checked });
+    });
   }
 
   private async setLayout(peer: Peer, worktree: string, layout: Layout): Promise<void> {
@@ -630,8 +634,25 @@ export class Daemon {
     if (JSON.stringify(pruneLayout(layout, live)) !== JSON.stringify(layout)) {
       throw new RequestError('unknown-term', 'the layout holds a terminal that is not a live terminal of this worktree');
     }
-    await this.persist(this.options.store.setLayout(repo, worktree, layout));
-    this.broadcast(repo, { t: 'layoutChanged', worktree, layout });
+    await this.sendAfter(this.persist(this.options.store.setLayout(repo, worktree, layout)), () => {
+      this.broadcast(repo, { t: 'layoutChanged', worktree, layout });
+    });
+  }
+
+  /** Runs `send` once `write` succeeded, after every earlier change was sent, so watchers see changes in the order made. */
+  private sendAfter(write: Promise<void>, send: () => void): Promise<void> {
+    // Settled at once, so a write failing while earlier changes wait is never an unhandled rejection.
+    const outcome = write.then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    const done = this.sent.then(async () => {
+      const written = await outcome;
+      if (!written.ok) throw written.error;
+      send();
+    });
+    this.sent = done.catch(() => undefined);
+    return done;
   }
 
   private async persist(change: Promise<void>): Promise<void> {

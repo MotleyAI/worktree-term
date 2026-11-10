@@ -90,7 +90,7 @@ describe('sidebarEntries', () => {
     const vanished = `${REPO}.worktrees/vanished`;
     const entries = sidebarEntries({
       worktrees: [main, feature],
-      terminals: [terminal(1, vanished), terminal(2, feature.path), terminal(3, vanished, { code: 0, signal: null })],
+      terminals: [terminal(1, vanished), terminal(2, feature.path), terminal(3, vanished, { code: 0, signal: null, oom: false })],
       checked: [vanished],
     });
     expect(entries.map((e) => e.path)).toEqual([main.path, feature.path, vanished]);
@@ -99,7 +99,7 @@ describe('sidebarEntries', () => {
 
   it('keeps a vanished worktree while only an exited terminal remains', () => {
     const vanished = '/x/old';
-    const entries = sidebarEntries({ worktrees: [main], terminals: [terminal(3, vanished, { code: 1, signal: null })], checked: [] });
+    const entries = sidebarEntries({ worktrees: [main], terminals: [terminal(3, vanished, { code: 1, signal: null, oom: false })], checked: [] });
     expect(entries.map((e) => e.path)).toEqual([main.path, vanished]);
   });
 

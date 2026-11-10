@@ -2,7 +2,7 @@
 
 ## Purpose & context
 
-Node-only infrastructure shared by daemon, hub and CLI: XDG paths and file I/O (`files`); reaching a host's daemon over its socket, with auto-start, or over `ssh` (`dialer`); installing the bundle locally or over `ssh` (`install`); sampling process, cgroup and system memory into a rotating log (`memory`).
+Node-only infrastructure shared by daemon, hub and CLI: XDG paths and file I/O (`files`); reaching a host's daemon over its socket, with auto-start, or over `ssh` (`dialer`); installing the bundle locally or over `ssh` (`install`); sampling process, cgroup and system memory into a rotating log (`memory`); running a process in a systemd user scope of its own (`scopes`).
 
 ## Building blocks
 
@@ -17,6 +17,7 @@ flowchart TD
     platform__dialer["Dialer"]
     platform__install["Install"]
     platform__memory["Memory"]
+    platform__scopes["Scopes"]
   end
   subgraph daemon["Daemon"]
     daemon__main["Main"]
@@ -34,16 +35,18 @@ flowchart TD
   platform__memory --> platform__files
   daemon --> platform__files
   daemon__main --> platform__memory
+  daemon__main --> platform__scopes
   hub__server --> platform__files
   hub__config --> platform__files
   hub__links --> platform__dialer
   hub__links --> platform__install
+  hub__links --> platform__scopes
   hub__main --> platform__memory
   cli --> platform__files
   cli --> platform__dialer
   cli --> platform__install
   classDef leaf fill:none;
-  class platform__files,platform__dialer,platform__install,platform__memory,daemon__main,hub__server,hub__links,hub__config,hub__main,cli leaf;
+  class platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,daemon__main,hub__server,hub__links,hub__config,hub__main,cli leaf;
 ```
 <!-- /likec4:platform -->
 

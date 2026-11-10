@@ -9,8 +9,11 @@ import { addWorktree, DaemonHost, livePidsWhere, makeRepo, sessionOf, sleep, wai
 import { FakeSsh } from '../support/fake-ssh.js';
 import { HubHost } from '../support/hub-host.js';
 import { packageVersion } from '../support/hub-router.js';
+import { HOG, NO_USER_MANAGER, SMALL, terminalUnit, userManagerEnv, withUserManager } from '../support/scopes.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
+
+const ANY_TS: unknown = expect.any(String);
 
 const SAMPLE_MS = 200;
 const ENV = { WTD_MEMORY_SAMPLE_MS: String(SAMPLE_MS) };
@@ -48,6 +51,42 @@ const daemonLine = z.object({
   cgroup: z.object({ current: z.number(), others: group.nullable() }).nullable(),
   system,
 });
+/** A sample line with each terminal's scope figures. */
+const scopedLine = z.object({
+  terminals: z.array(
+    z.object({
+      termId: z.number(),
+      scope: z
+        .object({
+          unit: z.string(),
+          current: z.number(),
+          peak: z.number().nullable(),
+          swapCurrent: z.number().nullable(),
+          high: z.number().nullable(),
+          max: z.number().nullable(),
+          swapMax: z.number().nullable(),
+          pressure: z.unknown(),
+          oomKills: z.number(),
+        })
+        .strict()
+        .nullable(),
+    }),
+  ),
+});
+const oomKillLine = z
+  .object({
+    ts: z.string(),
+    source: z.literal('daemon'),
+    event: z.literal('oom-kill'),
+    pid: z.number(),
+    instance: z.string(),
+    termId: z.number(),
+    repo: z.string(),
+    worktree: z.string(),
+    preset: z.string(),
+    unit: z.string(),
+  })
+  .strict();
 const hubLine = z.object({
   ts: z.string(),
   source: z.literal('hub'),
@@ -259,6 +298,70 @@ describe('daemon memory log', () => {
     client.send({ t: 'shutdown' });
     await daemon.exited;
     await expectNoMoreLines(log());
+  });
+
+  it('logs a null scope for every terminal without terminal scopes', async () => {
+    await shell();
+    await shell();
+    const line = await sampleWhere(log(), scopedLine, (l) => l.terminals.length === 2);
+    expect(line.terminals.map((t) => t.scope)).toEqual([null, null]);
+  });
+});
+
+describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon memory log with terminal scopes'), () => {
+  let host: DaemonHost;
+  let client: DaemonClient;
+  let daemon: WtdProcess;
+  let instance: string;
+  let repo: string;
+  let wt: string;
+
+  beforeEach(async () => {
+    host = DaemonHost.create();
+    repo = makeRepo(join(host.dir, 'repo'));
+    wt = addWorktree(repo, join(host.dir, 'wt'), 'wt');
+    daemon = await host.start({ ...ENV, ...userManagerEnv() });
+    client = await host.rawClient();
+    instance = (await client.handshake()).instance;
+    await client.watch(repo);
+  });
+
+  afterEach(async () => {
+    await host.cleanup();
+  });
+
+  const log = (): string => join(host.stateDir, 'memory.log');
+
+  it("logs a terminal's scope figures, named by its unit", async () => {
+    const term = await client.create(wt, { preset: 'tests', command: 'exec sleep 1000', memory: { max: '1G' } });
+    const unit = terminalUnit(host.stateDir, instance, term.termId);
+    const line = await sampleWhere(log(), scopedLine, (l) => l.terminals.some((t) => t.termId === term.termId && t.scope !== null));
+    const scope = line.terminals.find((t) => t.termId === term.termId)?.scope;
+    expect(scope).toMatchObject({ unit, max: 1_073_741_824, oomKills: 0 });
+    expect(scope?.current).toBeGreaterThan(0);
+  });
+
+  it('logs an oom-kill line naming the terminal killed for lack of memory and its unit', async () => {
+    const term = await client.create(wt, { preset: 'tests', command: HOG, memory: SMALL });
+    await client.waitFor('termExited', (m) => m.termId === term.termId && m.oom, { timeout: 20_000 });
+    const line = await waitUntil(
+      () => linesOf(log()).map((l) => oomKillLine.safeParse(l)).find((r) => r.success)?.data,
+      'an oom-kill line',
+      10_000,
+    );
+    expect(line).toEqual({
+      ts: ANY_TS,
+      source: 'daemon',
+      event: 'oom-kill',
+      pid: daemon.pid,
+      instance,
+      termId: term.termId,
+      repo,
+      worktree: wt,
+      preset: 'tests',
+      unit: terminalUnit(host.stateDir, instance, term.termId),
+    });
+    expect(Number.isNaN(Date.parse(line.ts))).toBe(false);
   });
 });
 

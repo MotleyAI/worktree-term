@@ -4,7 +4,7 @@ import xterm from '@xterm/headless';
 import { access, constants as fsConstants, stat } from 'node:fs/promises';
 import { constants } from 'node:os';
 import { isAbsolute } from 'node:path';
-import { MAX_FRAME } from '../../protocol/index.js';
+import { MAX_FRAME, type MemoryLimits } from '../../protocol/index.js';
 import { Attention, isNotification, type AttentionClock, type AttentionState } from './attention.js';
 import { FlowControl, type AckResult } from './flow.js';
 import { InputWriter } from './input.js';
@@ -21,6 +21,8 @@ export class SpawnError extends Error {
 }
 
 export interface TerminalSpec {
+  termId: number;
+  memory: MemoryLimits;
   cwd: string;
   /** Run in a login interactive shell; null for the shell itself. */
   command: string | null;
@@ -33,8 +35,30 @@ export interface TerminalEvents {
   /** `unseen` or the attention state changed. */
   activity: (unseen: boolean, state: AttentionState) => void;
   /** The process exited and every output byte has been offered. */
-  exited: (code: number, signal: string | null) => void;
+  exited: (code: number, signal: string | null, oom: boolean) => void;
 }
+
+/** How terminal processes are started, and how their out-of-memory kills are found. */
+export interface TerminalLauncher {
+  /** The command running `shell` with `args` for terminal `termId` with `memory` limits. */
+  command: (termId: number, memory: MemoryLimits, shell: string, args: readonly string[]) => string[];
+  /** Whether terminal `termId`, killed by `SIGKILL`, was killed for lack of memory. */
+  outOfMemory: (termId: number) => Promise<boolean>;
+}
+
+/** Runs the shell itself; no kill is an out-of-memory kill. */
+const plainLauncher: TerminalLauncher = {
+  command: (_termId, _memory, shell, args) => [shell, ...args],
+  outOfMemory: () => Promise.resolve(false),
+};
+
+/** Raises the shell's `oom_score_adj` to at least 500 before it runs, so a global OOM picks a terminal first. */
+const OOM_SCORE_TRAMPOLINE = [
+  '/bin/sh',
+  '-c',
+  '[ -e /proc/self/oom_score_adj ] && read a </proc/self/oom_score_adj && [ "$a" -lt 500 ] && echo 500 >/proc/self/oom_score_adj; exec "$@"',
+  'sh',
+];
 
 /** Where one attached connection's output goes. */
 export interface OutputSink {
@@ -62,6 +86,7 @@ export interface MirrorStats {
 export interface ExitStatus {
   code: number;
   signal: string | null;
+  oom: boolean;
 }
 
 const signalName = (signal: number | undefined): string | null => {
@@ -139,6 +164,8 @@ export class TerminalProcess {
     fd: number,
     spec: TerminalSpec,
     private readonly events: TerminalEvents,
+    private readonly launcher: TerminalLauncher,
+    private readonly termId: number,
   ) {
     this.cols = spec.cols;
     this.rows = spec.rows;
@@ -173,19 +200,20 @@ export class TerminalProcess {
       this.onOutput(data);
     });
     pty.onExit(({ exitCode, signal }) => {
-      this.onExit({ code: exitCode, signal: signalName(signal) });
+      this.onExit(exitCode, signalName(signal));
     });
   }
 
-  /** Starts `$SHELL -l -i [-c command]` (`/bin/sh` unless SHELL is absolute) in `spec.cwd`. */
-  static async spawn(spec: TerminalSpec, events: TerminalEvents): Promise<TerminalProcess> {
+  /** Starts `$SHELL -l -i [-c command]` (`/bin/sh` unless SHELL is absolute) in `spec.cwd`, through `launcher`. */
+  static async spawn(spec: TerminalSpec, events: TerminalEvents, launcher: TerminalLauncher = plainLauncher): Promise<TerminalProcess> {
     const configured = spec.env['SHELL'];
     const shell = configured !== undefined && isAbsolute(configured) ? configured : '/bin/sh';
     await checkSpawnable(shell, spec.cwd);
     const args = spec.command === null ? ['-l', '-i'] : ['-l', '-i', '-c', spec.command];
+    const [file = shell, ...rest] = [...OOM_SCORE_TRAMPOLINE, ...launcher.command(spec.termId, spec.memory, shell, args)];
     let pty: IPty;
     try {
-      pty = spawnPty(shell, args, {
+      pty = spawnPty(file, rest, {
         name: 'xterm-256color',
         cols: spec.cols,
         rows: spec.rows,
@@ -199,7 +227,7 @@ export class TerminalProcess {
     const fd: unknown = 'fd' in pty ? pty.fd : undefined;
     try {
       if (typeof fd !== 'number') throw new Error('the PTY exposes no master fd');
-      return new TerminalProcess(pty, fd, spec, events);
+      return new TerminalProcess(pty, fd, spec, events, launcher, spec.termId);
     } catch (error) {
       pty.kill('SIGKILL');
       throw new SpawnError(`cannot drive the PTY of ${shell}`, { cause: error });
@@ -263,7 +291,7 @@ export class TerminalProcess {
   resize(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
-    if (this.exitStatus === null && !this.closing) this.pty.resize(cols, rows);
+    if (!this.reaped && !this.closing) this.pty.resize(cols, rows);
     this.mirror.write('', () => {
       if (!this.closing) this.mirror.resize(cols, rows);
     });
@@ -352,7 +380,7 @@ export class TerminalProcess {
     this.events.activity(this.unseen, this.attention.state);
   }
 
-  private onExit(status: ExitStatus): void {
+  private onExit(code: number, signal: string | null): void {
     this.reaped = true;
     if (this.killTimer !== null) clearTimeout(this.killTimer);
     this.input.stop();
@@ -361,16 +389,19 @@ export class TerminalProcess {
       this.onReaped?.();
       return;
     }
-    this.exitStatus = status;
+    const oom = signal === 'SIGKILL' ? this.launcher.outOfMemory(this.termId) : Promise.resolve(false);
     this.mirror.write('', () => {
-      if (this.closing) return;
-      this.attention.exit();
-      const failed = status.code !== 0 || status.signal !== null;
-      if (failed && !this.visible && !this.unseen) {
-        this.unseen = true;
-        this.report();
-      }
-      this.events.exited(status.code, status.signal);
+      void oom.then((killed) => {
+        if (this.closing) return;
+        this.exitStatus = { code, signal, oom: killed };
+        this.attention.exit();
+        const failed = code !== 0 || signal !== null;
+        if (failed && !this.visible && !this.unseen) {
+          this.unseen = true;
+          this.report();
+        }
+        this.events.exited(code, signal, killed);
+      });
     });
   }
 

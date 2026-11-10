@@ -54,6 +54,20 @@ export interface OwnCgroup {
   pids: number[];
 }
 
+/** A process's cgroup v2 figures in bytes; null where a file is absent or `max`. */
+export interface ProcessCgroup {
+  path: string;
+  current: number;
+  peak: number | null;
+  high: number | null;
+  max: number | null;
+  swapCurrent: number | null;
+  swapMax: number | null;
+  pressure: Pressure | null;
+  /** The `oom_kill` count of `memory.events`. */
+  oomKills: number;
+}
+
 /** Per-process details read on request; null when the process is gone or unreadable. */
 export interface ProcessLookup {
   /** Its `WTD_TERMINAL` environment value. */
@@ -269,6 +283,33 @@ export const readOwnCgroup = (roots: MemoryRoots, report: Report): Promise<OwnCg
       readPids(join(dir, 'cgroup.procs')),
     ]);
     return { path, current, peak, max, high, swapCurrent, pressure, pids };
+  }, report);
+
+const readOomKills = async (path: string): Promise<number> => {
+  const count = /^oom_kill (\d+)$/m.exec(await readFile(path, 'utf8'))?.[1];
+  if (count === undefined) throw new MalformedError(path, 'no oom_kill');
+  return Number(count);
+};
+
+/** The cgroup v2 of process `pid`; null when the process or its cgroup is gone. */
+export const readProcessCgroup = (roots: MemoryRoots, pid: number, report: Report): Promise<ProcessCgroup | null> =>
+  source(async () => {
+    const membership = await readFile(join(roots.proc, String(pid), 'cgroup'), 'utf8');
+    const path = /^0::(\/.*)$/m.exec(membership)?.[1];
+    if (path === undefined) return null;
+    const dir = join(roots.cgroup, path);
+    const currentPath = join(dir, 'memory.current');
+    const current = integer((await readFile(currentPath, 'utf8')).trim(), currentPath, 'bytes');
+    const [peak, high, max, swapCurrent, swapMax, pressure, oomKills] = await Promise.all([
+      readBytes(join(dir, 'memory.peak')),
+      readBytes(join(dir, 'memory.high')),
+      readBytes(join(dir, 'memory.max')),
+      readBytes(join(dir, 'memory.swap.current')),
+      readBytes(join(dir, 'memory.swap.max')),
+      readPressure(join(dir, 'memory.pressure')),
+      readOomKills(join(dir, 'memory.events')),
+    ]);
+    return { path, current, peak, high, max, swapCurrent, swapMax, pressure, oomKills };
   }, report);
 
 const TIGHT_PRESSURE = 10;

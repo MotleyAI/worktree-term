@@ -55,7 +55,7 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 - **THEN** stderr names `b` as unexpected and contains the usage, and the exit code is 2
 
 ### Requirement: Daemon command
-`wtd daemon` SHALL run this host's daemon in the foreground until it receives `shutdown`, `SIGTERM` or `SIGINT`, then exit 0. It SHALL ignore `SIGHUP`. If a daemon is already serving this host's socket, it SHALL print `wtd daemon: already running` to stderr and exit 1. Any other start failure SHALL print one line naming the cause to stderr, without a stack trace, and exit 1.
+`wtd daemon` SHALL run this host's daemon in the foreground until it receives `shutdown`, `SIGTERM` or `SIGINT`, then exit 0. It SHALL ignore `SIGHUP`, and SHALL place itself in a scope of its own as daemon placement states (see `daemon`). If a daemon is already serving this host's socket, it SHALL print `wtd daemon: already running` to stderr and exit 1. Any other start failure SHALL print one line naming the cause to stderr, without a stack trace, and exit 1.
 
 #### Scenario: Foreground run and signal stop
 - **WHEN** the user runs `wtd daemon` and later sends it `SIGTERM`
@@ -64,6 +64,10 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 #### Scenario: Second daemon refused
 - **WHEN** the user runs `wtd daemon` while another daemon serves this host's socket
 - **THEN** stderr is `wtd daemon: already running`, the running daemon is unaffected, and the exit code is 1
+
+#### Scenario: Foreground daemon leaves the caller's cgroup
+- **WHEN** the user runs `wtd daemon` from a process under the user manager
+- **THEN** the daemon runs in a daemon scope, not the caller's cgroup, and still exits 0 on `SIGTERM`
 
 ### Requirement: Connect command
 `wtd connect` SHALL connect to this host's daemon socket, starting the daemon first if no daemon is serving it, and then relay bytes unchanged from stdin to the socket and from the socket to stdout. When stdin ends it SHALL half-close the socket; when the socket closes it SHALL flush stdout and exit 0. If the daemon cannot be reached or started, or the socket fails, it SHALL print one line naming the cause to stderr and exit 1.
@@ -81,7 +85,7 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 - **THEN** the daemon exits, `wtd connect` exits 0, and the next `wtd connect` starts a daemon with a different `instance`
 
 ### Requirement: Hub command
-`wtd hub` SHALL run the hub in the foreground until it receives `SIGTERM`, `SIGINT` or an authenticated shutdown request, then exit 0. A start failure — another hub running, the port in use, an invalid configuration, a missing web bundle, or an unusable token file — SHALL print one line naming the cause to stderr, without a stack trace, and exit 1.
+`wtd hub` SHALL run the hub in the foreground until it receives `SIGTERM`, `SIGINT` or an authenticated shutdown request, then exit 0, placing itself in a scope of its own as hub placement states (see `hub`). A start failure — another hub running, the port in use, an invalid configuration, a missing web bundle, or an unusable token file — SHALL print one line naming the cause to stderr, without a stack trace, and exit 1.
 
 #### Scenario: Foreground run and signal stop
 - **WHEN** the user runs `wtd hub` and later sends it `SIGTERM`
@@ -94,6 +98,10 @@ Running `wtd` with no arguments, an unknown command, an option the command does 
 #### Scenario: Port in use
 - **WHEN** the configured port is held by another process and the user runs `wtd hub`
 - **THEN** stderr is `wtd hub: port <port> is in use` and the exit code is 1
+
+#### Scenario: Foreground hub leaves the caller's cgroup
+- **WHEN** the user runs `wtd hub` from a process under the user manager
+- **THEN** the hub runs in a hub scope, not the caller's cgroup, and still exits 0 on `SIGTERM`
 
 ### Requirement: UI command
 `wtd ui [<host>] [--print-code]` SHALL make a hub of its own version serve. If a running hub reports the same version, it SHALL be reused; if it reports another version, it SHALL be asked to shut down and a new hub started once its port is free; otherwise a hub SHALL be started detached with its output appended to `hub.log`, and `wtd ui` SHALL wait up to 5 s for it to serve. It SHALL then obtain a one-time code from the hub. Without options it SHALL start the browser command — `$WTD_BROWSER` if set, else `google-chrome` — with the argument `--app=http://127.0.0.1:<port>/#code=<code>`, detached with its stdio ignored, and exit 0. With `<host>` it SHALL first fail, before touching any hub, with one line `wtd ui: no host named <host> in <config path>` on stderr and exit 1 unless the configuration has a remote host of that name, and SHALL otherwise start the browser command the same way with `--app=http://127.0.0.1:<port>/#code=<code>&hub=<host>`. With `--print-code` it SHALL start no browser, print exactly one print-code line holding the hub's port and the code to stdout, and exit 0. The browser's arguments and the printed line SHALL never contain the token. A hub that cannot be started or reached, or a browser command that cannot be started, SHALL print one line naming the cause to stderr and exit 1. A hub record whose hub does not answer an authenticated identity request SHALL be treated as stale, and its process SHALL NOT be signalled.

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ConfigError, ConfigSource, DEFAULT_PORT, loadConfig, nextHostPort, parseConfig } from './index.js';
+import { ConfigError, ConfigSource, DEFAULT_PORT, effectivePresets, loadConfig, nextHostPort, parseConfig } from './index.js';
 
 const HOME = '/home/u';
 
@@ -42,11 +42,11 @@ const presets = (n: number): { name: string; command: string | null }[] =>
 describe('parseConfig', () => {
   it('uses port 7417, no repos and the shell, claude and codex presets for a missing file', () => {
     expect(DEFAULT_PORT).toBe(7417);
-    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
+    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
   });
 
   it('uses the defaults for an empty object', () => {
-    expect(parse({})).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
+    expect(parse({})).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
   });
 
   it.each([1024, 8080, 65535])('accepts port %d', (port) => {
@@ -341,14 +341,14 @@ describe('nextHostPort', () => {
 describe('loadConfig', () => {
   it('uses the defaults for a missing file without creating it or its directory', async () => {
     const path = join(dir, 'worktree-term', 'config.json');
-    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
+    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
     expect(existsSync(join(dir, 'worktree-term'))).toBe(false);
   });
 
   it('reads the file', async () => {
     const path = join(dir, 'config.json');
     writeFileSync(path, JSON.stringify({ port: 9000, repos: ['~/app'], roots: ['~'], presets: [CLAUDE], hosts: [] }));
-    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'], roots: ['~'], presets: [CLAUDE], hosts: [] });
+    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'], roots: ['~'], presets: [CLAUDE], hosts: [], terminalMemory: {} });
   });
 
   it('fails with one line naming the file and the problem', async () => {
@@ -391,7 +391,7 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a', '/b'] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] },
+      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} },
       problem: null,
     });
   });
@@ -404,13 +404,13 @@ describe('ConfigSource', () => {
     await source.snapshot();
     write(path, { repos: ['relative'] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] });
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
     expect(snapshot.problem).toContain('repos');
     write(path, '{');
     expect((await source.snapshot()).config.repos).toEqual(['/a', '/b']);
     write(path, { repos: ['/c'] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] },
+      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} },
       problem: null,
     });
   });
@@ -421,12 +421,12 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a'], presets: [CLAUDE, ...SHELL] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [] },
+      config: { port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [], terminalMemory: {} },
       problem: null,
     });
     write(path, { repos: ['/b'], presets: [{ name: 'claude', command: '' }] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [] });
+    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [], terminalMemory: {} });
     expect(snapshot.problem).toContain('presets');
   });
 
@@ -436,7 +436,7 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     rmSync(path);
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [] },
+      config: { port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} },
       problem: null,
     });
   });
@@ -496,5 +496,112 @@ describe('README', () => {
   it('tells Claude Code to ring the bell', () => {
     const [settings] = jsonBlocks(section('Attention marks'));
     expect(JSON.parse(settings ?? '')).toEqual({ preferredNotifChannel: 'terminal_bell' });
+  });
+});
+
+describe('memory limits', () => {
+  const TESTS = { name: 'tests', command: 'pytest', memory: { max: '24G', swapMax: '0' } };
+
+  it('defaults terminalMemory to no limits', () => {
+    expect(parse({}).terminalMemory).toEqual({});
+    expect(parseConfig(null, HOME).terminalMemory).toEqual({});
+  });
+
+  it('accepts terminalMemory and a preset memory, keeping each as written', () => {
+    const config = parse({ terminalMemory: { high: '16G' }, presets: [...SHELL, TESTS] });
+    expect(config.terminalMemory).toEqual({ high: '16G' });
+    expect(config.presets).toEqual([...SHELL, TESTS]);
+  });
+
+  it.each([
+    ['a malformed size', { max: 'lots' }],
+    ['an unknown key', { min: '1G' }],
+    ['a size that is a number', { max: 1024 }],
+    ['a list', ['16G']],
+  ])('refuses terminalMemory with %s, naming terminalMemory', (_name, terminalMemory) => {
+    const message = problem(JSON.stringify({ terminalMemory }));
+    expect(message).toContain('terminalMemory');
+    expect(message).not.toContain('\n');
+  });
+
+  it.each([
+    ['a malformed size', { max: '64m' }],
+    ['an unknown key', { min: '1G' }],
+  ])('refuses a preset memory with %s, naming presets', (_name, memory) => {
+    expect(problem(JSON.stringify({ presets: [{ name: 'tests', command: null, memory }] }))).toContain('presets');
+  });
+
+  it.each([
+    ['terminalMemory high above a preset max', { high: '32G' }, { max: '16G' }],
+    ['a preset high above terminalMemory max', { max: '16G' }, { high: '32G' }],
+    ['a preset high above its own max', {}, { high: '2G', max: '1500M' }],
+    ['high just above max across units', { high: '1025M' }, { max: '1G' }],
+  ])('refuses %s after the merge, naming the preset', (_name, terminalMemory, memory) => {
+    const message = problem(JSON.stringify({ terminalMemory, presets: [...SHELL, { name: 'tests', command: null, memory }] }));
+    expect(message).toContain('tests');
+    expect(message).not.toContain('\n');
+  });
+
+  it('refuses terminalMemory whose high is above its max, naming the first preset it applies to', () => {
+    expect(problem(JSON.stringify({ terminalMemory: { high: '32G', max: '16G' } }))).toContain('shell');
+  });
+
+  it.each([
+    ['percent and size', { high: '50%', max: '16G' }],
+    ['size and percent', { high: '16G', max: '10%' }],
+    ['equal sizes in other units', { high: '1024M', max: '1G' }],
+    ['a high below max in bytes', { high: '1073741823', max: '1G' }],
+    ['a swapMax above max', { max: '1G', swapMax: '8G' }],
+  ])('accepts effective limits of %s', (_name, memory) => {
+    expect(parse({ presets: [{ name: 'tests', command: null, memory }] }).presets[0]?.memory).toEqual(memory);
+  });
+
+  it('accepts a preset max that lifts terminalMemory high above terminalMemory max', () => {
+    expect(() => parse({ terminalMemory: { high: '32G', max: '16G' }, presets: [{ name: 'big', command: null, memory: { max: '64G' } }] })).not.toThrow();
+  });
+
+  it('names the file and terminalMemory when loading fails on it', async () => {
+    const path = join(dir, 'config.json');
+    writeFileSync(path, JSON.stringify({ terminalMemory: { max: 'lots' } }));
+    await expect(loadConfig(path, HOME)).rejects.toThrow(path);
+    await expect(loadConfig(path, HOME)).rejects.toThrow('terminalMemory');
+  });
+});
+
+describe('effective presets', () => {
+  it("replace each terminalMemory key a preset's memory holds", () => {
+    const config = parse({
+      terminalMemory: { high: '16G', max: '32G' },
+      presets: [...SHELL, { name: 'tests', command: 'pytest', memory: { max: '24G' } }],
+    });
+    expect(effectivePresets(config)).toEqual([
+      { name: 'shell', command: null, memory: { high: '16G', max: '32G' } },
+      { name: 'tests', command: 'pytest', memory: { high: '16G', max: '24G' } },
+    ]);
+  });
+
+  it('carry no memory when the limits are empty', () => {
+    expect(effectivePresets(parse({}))).toEqual(DEFAULT_PRESETS);
+    expect(effectivePresets(parse({ presets: [{ name: 'tests', command: null, memory: {} }] }))).toEqual([{ name: 'tests', command: null }]);
+  });
+
+  it('carry a preset’s own limits without terminalMemory', () => {
+    expect(effectivePresets(parse({ presets: [{ name: 'tests', command: null, memory: { swapMax: '0' } }] }))).toEqual([
+      { name: 'tests', command: null, memory: { swapMax: '0' } },
+    ]);
+  });
+
+  it('give the default presets terminalMemory', () => {
+    expect(effectivePresets(parse({ terminalMemory: { max: '50%' } })).map((p) => p.memory)).toEqual([
+      { max: '50%' },
+      { max: '50%' },
+      { max: '50%' },
+    ]);
+  });
+
+  it('leave the configuration’s presets as written', () => {
+    const config = parse({ terminalMemory: { high: '16G' }, presets: [{ name: 'tests', command: null, memory: { max: '24G' } }] });
+    effectivePresets(config);
+    expect(config.presets).toEqual([{ name: 'tests', command: null, memory: { max: '24G' } }]);
   });
 });

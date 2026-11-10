@@ -97,6 +97,24 @@ A host's `port` is the loopback port on this machine through which its own hub i
 }
 ```
 
+`terminalMemory` and a preset's `memory` set memory limits for its terminals: `high` (throttled above it, `MemoryHigh`), `max` (killed above it, `MemoryMax`) and `swapMax` (`MemorySwapMax`), each a size such as `512M`, `16G` or `17179869184`, or a percentage of RAM such as `50%`; `swapMax` may also be `0`. A preset's `memory` replaces `terminalMemory` key by key. Without swap limits, `max` swaps before it kills. Limits apply only while terminal scopes are on (see [Memory and out-of-memory kills](#memory-and-out-of-memory-kills)), and the page does not edit them.
+
+```json
+{
+  "terminalMemory": { "high": "16G", "max": "32G" },
+  "presets": [
+    { "name": "shell", "command": null },
+    { "name": "tests", "command": "pytest -n auto", "memory": { "max": "24G", "swapMax": "0" } }
+  ]
+}
+```
+
+## Memory and out-of-memory kills
+
+With a systemd user manager that outlives your session (the process runs under `user@<uid>.service`, as anything started from a desktop session does, or lingering is on), every process worktree-term starts gets a cgroup of its own in the slice `app-wtd.slice`: the daemon `wtd-<h>-daemon-<r>.scope`, the hub `wtd-<h>-hub-<r>.scope`, and each terminal, with everything it starts, `wtd-<h>-term-<instance>-<id>.scope`, where `<h>` hashes the state directory. systemd-oomd and the kernel then kill only the terminal that ran out of memory, never the daemon, the hub or another terminal; its tab says `killed: out of memory`, and `memory.log` gets an `oom-kill` line and each terminal's cgroup figures. A daemon run as `worktree-term-daemon.service` stays in that unit. Terminal shells also get an `oom_score_adj` of at least 500, so a system-wide OOM picks a terminal before the daemon or hub.
+
+Without such a user manager (no systemd, an SSH session without lingering, `systemd-run` failing), everything runs in the cgroup it was started in, as before, and memory limits are ignored. The daemon says which on its standard error at start: `terminal scopes: on`, or `terminal scopes: off (<reason>)`.
+
 ## Remote hosts
 
 A remote host needs only Linux, Node 20 or later and an SSH alias that logs in without a prompt (keys or an agent: the hub runs SSH with `BatchMode=yes`). Install wtd there with

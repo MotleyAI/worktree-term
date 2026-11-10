@@ -31,6 +31,8 @@ export interface HubServerOptions {
   openSession: (channel: BrowserChannel) => RoutedSession;
   /** An authenticated shutdown request was answered. */
   shutdown: () => void;
+  /** Runs under the hub start lock, once no other hub answers, before listening. */
+  beforeListen?: () => Promise<void>;
 }
 
 export interface RunningHubServer {
@@ -58,6 +60,7 @@ export const startHubServer = async (options: HubServerOptions): Promise<Running
     if (record !== null && (await hubIdentity(record.port, token))?.instance === record.instance) {
       throw new HubAlreadyRunningError('already running');
     }
+    await options.beforeListen?.();
     listener = await Listener.listen({
       port,
       version,

@@ -32,7 +32,7 @@ export {
   type RemoteFragment,
 } from './hub.js';
 export { layout as layoutSchema, type Layout } from './layout.js';
-export { root as discoveryRootSchema } from './values.js';
+export { memoryLimits as memoryLimitsSchema, root as discoveryRootSchema } from './values.js';
 export {
   decodeCodeResponse,
   decodeMessage,
@@ -44,6 +44,7 @@ export {
   type CodeResponse,
   type Direction,
   type HostEntry,
+  type MemoryLimits,
   type MessageOf,
   type Preset,
   type Terminal,

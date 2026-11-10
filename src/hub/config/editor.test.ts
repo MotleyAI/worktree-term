@@ -438,3 +438,21 @@ describe('ConfigEditor assigning host ports', () => {
     });
   });
 });
+
+describe('ConfigEditor keeping memory limits', () => {
+  const TESTS = { name: 'tests', command: 'pytest', memory: { max: '24G' } };
+
+  it('keeps the memory stored with every preset an edit leaves, merging in no terminalMemory key', async () => {
+    write({ terminalMemory: { high: '8G' }, presets: [SHELL, TESTS] });
+    await editor().movePreset('tests', 0);
+    await editor().addPreset({ name: 'htop', command: 'htop' });
+    await editor().removePreset('htop');
+    expect(read()).toEqual({ terminalMemory: { high: '8G' }, presets: [TESTS, SHELL] });
+  });
+
+  it('stores the memory an added preset carries', async () => {
+    write({ presets: [SHELL] });
+    expect((await editor().addPreset(TESTS)).presets).toEqual([SHELL, TESTS]);
+    expect(read()).toEqual({ presets: [SHELL, TESTS] });
+  });
+});

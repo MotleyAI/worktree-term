@@ -144,7 +144,7 @@ export class HubStore {
         );
         return;
       case 'termExited':
-        this.withTerminal(host, m.termId, (t) => ({ ...t, exit: { code: m.code, signal: m.signal } }));
+        this.withTerminal(host, m.termId, (t) => ({ ...t, exit: { code: m.code, signal: m.signal, oom: m.oom } }));
         return;
       case 'activity':
         this.withTerminal(host, m.termId, (t) => ({ ...t, unseen: m.unseen, state: m.state }));

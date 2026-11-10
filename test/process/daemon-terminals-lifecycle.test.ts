@@ -63,6 +63,7 @@ describe('terminal creation', () => {
       command: 'exec sleep 60',
       cols: 100,
       rows: 30,
+      memory: {},
     });
     const term = { termId: 1, worktree: fx.wt, preset: 'my-preset', cols: 100, rows: 30, exit: null, unseen: false, state: 'idle' };
     expect(reply).toEqual({ t: 'termCreated', req: ANY_REQ, term });
@@ -86,13 +87,13 @@ describe('terminal creation', () => {
 
   it('fails with unknown-worktree for a worktree of a repo this connection does not watch', async () => {
     const outsider = await fx.host.client();
-    expect(await outsider.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe(
+    expect(await outsider.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe(
       'unknown-worktree',
     );
   });
 
   it('fails with unknown-worktree for a path that is not in the list', async () => {
-    expect(await fx.a.fails({ t: 'createTerm', worktree: join(fx.repo, 'sub'), preset: 'shell', command: null, cols: 80, rows: 24 })).toBe(
+    expect(await fx.a.fails({ t: 'createTerm', worktree: join(fx.repo, 'sub'), preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe(
       'unknown-worktree',
     );
   });
@@ -102,12 +103,12 @@ describe('terminal creation', () => {
     await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
     rmSync(gone, { recursive: true });
     await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone && w.prunable));
-    expect(await fx.a.fails({ t: 'createTerm', worktree: gone, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('spawn-failed');
+    expect(await fx.a.fails({ t: 'createTerm', worktree: gone, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe('spawn-failed');
   });
 
   it('fails with spawn-failed when the shell does not exist', async () => {
     await restart({ SHELL: join(fx.host.dir, 'no-such-shell') });
-    expect(await fx.a.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24 })).toBe('spawn-failed');
+    expect(await fx.a.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe('spawn-failed');
   });
 });
 
@@ -164,11 +165,11 @@ describe('terminal lifetime', () => {
 
   it('reports the exit code to every watcher and keeps the terminal until closed', async () => {
     const term = await fx.a.create(fx.wt, { command: 'exit 3' });
-    const expected = { t: 'termExited', termId: term.termId, code: 3, signal: null };
+    const expected = { t: 'termExited', termId: term.termId, code: 3, signal: null, oom: false };
     expect(await fx.a.waitFor('termExited')).toEqual(expected);
     expect(await fx.b.waitFor('termExited')).toEqual(expected);
     const state = await (await fx.host.client()).watch(fx.repo);
-    expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toEqual({ code: 3, signal: null });
+    expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toEqual({ code: 3, signal: null, oom: false });
     await fx.a.ok({ t: 'closeTerm', termId: term.termId });
   });
 

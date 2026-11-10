@@ -18,6 +18,7 @@ flowchart TD
     platform__dialer["Dialer"]
     platform__install["Install"]
     platform__memory["Memory"]
+    platform__scopes["Scopes"]
   end
   subgraph hub["Hub"]
     hub__server["Server"]
@@ -32,6 +33,7 @@ flowchart TD
   hub__config --> platform__files
   hub__links --> platform__dialer
   hub__links --> platform__install
+  hub__links --> platform__scopes
   hub__main --> hub__server
   hub__main --> hub__router
   hub__main --> hub__links
@@ -42,7 +44,7 @@ flowchart TD
   hub__router --> hub__config
   cli --> hub__main
   classDef leaf fill:none;
-  class protocol,platform__files,platform__dialer,platform__install,platform__memory,hub__server,hub__links,hub__config,hub__router,hub__main,cli leaf;
+  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,hub__server,hub__links,hub__config,hub__router,hub__main,cli leaf;
 ```
 <!-- /likec4:hub -->
 

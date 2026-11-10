@@ -1,7 +1,7 @@
 {
   "protocolVersions": {
-    "daemon": 10,
-    "browser": 13
+    "daemon": 11,
+    "browser": 14
   },
   "constants": {
     "MAX_FRAME": 16777216,
@@ -186,6 +186,32 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 1000
+            },
+            "memory": {
+              "type": "object",
+              "properties": {
+                "high": {
+                  "type": "string",
+                  "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                },
+                "max": {
+                  "type": "string",
+                  "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                },
+                "swapMax": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "0"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
             }
           },
           "required": [
@@ -195,7 +221,8 @@
             "preset",
             "command",
             "cols",
-            "rows"
+            "rows",
+            "memory"
           ],
           "additionalProperties": false
         },
@@ -757,11 +784,15 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "oom": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
                           "code",
-                          "signal"
+                          "signal",
+                          "oom"
                         ],
                         "additionalProperties": false
                       },
@@ -1026,11 +1057,15 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "oom": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "code",
-                        "signal"
+                        "signal",
+                        "oom"
                       ],
                       "additionalProperties": false
                     },
@@ -1098,13 +1133,17 @@
                   "type": "null"
                 }
               ]
+            },
+            "oom": {
+              "type": "boolean"
             }
           },
           "required": [
             "t",
             "termId",
             "code",
-            "signal"
+            "signal",
+            "oom"
           ],
           "additionalProperties": false
         },
@@ -1613,6 +1652,32 @@
                       "type": "integer",
                       "minimum": 1,
                       "maximum": 1000
+                    },
+                    "memory": {
+                      "type": "object",
+                      "properties": {
+                        "high": {
+                          "type": "string",
+                          "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                        },
+                        "max": {
+                          "type": "string",
+                          "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                        },
+                        "swapMax": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "const": "0"
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -1622,7 +1687,8 @@
                     "preset",
                     "command",
                     "cols",
-                    "rows"
+                    "rows",
+                    "memory"
                   ],
                   "additionalProperties": false
                 },
@@ -2136,6 +2202,32 @@
                       "type": "null"
                     }
                   ]
+                },
+                "memory": {
+                  "type": "object",
+                  "properties": {
+                    "high": {
+                      "type": "string",
+                      "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                    },
+                    "max": {
+                      "type": "string",
+                      "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                    },
+                    "swapMax": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "0"
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -2519,11 +2611,15 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "oom": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [
                                   "code",
-                                  "signal"
+                                  "signal",
+                                  "oom"
                                 ],
                                 "additionalProperties": false
                               },
@@ -2788,11 +2884,15 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "oom": {
+                                  "type": "boolean"
                                 }
                               },
                               "required": [
                                 "code",
-                                "signal"
+                                "signal",
+                                "oom"
                               ],
                               "additionalProperties": false
                             },
@@ -2860,13 +2960,17 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "oom": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "t",
                     "termId",
                     "code",
-                    "signal"
+                    "signal",
+                    "oom"
                   ],
                   "additionalProperties": false
                 },
@@ -3303,6 +3407,32 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "memory": {
+                    "type": "object",
+                    "properties": {
+                      "high": {
+                        "type": "string",
+                        "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                      },
+                      "max": {
+                        "type": "string",
+                        "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                      },
+                      "swapMax": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "0"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -3572,12 +3702,12 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}",
       "valid": true
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}",
+      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}",
       "valid": true
     },
     {
@@ -3657,7 +3787,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
     {
@@ -3677,17 +3807,17 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}",
       "valid": false
     },
     {
@@ -3772,12 +3902,12 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}}",
       "valid": false
     },
     {
@@ -3872,6 +4002,11 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"addPreset\",\"req\":12,\"preset\":{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"max\":\"24G\",\"swapMax\":\"0\"}}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
       "valid": false
     },
@@ -3917,7 +4052,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
     {
@@ -3937,17 +4072,17 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}}",
       "valid": false
     },
     {
@@ -4022,7 +4157,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"}]}",
+      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"},{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"high\":\"8G\",\"max\":\"50%\"}}]}",
       "valid": false
     },
     {
@@ -4172,7 +4307,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\",\"oom\":false}",
       "valid": false
     },
     {
@@ -4187,7 +4322,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24,\"memory\":{}}",
       "valid": false
     },
     {
@@ -4522,12 +4657,12 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}",
       "valid": false
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}",
+      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}",
       "valid": false
     },
     {
@@ -4607,7 +4742,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": true
     },
     {
@@ -4627,17 +4762,17 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}",
       "valid": true
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}",
       "valid": true
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}",
       "valid": true
     },
     {
@@ -4722,12 +4857,12 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}}",
       "valid": false
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}}",
       "valid": false
     },
     {
@@ -4822,6 +4957,11 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"addPreset\",\"req\":12,\"preset\":{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"max\":\"24G\",\"swapMax\":\"0\"}}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
       "valid": false
     },
@@ -4867,7 +5007,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
     {
@@ -4887,17 +5027,17 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}}",
       "valid": false
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}}",
       "valid": false
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}}",
       "valid": false
     },
     {
@@ -4972,7 +5112,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"}]}",
+      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"},{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"high\":\"8G\",\"max\":\"50%\"}}]}",
       "valid": false
     },
     {
@@ -5122,7 +5262,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\",\"oom\":false}",
       "valid": false
     },
     {
@@ -5137,7 +5277,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24,\"memory\":{}}",
       "valid": false
     },
     {
@@ -5472,12 +5612,12 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}",
+      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}",
       "valid": false
     },
     {
@@ -5557,7 +5697,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
     {
@@ -5577,17 +5717,17 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}",
       "valid": false
     },
     {
@@ -5672,12 +5812,12 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}}",
       "valid": true
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}}",
       "valid": true
     },
     {
@@ -5772,6 +5912,11 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"addPreset\",\"req\":12,\"preset\":{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"max\":\"24G\",\"swapMax\":\"0\"}}}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
       "valid": true
     },
@@ -5817,7 +5962,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
     {
@@ -5837,17 +5982,17 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}}",
       "valid": false
     },
     {
@@ -5922,7 +6067,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"}]}",
+      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"},{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"high\":\"8G\",\"max\":\"50%\"}}]}",
       "valid": false
     },
     {
@@ -6072,7 +6217,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\",\"oom\":false}",
       "valid": false
     },
     {
@@ -6087,7 +6232,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24,\"memory\":{}}",
       "valid": false
     },
     {
@@ -6422,12 +6567,12 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}",
       "valid": false
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}",
+      "json": "{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}",
       "valid": false
     },
     {
@@ -6507,7 +6652,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
     {
@@ -6527,17 +6672,17 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}",
+      "json": "{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}",
       "valid": false
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}",
       "valid": false
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}",
       "valid": false
     },
     {
@@ -6622,12 +6767,12 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":4,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"command\":\"claude --resume\",\"cols\":80,\"rows\":24,\"memory\":{\"max\":\"64M\",\"swapMax\":\"0\"}}}",
       "valid": false
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1}}",
+      "json": "{\"t\":\"host\",\"host\":1,\"m\":{\"t\":\"createTerm\",\"req\":5,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"command\":null,\"cols\":1000,\"rows\":1,\"memory\":{}}}",
       "valid": false
     },
     {
@@ -6722,6 +6867,11 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"addPreset\",\"req\":12,\"preset\":{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"max\":\"24G\",\"swapMax\":\"0\"}}}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"removePreset\",\"req\":8,\"name\":\"codex\"}",
       "valid": false
     },
@@ -6767,7 +6917,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": true
     },
     {
@@ -6787,17 +6937,17 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\"},\"unseen\":true,\"state\":\"input\"}}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termCreated\",\"req\":null,\"term\":{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}}}",
       "valid": true
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":null,\"oom\":false}}",
       "valid": true
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\"}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"termExited\",\"termId\":2,\"code\":137,\"signal\":\"SIGKILL\",\"oom\":true}}",
       "valid": true
     },
     {
@@ -6872,7 +7022,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"}]}",
+      "json": "{\"t\":\"presets\",\"presets\":[{\"name\":\"shell\",\"command\":null},{\"name\":\"claude\",\"command\":\"claude\"},{\"name\":\"tests\",\"command\":\"pytest\",\"memory\":{\"high\":\"8G\",\"max\":\"50%\"}}]}",
       "valid": true
     },
     {
@@ -7022,7 +7172,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\"}",
+      "json": "{\"t\":\"termExited\",\"termId\":1,\"code\":0,\"signal\":\"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\",\"oom\":false}",
       "valid": false
     },
     {
@@ -7037,7 +7187,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24}",
+      "json": "{\"t\":\"createTerm\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"\",\"command\":null,\"cols\":80,\"rows\":24,\"memory\":{}}",
       "valid": false
     },
     {

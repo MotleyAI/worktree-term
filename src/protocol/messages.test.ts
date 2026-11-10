@@ -266,7 +266,7 @@ describe('request correlation', () => {
     ['clientToDaemon', { t: 'watchRepo', req: 1, repo: REPO }],
     ['clientToDaemon', { t: 'unwatchRepo', req: 1, repo: REPO }],
     ['clientToDaemon', { t: 'discoverRepos', req: 1, roots: [REPO], depth: 1 }],
-    ['clientToDaemon', { t: 'createTerm', req: 1, worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24 }],
+    ['clientToDaemon', { t: 'createTerm', req: 1, worktree: WT, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} }],
     ['clientToDaemon', { t: 'attach', req: 1, termId: 1 }],
     ['clientToDaemon', { t: 'detach', req: 1, termId: 1 }],
     ['clientToDaemon', { t: 'closeTerm', req: 1, termId: 1 }],
@@ -360,8 +360,9 @@ describe('value limits', () => {
     command,
     cols: 80,
     rows: 24,
+    memory: {},
   });
-  const exited = (signal: unknown): unknown => ({ t: 'termExited', termId: 1, code: 0, signal });
+  const exited = (signal: unknown): unknown => ({ t: 'termExited', termId: 1, code: 0, signal, oom: false });
   const daemonError = (code: unknown, message: unknown): unknown => ({ t: 'error', req: 1, code, message });
   const hostName = (name: unknown): unknown => ({ t: 'hosts', hosts: [{ ...hosts[0], name }] });
   const repoState = (fields: Record<string, unknown>): unknown => ({
@@ -905,5 +906,139 @@ describe('hub opening messages', () => {
 
   it('rejects an unknown hub error code', () => {
     expectRejected('hubToBrowser', raw({ t: 'error', req: 1, host: 0, code: 'hub-gone', message: 'x' }));
+  });
+});
+
+describe('memory limits', () => {
+  const create = (memory: unknown): Record<string, unknown> => ({
+    t: 'createTerm',
+    req: 1,
+    worktree: WT,
+    preset: 'tests',
+    command: null,
+    cols: 80,
+    rows: 24,
+    memory,
+  });
+  const presets = (memory: unknown): unknown => ({ t: 'presets', presets: [{ name: 'tests', command: null, memory }] });
+
+  it.each([
+    ['limits', { max: '64M', swapMax: '0' }],
+    ['no limits', {}],
+  ])('round-trip in a createTerm carrying %s', (_name, memory) => {
+    const message = create(memory);
+    expect(decodeMessage('clientToDaemon', raw(message))).toEqual(message);
+    expect(decodeMessage('browserToHub', raw({ t: 'host', host: 0, m: message }))).toEqual({ t: 'host', host: 0, m: message });
+  });
+
+  it.each([
+    ['without memory', Object.fromEntries(Object.entries(create({})).filter(([key]) => key !== 'memory'))],
+    ['with an unknown limit', create({ min: '1G' })],
+    ['with null memory', create(null)],
+  ])('reject a createTerm %s', (_name, message) => {
+    expectRejected('clientToDaemon', raw(message));
+  });
+
+  it('round-trip in a preset', () => {
+    const message = { t: 'presets', presets: [{ name: 'tests', command: 'pytest', memory: { high: '8G', max: '50%' } }] };
+    expect(decodeMessage('hubToBrowser', raw(message))).toEqual(message);
+  });
+
+  it('are optional in a preset, which then has none', () => {
+    const decoded = decodeMessage('hubToBrowser', raw({ t: 'presets', presets: [{ name: 'shell', command: null }] }));
+    expect(decoded).toEqual({ t: 'presets', presets: [{ name: 'shell', command: null }] });
+    if (decoded.t !== 'presets') throw new Error(`decoded ${decoded.t}`);
+    expect('memory' in (decoded.presets[0] ?? {})).toBe(false);
+  });
+
+  it('travel in an added preset', () => {
+    const message = { t: 'addPreset', req: 1, preset: { name: 'tests', command: 'pytest', memory: { max: '24G' } } };
+    expect(decodeMessage('browserToHub', raw(message))).toEqual(message);
+  });
+
+  it('agree between the exported preset schema and the presets message', () => {
+    for (const [memory, ok] of [
+      [{ swapMax: '0' }, true],
+      [{ max: 'lots' }, false],
+      [{ min: '1G' }, false],
+    ] as const) {
+      expect(presetSchema.safeParse({ name: 'p', command: null, memory }).success).toBe(ok);
+      expect(decodes('hubToBrowser', presets(memory))).toBe(ok);
+    }
+  });
+
+  it.each([
+    ['512M', 'high'],
+    ['100%', 'max'],
+    ['1%', 'max'],
+    ['0', 'swapMax'],
+    ['17179869184', 'max'],
+    ['9'.repeat(16), 'max'],
+    ['1K', 'high'],
+    ['64M', 'swapMax'],
+    ['2G', 'max'],
+    ['1T', 'max'],
+  ])('accept the size %s as %s', (size, key) => {
+    expect(decodes('clientToDaemon', create({ [key]: size }))).toBe(true);
+    expect(decodes('hubToBrowser', presets({ [key]: size }))).toBe(true);
+  });
+
+  it('accept every limit at once', () => {
+    expect(decodes('clientToDaemon', create({ high: '512M', max: '100%', swapMax: '0' }))).toBe(true);
+  });
+
+  it.each([
+    ['0', 'max'],
+    ['0', 'high'],
+    ['1.5G', 'max'],
+    ['64m', 'max'],
+    ['64MB', 'max'],
+    ['101%', 'max'],
+    ['0%', 'max'],
+    ['064M', 'max'],
+    ['1'.repeat(17), 'max'],
+    ['', 'max'],
+    [' 64M', 'max'],
+    ['-1', 'swapMax'],
+    ['00', 'swapMax'],
+    ['50.5%', 'high'],
+  ])('reject the size %j as %s', (size, key) => {
+    expect(decodes('clientToDaemon', create({ [key]: size }))).toBe(false);
+    expect(decodes('hubToBrowser', presets({ [key]: size }))).toBe(false);
+  });
+
+  it('reject a size that is a number', () => {
+    expect(decodes('clientToDaemon', create({ max: 67108864 }))).toBe(false);
+  });
+});
+
+describe('out-of-memory exits', () => {
+  const exitedOf = (fields: Record<string, unknown>): unknown => ({ t: 'termExited', termId: 1, code: 137, signal: 'SIGKILL', ...fields });
+  const entryWith = (exit: unknown): unknown => ({ t: 'termCreated', req: null, term: { ...liveTerminal, exit } });
+
+  it('carries oom in termExited and in a terminal entry’s exit', () => {
+    for (const oom of [true, false]) {
+      expect(decodes('daemonToClient', exitedOf({ oom }))).toBe(true);
+      expect(decodes('daemonToClient', entryWith({ code: 137, signal: 'SIGKILL', oom }))).toBe(true);
+      expect(decodes('hubToBrowser', { t: 'host', host: 0, m: exitedOf({ oom }) })).toBe(true);
+    }
+  });
+
+  it('rejects a termExited without oom', () => {
+    expectRejected('daemonToClient', raw(exitedOf({})));
+    expectRejected('hubToBrowser', raw({ t: 'host', host: 0, m: exitedOf({}) }));
+  });
+
+  it('rejects a terminal entry whose exit lacks oom', () => {
+    expectRejected('daemonToClient', raw(entryWith({ code: 137, signal: 'SIGKILL' })));
+    expectRejected(
+      'daemonToClient',
+      raw({ t: 'repoState', repo: REPO, worktrees: [], terminals: [{ ...liveTerminal, exit: { code: 1, signal: null } }], checked: [], layouts: [] }),
+    );
+  });
+
+  it('rejects an oom that is not a boolean', () => {
+    expectRejected('daemonToClient', raw(exitedOf({ oom: 'true' })));
+    expectRejected('daemonToClient', raw(exitedOf({ oom: null })));
   });
 });

@@ -9,7 +9,7 @@ import {
   type MessageOf,
   type Terminal,
 } from '../../src/protocol/index.js';
-import { TermView, type RequestBody } from './daemon-client.js';
+import { TermView, type MemoryLimits, type RequestBody } from './daemon-client.js';
 
 export type HubMessage = MessageOf<'hubToBrowser'>;
 export type BrowserMessage = MessageOf<'browserToHub'>;
@@ -204,7 +204,11 @@ export class HubClient {
     return state;
   }
 
-  async create(host: number, worktree: string, options: { command?: string | null; cols?: number; rows?: number } = {}): Promise<Terminal> {
+  async create(
+    host: number,
+    worktree: string,
+    options: { command?: string | null; cols?: number; rows?: number; memory?: MemoryLimits } = {},
+  ): Promise<Terminal> {
     const reply = await this.request(host, {
       t: 'createTerm',
       worktree,
@@ -212,6 +216,7 @@ export class HubClient {
       command: options.command ?? null,
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
+      memory: options.memory ?? {},
     });
     if (reply.m.t !== 'termCreated') throw new Error(`createTerm failed: ${JSON.stringify(reply)}`);
     return reply.m.term;

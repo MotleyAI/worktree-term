@@ -1,6 +1,7 @@
 import {
   summarise,
   type OwnCgroup,
+  type ProcessCgroup,
   type ProcessGroup,
   type ProcessInfo,
   type ProcessLookup,
@@ -28,7 +29,12 @@ export interface DaemonSampleInput {
   cgroup: OwnCgroup | null;
   system: SystemMemory;
   lookup: ProcessLookup;
+  /** Terminal `termId`'s scope unit; null without terminal scopes. */
+  terminalUnit: ((termId: number) => string) | null;
+  processCgroup: (pid: number) => Promise<ProcessCgroup | null>;
 }
+
+export type ScopeRecord = Omit<ProcessCgroup, 'path'> & { unit: string };
 
 export interface TerminalRecord {
   termId: number;
@@ -39,6 +45,7 @@ export interface TerminalRecord {
   mirror: { lines: number; cols: number; bytes: number };
   members: ProcessGroup | null;
   detached: ProcessGroup | null;
+  scope: ScopeRecord | null;
 }
 
 export interface EscapedGroup extends ProcessGroup {
@@ -186,7 +193,12 @@ const place = async (input: DaemonSampleInput, table: readonly ProcessInfo[]): P
   return result;
 };
 
-const terminalRecord = (t: LiveTerminalView, members: ProcessGroup | null, detached: ProcessGroup | null): TerminalRecord => ({
+const terminalRecord = (
+  t: LiveTerminalView,
+  members: ProcessGroup | null,
+  detached: ProcessGroup | null,
+  scope: ScopeRecord | null,
+): TerminalRecord => ({
   termId: t.termId,
   repo: t.repo,
   worktree: t.worktree,
@@ -195,7 +207,18 @@ const terminalRecord = (t: LiveTerminalView, members: ProcessGroup | null, detac
   mirror: { ...t.mirror, bytes: mirrorBytes(t.mirror) },
   members,
   detached,
+  scope,
 });
+
+/** The figures of terminal `t`'s scope, when its shell is in it. */
+const scopeRecord = async (input: DaemonSampleInput, t: LiveTerminalView): Promise<ScopeRecord | null> => {
+  if (input.terminalUnit === null) return null;
+  const unit = input.terminalUnit(t.termId);
+  const cgroup = await input.processCgroup(t.pid);
+  if (cgroup?.path.endsWith(`/${unit}`) !== true) return null;
+  const { current, peak, high, max, swapCurrent, swapMax, pressure, oomKills } = cgroup;
+  return { unit, current, peak, high, max, swapCurrent, swapMax, pressure, oomKills };
+};
 
 const escapedGroups = async (
   input: DaemonSampleInput,
@@ -244,6 +267,7 @@ export const daemonRecord = async (input: DaemonSampleInput): Promise<{ record: 
         t,
         await group(placement?.members.get(t.termId), TERMINAL_TOP),
         await group(placement?.detached.get(t.termId), TERMINAL_TOP),
+        await scopeRecord(input, t),
       ),
     ),
   );

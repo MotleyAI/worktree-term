@@ -46,6 +46,12 @@ describe('dependency allowlist', () => {
     expect(rules('web.terminals', ['@xterm/addon-fit/lib/fit'])).toEqual([]);
   });
 
+  it('lets platform.scopes run programs and read files, and nothing else', () => {
+    expect(rules('platform.scopes', ['node:child_process', 'node:fs/promises'])).toEqual([]);
+    expect(rules('platform.scopes', ['node:net'])).toEqual(['io-builtin-not-allowed']);
+    expect(rules('platform.scopes', ['zod'])).toEqual(['package-not-allowed']);
+  });
+
   it('accepts pure built-ins in Node units', () => {
     const pure = ['node:path', 'util', 'events', 'buffer', 'crypto', 'stream', 'string_decoder', 'url', 'os', 'timers/promises', 'assert', 'process'];
     expect(rules('daemon.main', pure)).toEqual([]);

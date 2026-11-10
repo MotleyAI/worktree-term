@@ -16,6 +16,7 @@ flowchart TD
   subgraph platform["Platform"]
     platform__files["Files"]
     platform__memory["Memory"]
+    platform__scopes["Scopes"]
   end
   subgraph daemon["Daemon"]
     daemon__worktrees["Worktrees"]
@@ -32,12 +33,13 @@ flowchart TD
   daemon__main --> daemon__terminals
   daemon__main --> daemon__state
   daemon__main --> platform__memory
+  daemon__main --> platform__scopes
   daemon__server --> daemon__worktrees
   daemon__server --> daemon__terminals
   daemon__server --> daemon__state
   cli --> daemon__main
   classDef leaf fill:none;
-  class protocol,platform__files,platform__memory,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,cli leaf;
+  class protocol,platform__files,platform__memory,platform__scopes,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,cli leaf;
 ```
 <!-- /likec4:daemon -->
 
@@ -50,3 +52,4 @@ flowchart TD
 5. An attach yields a snapshot and then live output with no gap and no duplicate byte. [enforced: test:test/process/daemon-terminals-output.test.ts]
 6. Worktree changes are observed by events, never by polling. [review]
 7. Persisted state references no worktree that is gone and has no terminals. [enforced: test:src/daemon/state/store.test.ts]
+8. Each terminal runs in a scope of its own when a lasting user manager (≡ one the daemon runs under, or lingering) is reachable. [enforced: test:test/process/daemon-terminals-scopes.test.ts]

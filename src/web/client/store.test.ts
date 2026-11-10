@@ -59,10 +59,16 @@ describe('HubStore', () => {
 
   it('records an exit and drops a closed terminal', () => {
     const store = watched();
-    store.apply(0, { t: 'termExited', termId: 1, code: 3, signal: null });
-    expect(store.repo(0, REPO)?.terminals[0]?.exit).toEqual({ code: 3, signal: null });
+    store.apply(0, { t: 'termExited', termId: 1, code: 3, signal: null, oom: false });
+    expect(store.repo(0, REPO)?.terminals[0]?.exit).toEqual({ code: 3, signal: null, oom: false });
     store.apply(0, { t: 'termClosed', termId: 1 });
     expect(store.terminalIds(0, REPO)).toEqual([]);
+  });
+
+  it('records an out-of-memory exit', () => {
+    const store = watched();
+    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: 'SIGKILL', oom: true });
+    expect(store.repo(0, REPO)?.terminals[0]?.exit).toEqual({ code: 0, signal: 'SIGKILL', oom: true });
   });
 
   it('follows worktree, checked and layout changes', () => {
@@ -224,7 +230,7 @@ describe('HubStore', () => {
   it('tells whether a repo has a terminal whose process runs', () => {
     const store = watched();
     expect(store.hasRunning(0, REPO)).toBe(true);
-    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null });
+    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null, oom: false });
     expect(store.hasRunning(0, REPO)).toBe(false);
     expect(store.hasRunning(0, '/r/other')).toBe(false);
   });
@@ -234,7 +240,7 @@ describe('HubStore', () => {
     const gone = '/r/app.worktrees/gone';
     const terminals = [terminal(1), { ...terminal(2, REPO), preset: 'claude' }, terminal(3, gone)];
     store.apply(0, { t: 'repoState', repo: REPO, worktrees: [worktree(REPO), worktree(WT)], terminals, checked: [], layouts: [] });
-    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null });
+    store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null, oom: false });
     expect(store.running(0)).toEqual([
       { worktree: 'b', preset: 'claude' },
       { worktree: 'gone', preset: 'shell' },

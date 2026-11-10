@@ -55,9 +55,10 @@ const listen = (server: Server, path: string): Promise<void> =>
  * Binds this host's socket owner-only while holding the start lock; a socket that answers means
  * a daemon is running, one that does not is replaced. The socket is bound under a temporary name
  * no longer than the socket's own and renamed into place, because closing a unix socket server
- * unlinks the name it was bound to, which by then may be another daemon's socket.
+ * unlinks the name it was bound to, which by then may be another daemon's socket. `beforeListen` runs
+ * under the lock once no daemon answers.
  */
-export const bindSocket = async (paths: HostPaths): Promise<Listener> => {
+export const bindSocket = async (paths: HostPaths, beforeListen?: () => Promise<void>): Promise<Listener> => {
   await preparePrivateDirs(paths);
   const lock = await acquireStartLock(paths.lock);
   let server: Server;
@@ -66,6 +67,7 @@ export const bindSocket = async (paths: HostPaths): Promise<Listener> => {
   const early: Socket[] = [];
   try {
     if (await answers(paths.socket)) throw new AlreadyRunningError('already running');
+    await beforeListen?.();
     accept = (socket) => early.push(socket);
     server = createServer((socket) => {
       accept(socket);

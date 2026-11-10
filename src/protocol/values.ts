@@ -30,6 +30,15 @@ export const longText = z.string().max(4096).nullable();
 export const refName = z.string().min(1).max(4096);
 export const signal = z.string().max(32).nullable();
 export const version = z.string().min(1).max(64);
+const SIZE = /^(?:[1-9][0-9]{0,15}[KMGT]?|(?:100|[1-9][0-9]?)%)$/; // NOSONAR(S6353) — the pattern is pinned by the wire golden
+/** A systemd memory size: bytes with an optional K/M/G/T suffix, or a percentage of physical memory. */
+export const memorySize = z.string().regex(SIZE);
+/** Memory limits of a terminal scope. */
+export const memoryLimits = z.strictObject({
+  high: memorySize.optional(),
+  max: memorySize.optional(),
+  swapMax: z.union([z.literal('0'), memorySize]).optional(),
+});
 export const instance = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 /** A hub token or one-time code. */
 export const secret = z.string().regex(/^[0-9a-f]{64}$/);

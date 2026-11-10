@@ -13,7 +13,7 @@ import {
 } from '../../platform/memory/index.js';
 import { encodeHomeFragment, encodePrintCode } from '../../protocol/index.js';
 import { loadConfig, type HubConfig } from '../config/index.js';
-import { forwardToHub, startDetached, type DaemonPaths } from '../links/index.js';
+import { forwardToHub, placeHub, startDetached, type DaemonPaths } from '../links/index.js';
 import { Router } from '../router/index.js';
 import {
   hubIdentity,
@@ -156,6 +156,7 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
       webDir,
       openSession: (channel) => router.open(channel),
       shutdown: stop,
+      beforeListen: () => placeHub(paths.stateDir, report),
     });
     const sampler = sampleMemory(paths.hubMemoryLog, env, { version, instance, daemonCommand }, report);
     await stopped;

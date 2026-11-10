@@ -24,6 +24,7 @@ model {
       dialer = component 'Dialer'
       install = component 'Install'
       memory = component 'Memory'
+      scopes = component 'Scopes'
     }
 
     daemon = node 'Daemon' {
@@ -81,6 +82,7 @@ model {
     daemon.main -> daemon.terminals
     daemon.main -> daemon.state
     daemon.main -> platform.memory
+    daemon.main -> platform.scopes
     daemon.server -> daemon.worktrees
     daemon.server -> daemon.terminals
     daemon.server -> daemon.state
@@ -90,6 +92,7 @@ model {
     hub.config -> platform.files
     hub.links -> platform.dialer
     hub.links -> platform.install
+    hub.links -> platform.scopes
     hub.main -> hub.server
     hub.main -> hub.router
     hub.main -> hub.links

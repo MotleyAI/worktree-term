@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal } from '../../protocol/index.js';
-import { aggregate, mark, MARK_ORDER, markTitle, terminalStatus, worktreeTitle, type Mark } from './marks.js';
+import { aggregate, exitNote, mark, MARK_ORDER, markTitle, terminalStatus, worktreeTitle, type Mark } from './marks.js';
 
 let nextId = 1;
 
@@ -16,9 +16,9 @@ const terminal = (fields: Partial<Terminal> = {}): Terminal => ({
   ...fields,
 });
 
-const failedCode = { code: 1, signal: null };
-const failedSignal = { code: 0, signal: 'SIGKILL' };
-const clean = { code: 0, signal: null };
+const failedCode = { code: 1, signal: null, oom: false };
+const failedSignal = { code: 0, signal: 'SIGKILL', oom: false };
+const clean = { code: 0, signal: null, oom: false };
 
 const input = terminal({ state: 'input' });
 const failed = terminal({ exit: failedCode, unseen: true });
@@ -37,7 +37,7 @@ describe('mark', () => {
     ['needs input even when exited with failure and unseen', { state: 'input', exit: failedCode, unseen: true }, 'input'],
     ['failed with a non-zero code', { exit: failedCode }, 'failed'],
     ['failed with a signal', { exit: failedSignal }, 'failed'],
-    ['failed rather than done', { exit: { code: 2, signal: null }, unseen: true, state: 'idle' }, 'failed'],
+    ['failed rather than done', { exit: { code: 2, signal: null, oom: false }, unseen: true, state: 'idle' }, 'failed'],
     ['failed rather than new output', { exit: failedCode, unseen: true, state: 'working' }, 'failed'],
     ['exited with code 0, which only a failure leaves visible', { exit: clean }, 'failed'],
     ['done when unseen and idle', { unseen: true, state: 'idle' }, 'done'],
@@ -113,5 +113,35 @@ describe('worktreeTitle', () => {
 
   it('says so when the worktree has no terminals', () => {
     expect(worktreeTitle('/r/wt', [])).toBe('/r/wt\nno terminals');
+  });
+});
+
+describe('out-of-memory exits', () => {
+  const outOfMemory = { code: 0, signal: 'SIGKILL', oom: true };
+
+  it('say killed: out of memory, in place of the signal', () => {
+    expect(terminalStatus(terminal({ exit: outOfMemory }))).toBe('killed: out of memory');
+    expect(terminalStatus(terminal({ exit: { code: 0, signal: 'SIGKILL', oom: false } }))).toBe('killed by SIGKILL');
+  });
+
+  it('say so on hover, the exit taking precedence over the attention state', () => {
+    const tests = terminal({ termId: 5, preset: 'tests', exit: outOfMemory, state: 'input' });
+    expect(worktreeTitle('/r/wt', [tests])).toBe('/r/wt\ntests 5: killed: out of memory');
+  });
+
+  it('count as exited with failure', () => {
+    expect(mark(terminal({ exit: outOfMemory }))).toBe('failed');
+    expect(aggregate([terminal({ exit: outOfMemory, unseen: true })], 'group')).toEqual({ mark: 'failed', counts: { failed: 1 } });
+  });
+});
+
+describe('exitNote', () => {
+  it.each<[string, Partial<Terminal>, string | null]>([
+    ['nothing for a live terminal', {}, null],
+    ['exited for an exit code', { exit: { code: 1, signal: null, oom: false } }, 'exited'],
+    ['exited for a signal', { exit: { code: 0, signal: 'SIGKILL', oom: false } }, 'exited'],
+    ['killed: out of memory for an out-of-memory exit', { exit: { code: 0, signal: 'SIGKILL', oom: true } }, 'killed: out of memory'],
+  ])('says %s', (_name, fields, note) => {
+    expect(exitNote(terminal(fields))).toBe(note);
   });
 });

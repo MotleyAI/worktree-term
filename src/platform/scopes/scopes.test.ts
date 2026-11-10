@@ -88,11 +88,18 @@ describe('lasting user manager', () => {
     expect(run.calls()).toEqual([PROBE, NO_EXPAND_PROBE]);
   });
 
-  it('finds --expand-environment=no unsupported when its probe exits non-zero', async () => {
+  it('finds --expand-environment=no unsupported when systemd-run, run in the C locale, rejects it as unrecognized', async () => {
     systemdRun(
-      `case " $* " in *" --expand-environment=no "*) echo "systemd-run: unrecognized option '--expand-environment=no'" >&2; exit 1;; esac`,
+      `case " $* " in *" --expand-environment=no "*) [ "$LC_ALL" = C ] || exit 3; echo "systemd-run: unrecognized option '--expand-environment=no'" >&2; exit 1;; esac`,
     );
     expect(await findUserManager(roots)).toEqual({ lasting: true, noExpand: false });
+  });
+
+  it('finds no lasting user manager when the --expand-environment=no probe fails otherwise, the reason naming the failure', async () => {
+    systemdRun(`case " $* " in *" --expand-environment=no "*) echo 'Failed to connect to bus: Connection refused' >&2; exit 1;; esac`);
+    const found = await findUserManager(roots);
+    expect(found).toMatchObject({ lasting: false });
+    expect(found.lasting ? '' : found.reason).toContain('Failed to connect to bus: Connection refused');
   });
 
   it('finds no lasting user manager when the --expand-environment=no probe hangs, the reason naming the timeout', async () => {

@@ -59,7 +59,8 @@ interface Ran {
 /** Runs `file`, killing it with `SIGKILL` after `timeoutMs`; resolves once it is reaped, rejects naming a program that cannot start. */
 const run = (file: string, args: readonly string[], timeoutMs: number | null = null): Promise<Ran> =>
   new Promise((resolve, reject) => {
-    const child = spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    // The C locale keeps the messages read from it, such as getopt's `unrecognized option`, untranslated.
+    const child = spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LC_ALL: 'C' } });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -158,10 +159,12 @@ export const findUserManager = async (roots: ScopeRoots): Promise<UserManager> =
   if (scope.failure !== null) return { lasting: false, reason: scope.failure };
   if (!((await underUserManager(roots)) || (await lingers(roots))))
     return { lasting: false, reason: 'not under the user manager and not lingering' };
-  // A hung option probe says nothing about the option, and without it arguments may be expanded.
+  // Only systemd-run rejecting the option shows it unsupported; any other failure is inconclusive, and
+  // without the option arguments may be expanded.
   const option = await probe(['--expand-environment=no']);
-  if (option.timedOut && option.failure !== null) return { lasting: false, reason: option.failure };
-  return { lasting: true, noExpand: option.failure === null };
+  if (option.failure === null) return { lasting: true, noExpand: true };
+  if (!option.timedOut && option.failure.includes('unrecognized option')) return { lasting: true, noExpand: false };
+  return { lasting: false, reason: option.failure };
 };
 
 const OOM_SCORE_ADJ_MIN = -1000;

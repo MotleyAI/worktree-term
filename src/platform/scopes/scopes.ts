@@ -108,16 +108,24 @@ const failure = (file: string, ran: Ran, timeoutMs = PROBE_TIMEOUT_MS): string |
   return said === '' ? `${file} ${status}` : `${file} ${status}: ${said}`;
 };
 
-/** Why the scope probe, with `extra` options after `--collect`, fails, or null when it succeeds. */
-const probeFailure = async (extra: readonly string[] = []): Promise<string | null> => {
+interface Probed {
+  /** Why the probe failed; null when it succeeded. */
+  failure: string | null;
+  timedOut: boolean;
+}
+
+/** Runs the scope probe with `extra` options after `--collect`. */
+const probe = async (extra: readonly string[] = []): Promise<Probed> => {
   const file = systemdRunProgram();
   try {
-    return failure(
+    const ran = await run(
       file,
-      await run(file, ['--user', '--scope', '--quiet', '--collect', ...extra, `--slice=${SCOPE_SLICE}`, '--', 'true'], PROBE_TIMEOUT_MS),
+      ['--user', '--scope', '--quiet', '--collect', ...extra, `--slice=${SCOPE_SLICE}`, '--', 'true'],
+      PROBE_TIMEOUT_MS,
     );
+    return { failure: failure(file, ran), timedOut: ran.timedOut };
   } catch (error) {
-    return oneLine(error instanceof Error ? error.message : String(error));
+    return { failure: oneLine(error instanceof Error ? error.message : String(error)), timedOut: false };
   }
 };
 
@@ -146,11 +154,14 @@ const lingers = (roots: ScopeRoots): Promise<boolean> =>
 
 /** Whether this process has a user manager that outlives its login session, and if not, why. */
 export const findUserManager = async (roots: ScopeRoots): Promise<UserManager> => {
-  const probe = await probeFailure();
-  if (probe !== null) return { lasting: false, reason: probe };
-  if ((await underUserManager(roots)) || (await lingers(roots)))
-    return { lasting: true, noExpand: (await probeFailure(['--expand-environment=no'])) === null };
-  return { lasting: false, reason: 'not under the user manager and not lingering' };
+  const scope = await probe();
+  if (scope.failure !== null) return { lasting: false, reason: scope.failure };
+  if (!((await underUserManager(roots)) || (await lingers(roots))))
+    return { lasting: false, reason: 'not under the user manager and not lingering' };
+  // A hung option probe says nothing about the option, and without it arguments may be expanded.
+  const option = await probe(['--expand-environment=no']);
+  if (option.timedOut && option.failure !== null) return { lasting: false, reason: option.failure };
+  return { lasting: true, noExpand: option.failure === null };
 };
 
 const OOM_SCORE_ADJ_MIN = -1000;

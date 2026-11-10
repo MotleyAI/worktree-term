@@ -66,7 +66,7 @@ The page SHALL show one tab per repo of each host, in the order the hub lists th
 - **THEN** the tab labelled `box:app` shows the status `reconnecting`
 
 ### Requirement: Worktree sidebar
-The sidebar SHALL list the selected repo's worktrees in the daemon's order without bare entries, each labelled with its branch, or `<directory name> @ <first 7 digits of head>` when detached, or the directory name when it has no head. On hover a worktree SHALL show its path followed by one line `<preset> <id>: <status>` per terminal, or "no terminals", where the status is `waiting for input` (`state` `input`), `running` (`state` `working`), `done` (`state` `idle` and `unseen`), `idle` (`state` `idle`), `exited`, `exited with code <code>` or `killed by <signal>`, the exit taking precedence. A prunable worktree SHALL be shown greyed and SHALL offer no new terminal. A worktree no longer listed that still has live terminals SHALL be listed after the others, marked as gone, without a checkbox, until its last terminal closes. Each listed worktree SHALL have a checkbox reflecting the daemon's checked state, and toggling it SHALL send `setChecked`. A primary click anywhere in a worktree's row SHALL select it, except on its checkbox, which only toggles it; a right-click SHALL open the worktree menu without selecting. Enter or Space on a worktree's label SHALL select it. Worktree list changes SHALL show without user action.
+The sidebar SHALL list the selected repo's worktrees in the daemon's order without bare entries, each labelled with its branch, or `<directory name> @ <first 7 digits of head>` when detached, or the directory name when it has no head. On hover a worktree SHALL show its path followed by one line `<preset> <id>: <status>` per terminal, or "no terminals", where the status is `waiting for input` (`state` `input`), `running` (`state` `working`), `done` (`state` `idle` and `unseen`), `idle` (`state` `idle`), `exited`, `exited with code <code>`, `killed: out of memory` (an `exit` whose `oom` is true) or `killed by <signal>`, the exit taking precedence. A prunable worktree SHALL be shown greyed and SHALL offer no new terminal. A worktree no longer listed that still has live terminals SHALL be listed after the others, marked as gone, without a checkbox, until its last terminal closes. Each listed worktree SHALL have a checkbox reflecting the daemon's checked state, and toggling it SHALL send `setChecked`. A primary click anywhere in a worktree's row SHALL select it, except on its checkbox, which only toggles it; a right-click SHALL open the worktree menu without selecting. Enter or Space on a worktree's label SHALL select it. Worktree list changes SHALL show without user action.
 
 #### Scenario: Labels
 - **WHEN** worktrees are on branch `feature/x`, detached at `0123456789…` in directory `wt2`, and bare
@@ -99,6 +99,10 @@ The sidebar SHALL list the selected repo's worktrees in the daemon's order witho
 #### Scenario: Keyboard selects
 - **WHEN** the user focuses an unselected worktree's label and presses Enter, or another's and presses Space
 - **THEN** that worktree is selected
+
+#### Scenario: Out-of-memory status on hover
+- **WHEN** a worktree has a terminal `tests` 5 whose `exit` has `signal` "SIGKILL" and `oom` true
+- **THEN** hovering it shows `tests 5: killed: out of memory`
 
 ### Requirement: Checked filter
 The page SHALL offer, for the selected repo, a toggle between showing all worktrees and only checked ones; each repo SHALL keep its own setting, stored per browser across reloads, and a repo without one SHALL show all. With "checked only", the sidebar SHALL list the checked worktrees and the selected worktree. Selecting another repo SHALL show that repo's setting without animating the toggle; only the user's toggling SHALL animate it.
@@ -714,3 +718,29 @@ A home page's title SHALL be `worktree-term`; a remote page's title SHALL be `wo
 #### Scenario: Remote page titled by host
 - **WHEN** a page is opened with a remote fragment whose `host` is `devbox`
 - **THEN** its title is `worktree-term — devbox`
+
+### Requirement: Out-of-memory exits
+The tab of a terminal whose `exit` has `oom` true, and its pane header in a split, SHALL say `killed: out of memory` in place of the generic exit indication, on every page, and keep the terminal's screen readable until it is closed; the terminal SHALL be counted as exited with failure for marks.
+
+#### Scenario: Out-of-memory kill shown on every page
+- **WHEN** two pages show a worktree whose terminal is killed for lack of memory
+- **THEN** both pages show `killed: out of memory` on its tab and its screen stays readable
+
+#### Scenario: Out-of-memory kill in a split
+- **WHEN** one pane of a two-pane split is killed for lack of memory
+- **THEN** its pane header says `killed: out of memory` and the other pane keeps running
+
+#### Scenario: Page opened after the kill
+- **WHEN** a page connects after a terminal was killed for lack of memory
+- **THEN** its tab says `killed: out of memory`
+
+### Requirement: Preset limits on new terminals
+Every `createTerm` the page sends SHALL carry, as `memory`, the chosen preset's `memory` as last received in `presets`, or `{}` when it has none.
+
+#### Scenario: Limits travel with the preset
+- **WHEN** the hub sends a preset `tests` with `memory` `{max: "24G"}` and the user opens a new tab with it
+- **THEN** the page sends `createTerm` with `memory` `{max: "24G"}`
+
+#### Scenario: Preset without limits
+- **WHEN** the user splits a pane choosing a preset without `memory`
+- **THEN** the page sends `createTerm` with `memory` `{}`

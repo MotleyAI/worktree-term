@@ -219,6 +219,18 @@ describe('HubStore', () => {
     expect(store.presets.value).toBeNull();
   });
 
+  it('keeps the editor command the hub last sent until the session closes', () => {
+    const store = new HubStore();
+    expect(store.editor.value).toBeNull();
+    store.setEditor('kate');
+    store.setEditor('code {path}');
+    expect(store.editor.value).toBe('code {path}');
+    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    expect(store.editor.value).toBe('code {path}');
+    store.sessionClosed();
+    expect(store.editor.value).toBeNull();
+  });
+
   it('forgets only the repos of a cleared host', () => {
     const store = watched();
     store.apply(1, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });

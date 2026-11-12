@@ -19,6 +19,7 @@ import {
 } from '../../../test/support/scopes.js';
 import {
   daemonUnit,
+  editorUnit,
   enterScope,
   findUserManager,
   hostScopeRoots,
@@ -233,6 +234,12 @@ describe('unit names', () => {
     expect(hubUnit(dir)).toMatch(new RegExp(`^wtd-${hash()}-hub-[0-9a-f]{8}\\.scope$`));
     expect(daemonUnit(dir)).not.toBe(daemonUnit(dir));
     expect(hubUnit(dir)).not.toBe(hubUnit(dir));
+  });
+
+  it('name an editor scope with a random suffix', () => {
+    expect(editorUnit(dir)).toMatch(new RegExp(`^wtd-${hash()}-editor-[0-9a-f]{8}\\.scope$`));
+    expect(editorUnit(dir).startsWith(unitPrefix(dir))).toBe(true);
+    expect(editorUnit(dir)).not.toBe(editorUnit(dir));
   });
 
   it("name a terminal's scope by its daemon instance and terminal id", () => {

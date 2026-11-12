@@ -283,6 +283,9 @@ describe('request correlation', () => {
     ['browserToHub', { t: 'movePreset', req: 1, name: 'p', to: 0 }],
     ['browserToHub', { t: 'openHub', req: 1, host: 1 }],
     ['browserToHub', { t: 'installHub', req: 1, host: 1 }],
+    ['browserToHub', { t: 'openEditor', req: 1, worktree: WT }],
+    ['browserToHub', { t: 'setEditor', req: 1, command: 'kate' }],
+    ['browserToHub', { t: 'setEditor', req: 1, command: null }],
     ['hubToBrowser', { t: 'hubLogin', req: 1, login: 'https://login.tailscale.com/a/abc123' }],
     ['hubToBrowser', { t: 'hubOpened', req: 1, url: OPENED_URL }],
   ];
@@ -909,6 +912,73 @@ describe('hub opening messages', () => {
   });
 });
 
+describe('editor messages', () => {
+  const editor = (command: unknown): unknown => ({ t: 'editor', command });
+
+  it('accepts editor only from the hub', () => {
+    expect(decodes('hubToBrowser', editor('kate'))).toBe(true);
+    expectRejected('browserToHub', raw(editor('kate')));
+    expectRejected('daemonToClient', raw(editor('kate')));
+  });
+
+  it.each([
+    ['openEditor', { t: 'openEditor', req: 1, worktree: WT }],
+    ['setEditor', { t: 'setEditor', req: 1, command: 'code {path}' }],
+  ])('accepts %s only from the browser', (_name, message) => {
+    expect(decodes('browserToHub', message)).toBe(true);
+    expectRejected('hubToBrowser', raw(message));
+    expectRejected('clientToDaemon', raw(message));
+    expectRejected('browserToHub', raw({ t: 'host', host: 0, m: message }));
+  });
+
+  it('decodes a reset carrying a null command', () => {
+    expect(decodeMessage('browserToHub', raw({ t: 'setEditor', req: 1, command: null }))).toEqual({
+      t: 'setEditor',
+      req: 1,
+      command: null,
+    });
+  });
+
+  it('decodes an editor command unchanged', () => {
+    const command = `my-ed --title 'a b' "c \\"d\\"" e\\ f {path}`;
+    expect(decodeMessage('hubToBrowser', raw(editor(command)))).toEqual({ t: 'editor', command });
+  });
+
+  it.each([
+    ['a relative path', { t: 'openEditor', req: 1, worktree: 'repo/a' }],
+    ['a home-relative path', { t: 'openEditor', req: 1, worktree: '~/a' }],
+    ['a path with NUL', { t: 'openEditor', req: 1, worktree: '/a\u0000b' }],
+    ['a host', { t: 'openEditor', req: 1, host: 0, worktree: WT }],
+    ['no worktree', { t: 'openEditor', req: 1 }],
+    ['no command', { t: 'setEditor', req: 1 }],
+    ['an empty command', { t: 'setEditor', req: 1, command: '' }],
+    ['an invalid command', { t: 'setEditor', req: 1, command: "code 'x" }],
+  ])('rejects an editor request with %s', (_name, message) => {
+    expectRejected('browserToHub', raw(message));
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['an unclosed double quote', 'code "{path}'],
+    ['a trailing backslash', 'code \\'],
+    ['4097 characters', 'e'.repeat(4097)],
+    ['null', null],
+  ])('rejects an editor command that is %s', (_name, command) => {
+    expect(decodes('hubToBrowser', editor(command))).toBe(false);
+  });
+
+  it('accepts an editor command of 4096 characters', () => {
+    expect(decodes('hubToBrowser', editor('e'.repeat(4096)))).toBe(true);
+  });
+
+  it.each(['editor-missing', 'editor-failed'])('accepts the hub error code %s from the hub only', (code) => {
+    expect(decodes('hubToBrowser', { t: 'error', req: 1, host: null, code, message: 'x' })).toBe(true);
+    expectRejected('daemonToClient', raw({ t: 'error', req: 1, code, message: 'x' }));
+    expectRejected('hubToBrowser', raw({ t: 'host', host: 0, m: { t: 'error', req: 1, code, message: 'x' } }));
+  });
+});
+
 describe('memory limits', () => {
   const create = (memory: unknown): Record<string, unknown> => ({
     t: 'createTerm',
@@ -1033,7 +1103,14 @@ describe('out-of-memory exits', () => {
     expectRejected('daemonToClient', raw(entryWith({ code: 137, signal: 'SIGKILL' })));
     expectRejected(
       'daemonToClient',
-      raw({ t: 'repoState', repo: REPO, worktrees: [], terminals: [{ ...liveTerminal, exit: { code: 1, signal: null } }], checked: [], layouts: [] }),
+      raw({
+        t: 'repoState',
+        repo: REPO,
+        worktrees: [],
+        terminals: [{ ...liveTerminal, exit: { code: 1, signal: null } }],
+        checked: [],
+        layouts: [],
+      }),
     );
   });
 

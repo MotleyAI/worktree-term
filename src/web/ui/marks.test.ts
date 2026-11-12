@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Terminal } from '../../protocol/index.js';
-import { aggregate, exitNote, mark, MARK_ORDER, markTitle, terminalStatus, worktreeTitle, type Mark } from './marks.js';
+import { aggregate, exitNote, mark, MARK_ORDER, markTitle, ringTitle, terminalStatus, worktreeTitle, type Mark } from './marks.js';
 
 let nextId = 1;
 
@@ -79,6 +79,34 @@ describe('aggregate', () => {
 
   it('shows a group’s first-ranked mark with the number of terminals per mark', () => {
     expect(aggregate([done, output, done, input, quiet], 'group')).toEqual({ mark: 'input', counts: { done: 2, output: 1, input: 1 } });
+  });
+});
+
+describe('ringTitle', () => {
+  const seenFailure = terminal({ exit: failedCode });
+  const seenClean = terminal({ exit: clean });
+
+  it('gives no ring without terminals', () => {
+    expect(ringTitle([])).toBeNull();
+  });
+
+  it('counts every quiet terminal of a worktree without a mark', () => {
+    expect(ringTitle([quiet])).toBe('open: 1');
+    expect(ringTitle([quiet, terminal({ state: 'idle' })])).toBe('open: 2');
+  });
+
+  it('counts viewed exited terminals, which show no mark on a worktree row', () => {
+    expect(ringTitle([seenFailure])).toBe('open: 1');
+    expect(ringTitle([quiet, seenFailure, seenClean])).toBe('open: 3');
+  });
+
+  it.each([
+    ['needs input', input],
+    ['failed and unseen', failed],
+    ['done', done],
+    ['new output', output],
+  ])('gives no ring where a terminal that %s shows a mark', (_name, marked) => {
+    expect(ringTitle([quiet, marked])).toBeNull();
   });
 });
 

@@ -60,7 +60,7 @@ export const stateHash = (stateDir: string): string => createHash('sha256').upda
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 /** The cgroup path of a scope of `kind` under the slice, for the state directory `stateDir`. */
-export const scopePath = (stateDir: string, kind: 'daemon' | 'hub'): RegExp =>
+export const scopePath = (stateDir: string, kind: 'daemon' | 'hub' | 'editor'): RegExp =>
   new RegExp(String.raw`/${escape(SLICE)}/wtd-${stateHash(stateDir)}-${kind}-[0-9a-f]{8}\.scope$`);
 
 /** The unit name of terminal `termId` of daemon instance `instance`. */

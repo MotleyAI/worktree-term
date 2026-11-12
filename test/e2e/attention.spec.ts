@@ -1,7 +1,20 @@
+import type { Page } from '@playwright/test';
 import { COMMANDS, expectCounts, expectMark, markTitle, runIn } from './attention-helpers.js';
-import { pane, repoTab, terminalBox, termTab, worktreeEntry } from './contract.js';
+import { byTestId, pane, repoTab, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import { expect, LOCAL, makeRepoWith, openUi, selectRepo, selectWorktree, test, watcher } from './fixture.js';
 import { leaf, split, storeTabs } from './panes.js';
+
+/** The `title` of the ring inside the element `selector` finds; null without one. */
+const ringOf = (page: Page, selector: string): Promise<string | null> =>
+  page
+    .locator(selector)
+    .locator(byTestId(TID.ring))
+    .evaluateAll((rings) => rings[0]?.getAttribute('title') ?? (rings.length > 0 ? '' : null));
+
+/** Waits until the element `selector` finds shows a ring titled `title` (null: no ring). */
+const expectRing = async (page: Page, selector: string, title: string | null, timeout = 10_000): Promise<void> => {
+  await expect.poll(() => ringOf(page, selector), { timeout }).toBe(title);
+};
 
 test.describe('attention marks', () => {
   test('a bell in a hidden worktree of a non-selected repo marks its repo tab and worktree row as needing input', async ({ hub, page }) => {
@@ -178,5 +191,87 @@ test.describe('attention marks', () => {
     await expect(page.locator(pane(right))).toHaveCount(0);
     await expectMark(page, termTab(left), 'failed');
     await expectMark(page, worktreeEntry(repo), null);
+  });
+});
+
+test.describe('open-terminal rings', () => {
+  test('a worktree with quiet terminals shows a ring with their number and no mark; its repo tab, tabs and panes show none', async ({
+    hub,
+    page,
+  }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const first = await runIn(client, feat, COMMANDS.quiet);
+    const second = await runIn(client, feat, COMMANDS.quiet);
+    await storeTabs(client, feat, [split('right', leaf(first), leaf(second))]);
+
+    await expectRing(page, worktreeEntry(feat), 'open: 2');
+    await expectMark(page, worktreeEntry(feat), null);
+    await expectRing(page, worktreeEntry(repo), null);
+    await expectRing(page, repoTab(repo), null);
+    await expectMark(page, repoTab(repo), null);
+
+    await selectWorktree(page, feat);
+    await expect(page.locator(pane(first))).toBeVisible();
+    await expectRing(page, worktreeEntry(feat), 'open: 2');
+    await expectRing(page, termTab(first), null);
+    await expectRing(page, pane(first), null);
+    await expectRing(page, pane(second), null);
+  });
+
+  test('a mark replaces the ring while it shows, and the ring returns once the terminal is viewed', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const term = await runIn(client, feat, `read -r _; ${COMMANDS.ticker}`);
+    await storeTabs(client, feat, [leaf(term)]);
+    await expectRing(page, worktreeEntry(feat), 'open: 1');
+
+    client.sendInput(term, '\r');
+    await expectMark(page, worktreeEntry(feat), 'output');
+    await expectRing(page, worktreeEntry(feat), null);
+
+    await selectWorktree(page, feat);
+    await expect(page.locator(terminalBox(LOCAL, term))).toBeVisible();
+    await expectMark(page, worktreeEntry(feat), null);
+    await expectRing(page, worktreeEntry(feat), 'open: 1');
+  });
+
+  test('a worktree whose last terminal closes shows neither a mark nor a ring', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const term = await runIn(client, feat, COMMANDS.quiet);
+    await expectRing(page, worktreeEntry(feat), 'open: 1');
+
+    await client.ok({ t: 'closeTerm', termId: term });
+    await expectRing(page, worktreeEntry(feat), null);
+    await expectMark(page, worktreeEntry(feat), null);
+  });
+
+  test('a viewed failed terminal whose tab is still open keeps the ring', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const failing = await runIn(client, feat, COMMANDS.fail);
+    await storeTabs(client, feat, [leaf(failing)]);
+    await client.waitFor('termExited', (m) => m.termId === failing, { timeout: 10_000 });
+    await expectMark(page, worktreeEntry(feat), 'failed');
+    await expectRing(page, worktreeEntry(feat), null);
+
+    await selectWorktree(page, feat);
+    await expect(page.locator(terminalBox(LOCAL, failing))).toBeVisible();
+    await expectMark(page, worktreeEntry(feat), null);
+    await expectRing(page, worktreeEntry(feat), 'open: 1');
+    await expectMark(page, termTab(failing), 'failed');
   });
 });

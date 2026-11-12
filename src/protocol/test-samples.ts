@@ -161,7 +161,16 @@ export const clientToDaemonSamples: MessageOf<'clientToDaemon'>[] = [
   { t: 'unwatchRepo', req: 2, repo: REPO },
   { t: 'discoverRepos', req: 3, roots: ['/home/u/GitHub', '/srv'], depth: 3 },
   { t: 'discoverRepos', req: 11, roots: ['~', '~/GitHub'], depth: 3 },
-  { t: 'createTerm', req: 4, worktree: WT, preset: 'claude', command: 'claude --resume', cols: 80, rows: 24, memory: { max: '64M', swapMax: '0' } },
+  {
+    t: 'createTerm',
+    req: 4,
+    worktree: WT,
+    preset: 'claude',
+    command: 'claude --resume',
+    cols: 80,
+    rows: 24,
+    memory: { max: '64M', swapMax: '0' },
+  },
   { t: 'createTerm', req: 5, worktree: WT, preset: 'shell', command: null, cols: 1000, rows: 1, memory: {} },
   { t: 'attach', req: 6, termId: 1 },
   { t: 'detach', req: 7, termId: 1 },
@@ -261,6 +270,9 @@ export const browserToHubSamples: MessageOf<'browserToHub'>[] = [
   { t: 'movePreset', req: 9, name: 'codex', to: 0 },
   { t: 'openHub', req: 10, host: 1 },
   { t: 'installHub', req: 11, host: 65535 },
+  { t: 'openEditor', req: 13, worktree: '/home/u/a b/$x;y' },
+  { t: 'setEditor', req: 14, command: 'code --new-window {path}' },
+  { t: 'setEditor', req: 15, command: null },
 ];
 
 export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
@@ -287,6 +299,10 @@ export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   { t: 'hubOpened', req: 6, url: `http://127.0.0.1:65535/#code=${CODE}&host=${'x'.repeat(64)}&home=1024&hubs=${'x'.repeat(64)}` },
   { t: 'error', req: 7, host: 1, code: 'hub-outdated', message: 'wtd on box is missing or too old to serve its hub' },
   { t: 'error', req: 8, host: 2, code: 'hub-failed', message: 'ssh: Could not resolve hostname box: Name or service not known' },
+  { t: 'editor', command: 'kate' },
+  { t: 'editor', command: `my-ed --title 'a b' "c \\"d\\"" e\\ f` },
+  { t: 'error', req: 9, host: null, code: 'editor-missing', message: 'kate' },
+  { t: 'error', req: 10, host: null, code: 'editor-failed', message: 'not a directory: /home/u/gone' },
 ];
 
 export const samples: { readonly [D in Direction]: readonly MessageOf<D>[] } = {
@@ -345,8 +361,10 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'movePreset',
     'openHub',
     'installHub',
+    'openEditor',
+    'setEditor',
   ],
-  hubToBrowser: ['hello', 'token', 'host', 'hosts', 'presets', 'done', 'error', 'reposDiscovered', 'hubLogin', 'hubOpened'],
+  hubToBrowser: ['hello', 'token', 'host', 'hosts', 'presets', 'editor', 'done', 'error', 'reposDiscovered', 'hubLogin', 'hubOpened'],
 };
 
 /** Encodes a JSON value as control-message text, bypassing the protocol encoder. */

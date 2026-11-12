@@ -141,6 +141,12 @@ describe('remote hosts', () => {
   });
 
   it('keeps its memory bounded and the reason short when SSH writes 8 MiB to standard error without a newline', async () => {
+    // A first remote going down warms the hub up, so the baseline leaves out its one-off growth.
+    fx.ssh.failHost('warm', 'ssh: Could not resolve hostname warm');
+    configure([{ name: 'warm', ssh: 'warm' }]);
+    const warm = await fx.host.session();
+    await warm.waitHost(1, (h) => h.status === 'down', { timeout: 30_000 });
+    warm.close();
     const before = residentBytes(fx.hub.pid);
     fx.ssh.spewHost('box', 8 * MiB);
     configure([{ name: 'box', ssh: 'box' }]);

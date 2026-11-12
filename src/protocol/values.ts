@@ -59,8 +59,8 @@ export const errorCode = z.enum([
   'host-unavailable',
   'internal',
 ]);
-/** Error codes of the hub-to-browser `error`: the daemon's and the hub opening's. */
-export const hubErrorCode = z.enum([...errorCode.options, 'hub-outdated', 'hub-failed']);
+/** Error codes of the hub-to-browser `error`: the daemon's, the hub opening's and the editor launch's. */
+export const hubErrorCode = z.enum([...errorCode.options, 'hub-outdated', 'hub-failed', 'editor-missing', 'editor-failed']);
 /** A remote host's name, safe in a URL fragment without encoding. */
 export const hostName = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
 /** A port a hub or tunnel may listen on. */

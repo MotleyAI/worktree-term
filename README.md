@@ -109,6 +109,14 @@ A host's `port` is the loopback port on this machine through which its own hub i
 }
 ```
 
+`editor` is the command the "Open in editor" button at the right end of the tab bar runs to open the selected worktree; the default is `kate`. `{path}` stands for the worktree path, as one argument however it is spelled; without `{path}`, the path is added at the end. The command is split into words like a shell would, with `'…'`, `"…"` and `\` quoting, but nothing is expanded (`~`, `$VAR`) and no shell runs. The hub starts it on this machine, in the worktree, so only worktrees on this machine can be opened, not those of remote hosts or from a remote hub's page. Right-clicking the button edits `editor` here, and "Reset to default" removes it; every open page shows the change.
+
+```json
+{
+  "editor": "code --new-window {path}"
+}
+```
+
 ## Memory and out-of-memory kills
 
 With a systemd user manager that outlives your session (the process runs under `user@<uid>.service`, as anything started from a desktop session does, or lingering is on), every process worktree-term starts gets a cgroup of its own in the slice `app-wtd.slice`: the daemon `wtd-<h>-daemon-<r>.scope`, the hub `wtd-<h>-hub-<r>.scope`, and each terminal, with everything it starts, `wtd-<h>-term-<instance>-<id>.scope`, where `<h>` hashes the state directory. systemd-oomd and the kernel then kill only the terminal that ran out of memory, never the daemon, the hub or another terminal; its tab says `killed: out of memory`, and `memory.log` gets an `oom-kill` line and each terminal's cgroup figures. A daemon run as `worktree-term-daemon.service` stays in that unit. Terminal shells also get an `oom_score_adj` of at least 500, so a system-wide OOM picks a terminal before the daemon or hub.

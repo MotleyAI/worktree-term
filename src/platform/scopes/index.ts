@@ -1,6 +1,7 @@
 export {
   cgroupPath,
   daemonUnit,
+  editorUnit,
   enterScope,
   findUserManager,
   hostScopeRoots,

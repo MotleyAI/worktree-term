@@ -43,9 +43,12 @@ const rightClick = async (page: Page): Promise<void> => {
   await control(page).click({ button: 'right', force: true });
 };
 
+/** Right-clicks until the form opens: a right-click before the hub's `editor` arrived opens nothing. */
 const openForm = async (page: Page): Promise<void> => {
-  await rightClick(page);
-  await expect(form(page)).toBeVisible();
+  await expect(async () => {
+    await rightClick(page);
+    await expect(form(page)).toBeVisible({ timeout: 500 });
+  }).toPass();
 };
 
 /** `openEditor` and `setEditor` requests the page sent since `from`, without their `req`. */

@@ -1,6 +1,7 @@
 import { DAEMON_PROTOCOL_VERSION, encodeRemoteFragment, type DataFrame, type MessageOf } from '../../protocol/index.js';
 import { ConfigEditor, ConfigSource, type ConfigSnapshot, type HubConfig } from '../config/index.js';
 import {
+  EditorLauncher,
   HubOpener,
   installOnRemote,
   LocalDaemon,
@@ -91,6 +92,7 @@ export class Router {
   private readonly sessions = new Set<Session>();
   private readonly coordinators = new Map<string, HostCoordinator>();
   private readonly budgets: RouterBudgets;
+  private readonly launcher: EditorLauncher;
 
   constructor(private readonly options: RouterOptions) {
     this.budgets = {
@@ -101,6 +103,7 @@ export class Router {
     this.local = new LocalDaemon(options.paths, options.daemonCommand);
     this.config = new ConfigSource(options.configPath, options.home, options.config);
     this.editor = new ConfigEditor(options.configPath, options.home);
+    this.launcher = new EditorLauncher(options.paths.stateDir, options.report);
     this.context = {
       hello: this.hello,
       endpoint: (host) => this.endpoint(host),
@@ -120,6 +123,11 @@ export class Router {
       presetsEdited: (presets) => {
         for (const session of this.sessions) session.showPresets(presets);
       },
+      editEditor: (command) => this.editor.setEditor(command),
+      editorEdited: (command) => {
+        for (const session of this.sessions) session.showEditor(command);
+      },
+      openEditor: (command, worktree) => this.launcher.launch(command, worktree),
       greeted: (host, from) => {
         for (const session of this.sessions) if (session !== from) session.redialLogin(host);
       },

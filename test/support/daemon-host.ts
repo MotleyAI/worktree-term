@@ -192,6 +192,8 @@ export class DaemonHost {
     this.stateHome = join(dir, 's');
     this.home = join(dir, 'h');
     mkdirSync(this.home);
+    // Keeps Ubuntu's /etc/bash.bashrc from printing its sudo hint, so a shell that prints nothing stays silent.
+    writeFileSync(join(this.home, '.sudo_as_admin_successful'), '');
     this.stateDir = join(this.stateHome, 'worktree-term');
     this.runDir = join(this.stateDir, 'run');
     this.socket = join(this.runDir, `${hostFileName()}.sock`);

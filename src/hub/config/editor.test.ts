@@ -507,8 +507,9 @@ describe('ConfigEditor editing the editor command', () => {
   it('refuses to edit an invalid file, leaving it unchanged', async () => {
     write({ editor: 'code "{path}' });
     const before = text();
-    await expect(editor().setEditor('kate')).rejects.toBeInstanceOf(ConfigError);
-    await expect(editor().setEditor(null)).rejects.toBeInstanceOf(ConfigError);
+    const edits = editor();
+    await expect(edits.setEditor('kate')).rejects.toBeInstanceOf(ConfigError);
+    await expect(edits.setEditor(null)).rejects.toBeInstanceOf(ConfigError);
     expect(text()).toBe(before);
   });
 

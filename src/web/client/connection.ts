@@ -229,6 +229,16 @@ export class HubClient {
     await this.exchange(null, (req) => ({ t: 'removePreset', req, name }));
   }
 
+  /** Asks the hub to open `worktree`, on its machine, with the session's editor command. */
+  async openEditor(worktree: string): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'openEditor', req, worktree }));
+  }
+
+  /** Asks the hub to set the editor command, or reset it when null; every page then receives it. */
+  async setEditor(command: string | null): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'setEditor', req, command }));
+  }
+
   private async exchange(host: number | null, message: (req: number) => BrowserMessage): Promise<Extract<Reply, { ok: true }>['m']> {
     if (this.ws?.readyState !== WebSocket.OPEN) throw new Error('not connected to the hub');
     const { req, reply } = this.pending.add(host);
@@ -378,6 +388,9 @@ export class HubClient {
         return;
       case 'presets':
         this.store.setPresets(m.presets);
+        return;
+      case 'editor':
+        this.store.setEditor(m.command);
         return;
     }
   }

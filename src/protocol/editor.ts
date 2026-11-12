@@ -8,8 +8,13 @@ export const PATH_PLACEHOLDER = '{path}';
 
 const WHITESPACE = /\s/;
 
+interface Part {
+  text: string;
+  end: number;
+}
+
 /** Reads a double-quoted part starting after its opening quote; returns its text and the index after the closing quote. */
-const doubleQuoted = (command: string, start: number): { text: string; end: number } | null => {
+const doubleQuoted = (command: string, start: number): Part | null => {
   let text = '';
   let i = start;
   while (i < command.length) {
@@ -23,34 +28,33 @@ const doubleQuoted = (command: string, start: number): { text: string; end: numb
   return null;
 };
 
+/** Reads the non-blank word part at `i`: a quoted span, an escaped character or a plain one; null when unterminated. */
+const wordPart = (command: string, i: number): Part | null => {
+  const c = command.charAt(i);
+  if (c === "'") {
+    const close = command.indexOf("'", i + 1);
+    return close < 0 ? null : { text: command.slice(i + 1, close), end: close + 1 };
+  }
+  if (c === '"') return doubleQuoted(command, i + 1);
+  if (c === '\\') return i + 1 < command.length ? { text: command.charAt(i + 1), end: i + 2 } : null;
+  return { text: c, end: i + 1 };
+};
+
 /** Splits an editor command into words as a POSIX shell would, without expansions; null when it is invalid. */
 export const editorWords = (command: string): string[] | null => {
   const words: string[] = [];
   let word: string | null = null;
   let i = 0;
   while (i < command.length) {
-    const c = command.charAt(i);
-    if (WHITESPACE.test(c)) {
+    if (WHITESPACE.test(command.charAt(i))) {
       if (word !== null) words.push(word);
       word = null;
       i++;
-    } else if (c === "'") {
-      const close = command.indexOf("'", i + 1);
-      if (close < 0) return null;
-      word = (word ?? '') + command.slice(i + 1, close);
-      i = close + 1;
-    } else if (c === '"') {
-      const part = doubleQuoted(command, i + 1);
+    } else {
+      const part = wordPart(command, i);
       if (part === null) return null;
       word = (word ?? '') + part.text;
       i = part.end;
-    } else if (c === '\\') {
-      if (i + 1 >= command.length) return null;
-      word = (word ?? '') + command.charAt(i + 1);
-      i += 2;
-    } else {
-      word = (word ?? '') + c;
-      i++;
     }
   }
   if (word !== null) words.push(word);

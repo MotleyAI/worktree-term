@@ -300,7 +300,7 @@ export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   { t: 'error', req: 7, host: 1, code: 'hub-outdated', message: 'wtd on box is missing or too old to serve its hub' },
   { t: 'error', req: 8, host: 2, code: 'hub-failed', message: 'ssh: Could not resolve hostname box: Name or service not known' },
   { t: 'editor', command: 'kate' },
-  { t: 'editor', command: `my-ed --title 'a b' "c \\"d\\"" e\\ f` },
+  { t: 'editor', command: String.raw`my-ed --title 'a b' "c \"d\"" e\ f` },
   { t: 'error', req: 9, host: null, code: 'editor-missing', message: 'kate' },
   { t: 'error', req: 10, host: null, code: 'editor-failed', message: 'not a directory: /home/u/gone' },
 ];

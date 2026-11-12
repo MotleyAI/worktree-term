@@ -1,12 +1,18 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { access, readFile, writeFile } from 'node:fs/promises';
-import { userInfo } from 'node:os';
+import { totalmem, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 /** The slice every scope lives in. */
 export const SCOPE_SLICE = 'app-wtd.slice';
+
+/** The slice within `SCOPE_SLICE` that terminal scopes live in, capped as a whole. */
+export const TERMINAL_SLICE = 'app-wtd-terminals.slice';
+
+/** The share of physical memory all terminals together may use. */
+const TERMINALS_SHARE = 2 / 3;
 
 const PROBE_TIMEOUT_MS = 2000;
 const OUTCOME_TIMEOUT_MS = 2000;
@@ -226,7 +232,7 @@ export const scopeCommand = (unit: string, limits: ScopeLimits, command: readonl
   '--scope',
   '--quiet',
   `--unit=${unit}`,
-  `--slice=${SCOPE_SLICE}`,
+  `--slice=${TERMINAL_SLICE}`,
   '-p',
   'OOMPolicy=kill',
   ...(noExpand ? ['--expand-environment=no'] : []),
@@ -321,6 +327,16 @@ export const outOfMemory = async (unit: string, report: Report): Promise<boolean
     if (Date.now() >= deadline) return false;
     await sleep(POLL_MS); // NOSONAR(S9382) — sequential polling
   }
+};
+
+const MiB = 1024 * 1024;
+
+/** The `MemoryMax` of the terminal slice for `total` bytes of physical memory, in whole MiB as the kernel keeps whole pages. */
+export const terminalSliceMax = (total = totalmem()): number => Math.floor((total * TERMINALS_SHARE) / MiB) * MiB;
+
+/** Caps the terminal slice at `max` bytes until the user manager stops, so terminals cannot starve the rest of the session. */
+export const capTerminalSlice = async (max: number): Promise<void> => {
+  await systemctl(['set-property', '--runtime', TERMINAL_SLICE, `MemoryMax=${String(max)}`]);
 };
 
 /** Resets every failed unit whose name begins with `prefix`. */

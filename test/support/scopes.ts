@@ -7,6 +7,9 @@ import { join } from 'node:path';
 /** The slice every scope lives in. */
 export const SLICE = 'app-wtd.slice';
 
+/** The slice within `SLICE` that terminal scopes live in. */
+export const TERMINAL_SLICE = 'app-wtd-terminals.slice';
+
 export const SKIP_REASON = 'skipped: no lasting systemd user manager';
 
 /** Bash that allocates 300 MiB in the shell itself. */

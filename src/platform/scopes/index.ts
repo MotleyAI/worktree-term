@@ -1,4 +1,5 @@
 export {
+  capTerminalSlice,
   cgroupPath,
   daemonUnit,
   editorUnit,
@@ -11,6 +12,8 @@ export {
   resetFailedScopes,
   SCOPE_SLICE,
   scopeCommand,
+  TERMINAL_SLICE,
+  terminalSliceMax,
   terminalUnit,
   unitPrefix,
   type Report,

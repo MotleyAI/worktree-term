@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitUntil } from '../../../test/support/daemon-host.js';
@@ -18,6 +18,7 @@ import {
   withUserManager,
 } from '../../../test/support/scopes.js';
 import {
+  capTerminalSlice,
   daemonUnit,
   editorUnit,
   enterScope,
@@ -29,6 +30,8 @@ import {
   resetFailedScopes,
   SCOPE_SLICE,
   scopeCommand,
+  TERMINAL_SLICE,
+  terminalSliceMax,
   terminalUnit,
   unitPrefix,
   type ScopeRoots,
@@ -246,14 +249,36 @@ describe('unit names', () => {
     expect(terminalUnit(dir, 'a1B2_c-3', 7)).toBe(`wtd-${hash()}-term-a1B2_c-3-7.scope`);
   });
 
-  it('use the slice app-wtd.slice', () => {
+  it('use the slice app-wtd.slice, and for terminals app-wtd-terminals.slice within it', () => {
     expect(SCOPE_SLICE).toBe('app-wtd.slice');
+    expect(TERMINAL_SLICE).toBe('app-wtd-terminals.slice');
+  });
+});
+
+describe('terminal slice cap', () => {
+  it('is two thirds of physical memory, rounded down to a whole MiB', () => {
+    const MiB = 1024 * 1024;
+    expect(terminalSliceMax(3 * MiB)).toBe(2 * MiB);
+    expect(terminalSliceMax(4 * MiB)).toBe(2 * MiB);
+    expect(terminalSliceMax(3 * MiB - 1)).toBe(MiB);
+    expect(terminalSliceMax()).toBe(Math.floor((totalmem() * 2) / 3 / MiB) * MiB);
+  });
+
+  it('sets MemoryMax on the terminal slice through systemctl, until the user manager stops', async () => {
+    const ctl = systemctl('');
+    await capTerminalSlice(1234);
+    expect(ctl.calls()).toEqual([['--user', 'set-property', '--runtime', 'app-wtd-terminals.slice', 'MemoryMax=1234']]);
+  });
+
+  it('rejects naming the failure of systemctl', async () => {
+    vi.stubEnv('WTD_SYSTEMCTL', fake('systemctl', "echo 'Failed to set unit properties: Access denied' >&2; exit 1").program);
+    await expect(capTerminalSlice(1234)).rejects.toThrow('Access denied');
   });
 });
 
 describe('scope command', () => {
   const unit = 'wtd-01234567-term-i-1.scope';
-  const head = ['--user', '--scope', '--quiet', `--unit=${unit}`, '--slice=app-wtd.slice', '-p', 'OOMPolicy=kill'];
+  const head = ['--user', '--scope', '--quiet', `--unit=${unit}`, '--slice=app-wtd-terminals.slice', '-p', 'OOMPolicy=kill'];
 
   it('runs the command through systemd-run with each limit given as a property', () => {
     vi.stubEnv('WTD_SYSTEMD_RUN', '/opt/fake run');
@@ -454,10 +479,20 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real us
     const pid = Number(printed);
     expect(pid).toBe(child.pid);
     const path = cgroupOf(pid);
-    expect(path.endsWith(`/app-wtd.slice/${unit}`)).toBe(true);
+    expect(path.endsWith(`/app-wtd.slice/app-wtd-terminals.slice/${unit}`)).toBe(true);
     expect(cgroupFile(path, 'memory.max')).toBe('67108864');
     expect(cgroupFile(path, 'memory.swap.max')).toBe('0');
     expect(cgroupFile(path, 'memory.oom.group')).toBe('1');
+  });
+
+  it('caps the slice of terminal scopes as a whole', async () => {
+    const max = terminalSliceMax();
+    await capTerminalSlice(max);
+    const unit = terminalUnit(dir, 'capped', 1);
+    const [file = '', ...args] = scopeCommand(unit, {}, ['sh', '-c', 'cat /proc/self/cgroup'], noExpand);
+    const path = /^0::(\/.*)$/m.exec(spawnSync(file, args, { encoding: 'utf8' }).stdout)?.[1] ?? '';
+    expect(path.endsWith(`/${TERMINAL_SLICE}/${unit}`)).toBe(true);
+    expect(cgroupFile(path.slice(0, path.lastIndexOf('/')), 'memory.max')).toBe(String(max));
   });
 
   it('moves a running process into a hub scope of its own', async () => {

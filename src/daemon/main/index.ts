@@ -13,6 +13,7 @@ import {
   type MemorySampler,
 } from '../../platform/memory/index.js';
 import {
+  capTerminalSlice,
   cgroupPath,
   daemonUnit,
   enterScope,
@@ -22,6 +23,7 @@ import {
   outOfMemory,
   resetFailedScopes,
   scopeCommand,
+  terminalSliceMax,
   terminalUnit,
   unitPrefix,
   type UserManager,
@@ -52,8 +54,8 @@ type Report = (error: unknown) => void;
 type UnitOf = ((termId: number) => string) | null;
 
 /**
- * Moves the daemon into a scope of its own unless it runs as its systemd unit, and lowers its `oom_score_adj` as far
- * as permitted; whether terminals get scopes of their own, said on standard error.
+ * Moves the daemon into a scope of its own unless it runs as its systemd unit, caps the terminal slice, and lowers
+ * its `oom_score_adj` as far as permitted; whether terminals get scopes of their own, said on standard error.
  */
 const placeDaemon = async (paths: HostPaths, report: Report): Promise<UserManager> => {
   const roots = hostScopeRoots();
@@ -62,6 +64,7 @@ const placeDaemon = async (paths: HostPaths, report: Report): Promise<UserManage
     if (!((await cgroupPath(roots))?.endsWith(`/${UNIT_NAME}`) ?? false)) {
       await enterScope(daemonUnit(paths.stateDir), process.pid).catch(report);
     }
+    await capTerminalSlice(terminalSliceMax()).catch(report);
     await resetFailedScopes(`${unitPrefix(paths.stateDir)}term-`, report);
   }
   await lowerOomScoreAdj().catch(report);

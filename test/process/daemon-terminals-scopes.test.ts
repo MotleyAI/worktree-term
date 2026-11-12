@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { totalmem } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../support/daemon-client.js';
@@ -29,6 +30,7 @@ import {
   scopePath,
   SLICE,
   SMALL,
+  TERMINAL_SLICE,
   terminalUnit,
   unitState,
   userManagerEnv,
@@ -123,10 +125,18 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('terminal scopes on'),
     const sleeps = await Promise.all(['1000', '1001', '1002'].map((s) => pidOf(['sleep', s])));
     const other = await run('echo $$ > other.pid; exec sleep 60');
     const scope = cgroupOf(shell);
-    expect(scope.endsWith(`/${SLICE}/${terminalUnit(host.stateDir, instance, termId)}`)).toBe(true);
+    expect(scope.endsWith(`/${SLICE}/${TERMINAL_SLICE}/${terminalUnit(host.stateDir, instance, termId)}`)).toBe(true);
     for (const pid of sleeps) expect(cgroupOf(pid)).toBe(scope);
     expect(cgroupOf(daemon.pid)).not.toBe(scope);
     expect(cgroupOf(await pidIn('other.pid')).endsWith(`/${terminalUnit(host.stateDir, instance, other)}`)).toBe(true);
+  });
+
+  it('caps all its terminals together at two thirds of physical memory, leaving its own scope uncapped', async () => {
+    await run('echo $$ > sh.pid; exec sleep 60');
+    const scope = cgroupOf(await pidIn('sh.pid'));
+    const MiB = 1024 * 1024;
+    expect(cgroupFile(scope.slice(0, scope.lastIndexOf('/')), 'memory.max')).toBe(String(Math.floor((totalmem() * 2) / 3 / MiB) * MiB));
+    expect(cgroupOf(daemon.pid)).not.toContain(`/${TERMINAL_SLICE}/`);
   });
 
   it("applies the createTerm's memory limits to the terminal's scope", async () => {

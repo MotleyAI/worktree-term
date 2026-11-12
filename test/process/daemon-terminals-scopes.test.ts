@@ -327,12 +327,18 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('daemon placement'), (
   it.skipIf(unitTaken)(`leaves a daemon running as ${UNIT} in that unit's cgroup`, async () => {
     const env = host.env(userManagerEnv());
     const setenv = Object.entries(env).flatMap(([key, value]) => ['-E', `${key}=${value ?? ''}`]);
-    const started = spawnSync(
-      'systemd-run',
-      ['--user', '--quiet', '--collect', `--unit=${UNIT}`, ...setenv, process.execPath, BUNDLE, 'daemon'],
-      {
-        encoding: 'utf8',
+    const started = await waitUntil(
+      () => {
+        const ran = spawnSync(
+          'systemd-run',
+          ['--user', '--quiet', '--collect', `--unit=${UNIT}`, ...setenv, process.execPath, BUNDLE, 'daemon'],
+          { encoding: 'utf8' },
+        );
+        // Another checkout's suite on this host may hold the unit for a moment.
+        return ran.stderr.includes('already loaded') ? undefined : ran;
       },
+      `${UNIT} to be free`,
+      30_000,
     );
     expect(started.status, started.stderr).toBe(0);
     try {

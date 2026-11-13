@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { editorCommand } from './editor.js';
 import { ProtocolError } from './errors.js';
 import { openedUrl } from './hub.js';
 import { parseJson, toText } from './json.js';
@@ -171,6 +172,8 @@ export const messageSchemas = {
         .min(0)
         .max(MAX_PRESETS - 1),
     }),
+    message('openEditor', { req, worktree: path }),
+    message('setEditor', { req, command: editorCommand.nullable() }),
   ]),
   hubToBrowser: z.discriminatedUnion('t', [
     hello,
@@ -178,6 +181,7 @@ export const messageSchemas = {
     message('host', { host: hostIdx, m: z.discriminatedUnion('t', daemonEvents) }),
     message('hosts', { hosts: z.array(hostEntry).max(MAX_HOSTS) }),
     message('presets', { presets: z.array(preset).max(MAX_PRESETS) }),
+    message('editor', { command: editorCommand }),
     message('done', { req }),
     message('error', { req: req.nullable(), host: hostIdx.nullable(), code: hubErrorCode, message: errorMessage }),
     message('reposDiscovered', { req, host: hostIdx, repos }),

@@ -1,6 +1,7 @@
 export {
   ConfigError,
   ConfigSource,
+  DEFAULT_EDITOR,
   DEFAULT_PORT,
   effectivePresets,
   expandHome,
@@ -11,4 +12,4 @@ export {
   type HubConfig,
   type RemoteHostConfig,
 } from './config.js';
-export { ConfigEditor, type EditorHooks, type PortAssignment, type PresetEdit, type RepoEdit } from './editor.js';
+export { ConfigEditor, type EditorEdit, type EditorHooks, type PortAssignment, type PresetEdit, type RepoEdit } from './editor.js';

@@ -456,3 +456,80 @@ describe('ConfigEditor keeping memory limits', () => {
     expect(read()).toEqual({ presets: [SHELL, TESTS] });
   });
 });
+
+describe('ConfigEditor editing the editor command', () => {
+  it('sets the command, creating an absent file owner-only', async () => {
+    expect(await editor().setEditor('code {path}')).toEqual({ changed: true, command: 'code {path}' });
+    expect(read()).toEqual({ editor: 'code {path}' });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('replaces the command, keeping every other value as written', async () => {
+    write({ ...OTHERS, repos: ['~/a'], editor: 'kate' });
+    expect(await editor().setEditor('subl {path}')).toEqual({ changed: true, command: 'subl {path}' });
+    const expected = { ...OTHERS, repos: ['~/a'], editor: 'subl {path}' };
+    expect(read()).toEqual(expected);
+    expect(keysOf(read())).toEqual(Object.keys(expected));
+  });
+
+  it('leaves the file unchanged when setting the command it holds', async () => {
+    write({ editor: 'code {path}' });
+    const before = text();
+    expect(await editor().setEditor('code {path}')).toEqual({ changed: false, command: 'code {path}' });
+    expect(text()).toBe(before);
+  });
+
+  it('writes kate when the file holds no command', async () => {
+    write({ repos: [] });
+    expect(await editor().setEditor('kate')).toEqual({ changed: true, command: 'kate' });
+    expect(read()).toEqual({ repos: [], editor: 'kate' });
+  });
+
+  it('removes the key on reset, keeping every other value as written', async () => {
+    write({ editor: 'code {path}', repos: ['~/a'], presets: [CLAUDE] });
+    expect(await editor().setEditor(null)).toEqual({ changed: true, command: 'kate' });
+    expect(read()).toEqual({ repos: ['~/a'], presets: [CLAUDE] });
+    expect(keysOf(read())).toEqual(['repos', 'presets']);
+  });
+
+  it('leaves the file unchanged on a reset without an override', async () => {
+    write({ repos: ['/r/a'] });
+    const before = text();
+    expect(await editor().setEditor(null)).toEqual({ changed: false, command: 'kate' });
+    expect(text()).toBe(before);
+  });
+
+  it('creates no file on a reset of an absent one', async () => {
+    expect(await editor().setEditor(null)).toEqual({ changed: false, command: 'kate' });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('refuses to edit an invalid file, leaving it unchanged', async () => {
+    write({ editor: 'code "{path}' });
+    const before = text();
+    const edits = editor();
+    await expect(edits.setEditor('kate')).rejects.toBeInstanceOf(ConfigError);
+    await expect(edits.setEditor(null)).rejects.toBeInstanceOf(ConfigError);
+    expect(text()).toBe(before);
+  });
+
+  it('starts over from a file changed between its read and its replacement, keeping both changes', async () => {
+    write({ editor: 'code {path}' });
+    const attempts: number[] = [];
+    const result = await editor({
+      beforeReplace: (attempt) => {
+        attempts.push(attempt);
+        if (attempt === 1) writeFileSync(path, JSON.stringify({ editor: 'code {path}', repos: ['/r/a'] }));
+      },
+    }).setEditor(null);
+    expect(attempts).toEqual([1, 2]);
+    expect(result).toEqual({ changed: true, command: 'kate' });
+    expect(read()).toEqual({ repos: ['/r/a'] });
+  });
+
+  it('applies concurrent editor, preset and repo edits one at a time, losing none', async () => {
+    const shared = editor();
+    await Promise.all([shared.setEditor('code {path}'), shared.addRepo(null, '/r/1'), shared.removePreset('codex')]);
+    expect(read()).toEqual({ editor: 'code {path}', repos: ['/r/1'], presets: [SHELL, CLAUDE] });
+  });
+});

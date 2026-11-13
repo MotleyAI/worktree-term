@@ -26,6 +26,7 @@ import {
   currentHostPaths,
   fileIdentity,
   hostPaths,
+  isDirectory,
   makeOwnerOnly,
   makePrivateDirs,
   openLog,
@@ -455,6 +456,19 @@ describe('private directories and existence', () => {
     expect(await pathExists(join(dir, 'link'))).toBe(true);
     expect(await pathExists(join(dir, 'dangling'))).toBe(false);
     expect(await pathExists(join(dir, 'f', 'below'))).toBe(false);
+  });
+
+  it('tells whether a path is a directory, following symbolic links', async () => {
+    mkdirSync(join(dir, 'd'));
+    writeFileSync(join(dir, 'f'), '');
+    symlinkSync(join(dir, 'd'), join(dir, 'dlink'));
+    symlinkSync(join(dir, 'missing'), join(dir, 'dangling'));
+    expect(await isDirectory(join(dir, 'd'))).toBe(true);
+    expect(await isDirectory(join(dir, 'dlink'))).toBe(true);
+    expect(await isDirectory(join(dir, 'f'))).toBe(false);
+    expect(await isDirectory(join(dir, 'missing'))).toBe(false);
+    expect(await isDirectory(join(dir, 'dangling'))).toBe(false);
+    expect(await isDirectory(join(dir, 'f', 'below'))).toBe(false);
   });
 });
 

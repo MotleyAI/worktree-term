@@ -11,8 +11,8 @@ import {
   type MessageOf,
   type Preset,
 } from '../../protocol/index.js';
-import { ConfigError, effectivePresets, type ConfigSnapshot, type PresetEdit, type RepoEdit } from '../config/index.js';
-import type { DaemonEndpoint, Link } from '../links/index.js';
+import { ConfigError, effectivePresets, type ConfigSnapshot, type EditorEdit, type PresetEdit, type RepoEdit } from '../config/index.js';
+import type { DaemonEndpoint, EditorOutcome, Link } from '../links/index.js';
 import type { HostCoordinator } from './coordinator.js';
 import { hostKey, hostTransition, initialHostState, retryDelay, type HostEvent, type HostState } from './hosts.js';
 import { OneShotError, requestOnce } from './oneshot.js';
@@ -69,6 +69,12 @@ export interface SessionContext {
   ) => Promise<PresetEdit>;
   /** Shows the presets after an edit to every session. */
   presetsEdited: (presets: Preset[]) => void;
+  /** Sets the editor command in the configuration, or removes it when null. */
+  editEditor: (command: string | null) => Promise<EditorEdit>;
+  /** Shows the editor command after an edit to every session. */
+  editorEdited: (command: string) => void;
+  /** Starts editor `command` for `worktree` on this machine. */
+  openEditor: (command: string, worktree: string) => Promise<EditorOutcome>;
   /** A link of session `from` to `host` exchanged hello: redials the other sessions' links to it that need login. */
   greeted?: (host: SessionHost, from: Session) => void;
   /** Opens the hub of the remote host named `name`, read afresh from the configuration; `cancel` ends it silently. */
@@ -252,6 +258,8 @@ export class Session {
   private readonly hosts: HostLink[];
   /** The hub opening in progress, at most one. */
   private opening: { cancel: () => void } | null = null;
+  /** The editor command this session's page shows. */
+  private editor: string;
   private paused = false;
   private closed = false;
 
@@ -262,12 +270,14 @@ export class Session {
     hosts: readonly SessionHost[],
   ) {
     this.hosts = hosts.map((host) => new HostLink(host, this, context.endpoint(host), context.hello));
+    this.editor = snapshot.config.editor;
   }
 
-  /** Sends the configuration problem, if any, the presets and the hosts, then connects every host. */
+  /** Sends the configuration problem, if any, the presets, the editor command and the hosts, then connects every host. */
   start(): void {
     if (this.snapshot.problem !== null) this.error(null, null, 'internal', `invalid configuration: ${this.snapshot.problem}`);
     this.message({ t: 'presets', presets: effectivePresets(this.snapshot.config) });
+    this.message({ t: 'editor', command: this.editor });
     this.hostsChanged();
     for (const host of this.hosts) host.connect();
   }
@@ -309,7 +319,20 @@ export class Session {
       case 'movePreset':
         this.editPresets(message.req, { t: 'move', name: message.name, to: message.to });
         return;
+      case 'setEditor':
+        this.setEditor(message.req, message.command);
+        return;
+      case 'openEditor':
+        this.openEditor(message.req, message.worktree);
+        return;
     }
+  }
+
+  /** Replaces the editor command after an edit and sends it. */
+  showEditor(command: string): void {
+    if (this.closed) return;
+    this.editor = command;
+    this.message({ t: 'editor', command });
   }
 
   /** Sends presets changed by an edit, with this session's effective limits. */
@@ -532,6 +555,32 @@ export class Session {
       (error: unknown) => {
         const text = error instanceof Error ? error.message : String(error);
         this.error(req, null, 'internal', error instanceof ConfigError ? `cannot edit the configuration: ${text}` : text);
+      },
+    );
+  }
+
+  /** Edits the editor command, answering `done` and showing the result to every session, or `internal` naming the refusal. */
+  private setEditor(req: number, command: string | null): void {
+    this.context.editEditor(command).then(
+      (result) => {
+        this.message({ t: 'done', req });
+        if (result.changed) this.context.editorEdited(result.command);
+      },
+      (error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error);
+        this.error(req, null, 'internal', error instanceof ConfigError ? `cannot edit the configuration: ${text}` : text);
+      },
+    );
+  }
+
+  private openEditor(req: number, worktree: string): void {
+    this.context.openEditor(this.editor, worktree).then(
+      (outcome) => {
+        if (outcome.kind === 'started') this.message({ t: 'done', req });
+        else this.error(req, null, outcome.code, outcome.message);
+      },
+      (error: unknown) => {
+        this.error(req, null, 'editor-failed', error instanceof Error ? error.message : String(error));
       },
     );
   }

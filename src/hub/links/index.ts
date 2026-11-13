@@ -1,10 +1,10 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { connect, type Socket } from 'node:net';
 import type { Readable, Writable } from 'node:stream';
-import { dial, LineScanner, spawnDetached, sshCommand, StderrTail, tailscaleLoginUrl } from '../../platform/dialer/index.js';
+import { dial, LineScanner, spawnDetached, SpawnError, sshCommand, StderrTail, tailscaleLoginUrl } from '../../platform/dialer/index.js';
 import { installRemote, type InstalledRemote } from '../../platform/install/index.js';
-import { enterScope, findUserManager, hostScopeRoots, hubUnit, lowerOomScoreAdj } from '../../platform/scopes/index.js';
-import { ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
+import { editorUnit, enterScope, findUserManager, hostScopeRoots, hubUnit, lowerOomScoreAdj } from '../../platform/scopes/index.js';
+import { editorArgs, ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
 
 export { forwardToHub, HubOpener, PRINT_CODE_COMMAND, type HubForward, type HubOpening, type HubOpenResult } from './hub.js';
 
@@ -360,7 +360,41 @@ export const placeHub = async (stateDir: string, report: (error: unknown) => voi
 };
 
 /** Starts `command` detached in its own session, appending its output to `log` (ignored when null). */
-export const startDetached = (command: readonly string[], log: string | null): Promise<void> => spawnDetached(command, log);
+export const startDetached = async (command: readonly string[], log: string | null): Promise<void> => {
+  await spawnDetached(command, log);
+};
+
+/** How an editor launch ended. */
+export type EditorOutcome = { kind: 'started' } | { kind: 'error'; code: 'editor-missing' | 'editor-failed'; message: string };
+
+/** Starts editors detached, each moved into a scope of its own when the hub has a lasting user manager. */
+export class EditorLauncher {
+  private lasting: Promise<boolean> | null = null;
+
+  constructor(
+    private readonly stateDir: string,
+    /** Reports a failed scope move. */
+    private readonly report: (error: unknown) => void,
+  ) {}
+
+  /** Starts editor `command` for `worktree`, in it, without waiting for it to exit. */
+  async launch(command: string, worktree: string): Promise<EditorOutcome> {
+    let pid: number;
+    try {
+      pid = await spawnDetached(editorArgs(command, worktree), null, { cwd: worktree });
+    } catch (error) {
+      if (!(error instanceof SpawnError)) throw error;
+      return { kind: 'error', code: error.failure === 'missing-program' ? 'editor-missing' : 'editor-failed', message: error.message };
+    }
+    this.place(pid).catch(this.report);
+    return { kind: 'started' };
+  }
+
+  private async place(pid: number): Promise<void> {
+    this.lasting ??= findUserManager(hostScopeRoots()).then((manager) => manager.lasting);
+    if (await this.lasting) await enterScope(editorUnit(this.stateDir), pid);
+  }
+}
 
 /** Installs the bundle at `bundle` on the SSH host `alias`, finding its Node there. */
 export const installOnRemote = (

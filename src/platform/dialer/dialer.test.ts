@@ -1,10 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostPaths, type HostPaths } from '../files/index.js';
-import { dial, spawnDetached, sshCommand, sshForwardCommand } from './index.js';
+import { dial, spawnDetached, SpawnError, sshCommand, sshForwardCommand } from './index.js';
 
 /** Stand-in daemon: logs to stdout and stderr, records its pid, serves its pid to every connection. */
 const FAKE_DAEMON = `
@@ -303,7 +303,7 @@ describe('sshCommand', () => {
   });
 });
 
-/** Stand-in program: records its pid, session and stdio targets, then idles. */
+/** Stand-in program: records its pid, session, stdio targets and working directory, then idles. */
 const RECORDER = `
 const fs = require('node:fs');
 const [pids] = process.argv.slice(1);
@@ -311,7 +311,8 @@ const stat = fs.readFileSync('/proc/self/stat', 'utf8');
 const session = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[3];
 const fd = (n) => fs.readlinkSync('/proc/self/fd/' + n);
 fs.appendFileSync(pids, process.pid + '\\n');
-fs.writeFileSync(pids + '.' + process.pid, JSON.stringify({ sid: Number(session), stdin: fd(0), stdout: fd(1), stderr: fd(2) }));
+const cwd = fs.readlinkSync('/proc/self/cwd');
+fs.writeFileSync(pids + '.' + process.pid, JSON.stringify({ sid: Number(session), stdin: fd(0), stdout: fd(1), stderr: fd(2), cwd }));
 console.log('out pid=' + process.pid);
 console.error('err pid=' + process.pid);
 setTimeout(() => process.exit(0), 30000);
@@ -322,6 +323,7 @@ interface Recorded {
   stdin: string;
   stdout: string;
   stderr: string;
+  cwd: string;
 }
 
 const recorded = async (): Promise<{ pid: number; record: Recorded }> => {
@@ -331,7 +333,7 @@ const recorded = async (): Promise<{ pid: number; record: Recorded }> => {
     if (pid !== undefined && existsSync(`${pidsFile}.${String(pid)}`)) {
       const record: unknown = JSON.parse(readFileSync(`${pidsFile}.${String(pid)}`, 'utf8'));
       if (typeof record !== 'object' || record === null) throw new Error('bad record');
-      return { pid, record: { sid: 0, stdin: '', stdout: '', stderr: '', ...record } };
+      return { pid, record: { sid: 0, stdin: '', stdout: '', stderr: '', cwd: '', ...record } };
     }
     if (Date.now() > deadline) throw new Error('the program did not start');
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -363,7 +365,7 @@ describe('spawnDetached', () => {
   it('ignores the stdio of a program started without a log', async () => {
     await spawnDetached(recorder(), null);
     const { pid, record } = await recorded();
-    expect(record).toEqual({ sid: pid, stdin: '/dev/null', stdout: '/dev/null', stderr: '/dev/null' });
+    expect(record).toEqual({ sid: pid, stdin: '/dev/null', stdout: '/dev/null', stderr: '/dev/null', cwd: realpathSync(process.cwd()) });
   });
 
   it('resolves while the program keeps running', async () => {
@@ -379,5 +381,84 @@ describe('spawnDetached', () => {
 
   it('rejects an empty command', async () => {
     await expect(spawnDetached([], null)).rejects.toThrow();
+  });
+
+  it('resolves to the pid of the started program', async () => {
+    const started = await spawnDetached(recorder(), null);
+    const { pid } = await recorded();
+    expect(started).toBe(pid);
+  });
+
+  it('starts the program in the given working directory', async () => {
+    const work = join(dir, 'a b', '$x;y');
+    mkdirSync(work, { recursive: true });
+    await spawnDetached(recorder(), null, { cwd: work });
+    const { pid, record } = await recorded();
+    expect(record).toEqual({ sid: pid, stdin: '/dev/null', stdout: '/dev/null', stderr: '/dev/null', cwd: realpathSync(work) });
+  });
+
+  const failure = async (start: Promise<number>): Promise<SpawnError> => {
+    const error: unknown = await start.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(SpawnError);
+    if (!(error instanceof SpawnError)) throw new Error('not a SpawnError');
+    return error;
+  };
+
+  const causeCode = (error: Error): unknown => (error.cause instanceof Error && 'code' in error.cause ? error.cause.code : undefined);
+
+  it('fails as a missing program, naming it and keeping the spawn error, when the program is not found', async () => {
+    const missing = join(dir, 'kate-nope');
+    const error = await failure(spawnDetached([missing, '-n'], null, { cwd: dir }));
+    expect(error.failure).toBe('missing-program');
+    expect(error.message).toContain(missing);
+    expect(causeCode(error)).toBe('ENOENT');
+  });
+
+  it('fails as a missing program when a bare name is not on PATH', async () => {
+    vi.stubEnv('PATH', dir);
+    const error = await failure(spawnDetached(['kate-nope'], null, { cwd: dir }));
+    expect(error.failure).toBe('missing-program');
+    expect(error.message).toContain('kate-nope');
+  });
+
+  it('fails as a missing directory, naming it and starting nothing, when the working directory does not exist', async () => {
+    const gone = join(dir, 'gone');
+    const error = await failure(spawnDetached(recorder(), null, { cwd: gone }));
+    expect(error.failure).toBe('missing-directory');
+    expect(error.message).toContain(gone);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(spawnedPids()).toEqual([]);
+  });
+
+  it('fails as a missing directory when the working directory is a file', async () => {
+    const file = join(dir, 'file');
+    writeFileSync(file, '');
+    const error = await failure(spawnDetached(recorder(), null, { cwd: file }));
+    expect(error.failure).toBe('missing-directory');
+    expect(error.message).toContain(file);
+  });
+
+  it('fails as a missing directory, not a missing program, when both are missing', async () => {
+    const error = await failure(spawnDetached([join(dir, 'kate-nope')], null, { cwd: join(dir, 'gone') }));
+    expect(error.failure).toBe('missing-directory');
+  });
+
+  it('fails as another failure, keeping the spawn error, when the program is not executable', async () => {
+    const program = join(dir, 'not-executable');
+    writeFileSync(program, '#!/bin/sh\n', { mode: 0o644 });
+    const error = await failure(spawnDetached([program], null, { cwd: dir }));
+    expect(error.failure).toBe('failed');
+    expect(error.message).toContain(program);
+    expect(causeCode(error)).toBe('EACCES');
+  });
+
+  it('fails as a missing program without a working directory, as before', async () => {
+    const missing = join(dir, 'no-such-browser');
+    const error = await failure(spawnDetached([missing], null));
+    expect(error.failure).toBe('missing-program');
+    expect(error.message).toContain(missing);
   });
 });

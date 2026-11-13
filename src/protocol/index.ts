@@ -8,6 +8,7 @@ export {
   DAEMON_PROTOCOL_VERSION,
   BROWSER_PROTOCOL_VERSION,
 } from './constants.js';
+export { DEFAULT_EDITOR, editorArgs, editorCommand as editorCommandSchema, editorWords, PATH_PLACEHOLDER } from './editor.js';
 export { ProtocolError } from './errors.js';
 export {
   decodeStreamData,

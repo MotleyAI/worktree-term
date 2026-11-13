@@ -133,6 +133,16 @@ export const pathExists = async (path: string): Promise<boolean> => {
   }
 };
 
+/** Whether `path` is a directory, following symbolic links. */
+export const isDirectory = async (path: string): Promise<boolean> => {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch (error) {
+    if (hasCode(error, 'ENOENT') || hasCode(error, 'ENOTDIR')) return false;
+    throw error;
+  }
+};
+
 /** Creates `path` and any missing parents owner-only, leaving existing directories as they are. */
 export const makePrivateDirs = async (path: string): Promise<void> => {
   await mkdir(path, { recursive: true, mode: 0o700 });

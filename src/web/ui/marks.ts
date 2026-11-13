@@ -32,6 +32,10 @@ export const aggregate = (terminals: readonly Terminal[], level: MarkLevel): Agg
   return { mark: MARK_ORDER.find((m) => counts[m] !== undefined) ?? null, counts };
 };
 
+/** A worktree row's ring title, `open: <N>` counting all its terminals; null when it has none or shows a mark. */
+export const ringTitle = (terminals: readonly Terminal[]): string | null =>
+  terminals.length === 0 || aggregate(terminals, 'group').mark !== null ? null : `open: ${String(terminals.length)}`;
+
 /** One line `<mark>: <count>` per mark present, in rank order. */
 export const markTitle = (counts: Aggregate['counts']): string =>
   MARK_ORDER.flatMap((m) => (counts[m] === undefined ? [] : [`${m}: ${String(counts[m])}`])).join('\n');

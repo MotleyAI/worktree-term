@@ -43,6 +43,8 @@ export class HubStore {
   readonly notice = signal<string | null>(null);
   /** The presets of the current session; null until the hub sends them. */
   readonly presets = signal<readonly Preset[] | null>(null);
+  /** The editor command of the current session; null until the hub sends it. */
+  readonly editor = signal<string | null>(null);
   /** Per host, repos the hub no longer lists that the page keeps while they have running terminals. */
   readonly kept = signal<ReadonlyMap<number, readonly string[]>>(new Map());
   /** The layouts each repo's daemon last reported, by `repoKey` and worktree. */
@@ -54,9 +56,14 @@ export class HubStore {
     this.presets.value = presets;
   }
 
-  /** The session with the hub closed: its presets no longer hold. */
+  setEditor(command: string): void {
+    this.editor.value = command;
+  }
+
+  /** The session with the hub closed: its presets and editor command no longer hold. */
   sessionClosed(): void {
     this.presets.value = null;
+    this.editor.value = null;
   }
 
   repo(host: number, repo: string): RepoState | null {

@@ -242,14 +242,15 @@ describe('session handshake', () => {
     expect(hosts.hosts.map((h) => h.idx)).toEqual([0]);
   });
 
-  it('sends presets and then hosts after the browser’s hello', async () => {
+  it('sends presets, the editor command and then hosts after the browser’s hello', async () => {
     const client = await fx.host.open(['wtd', `wtd.token.${token}`]);
     await client.waitFor('hello');
     await client.expectNone('presets', () => true, 300);
+    expect(client.messages.some((m) => m.t === 'editor')).toBe(false);
     const from = client.mark();
     client.sendHello();
     await client.waitFor('hosts', () => true, { from });
-    expect(client.messages.slice(from, from + 2).map((m) => m.t)).toEqual(['presets', 'hosts']);
+    expect(client.messages.slice(from, from + 3).map((m) => m.t)).toEqual(['presets', 'editor', 'hosts']);
   });
 
   it('sends the default presets and no repos without a configuration file', async () => {

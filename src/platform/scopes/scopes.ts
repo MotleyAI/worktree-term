@@ -215,6 +215,7 @@ const randomSuffix = (): string => randomBytes(4).toString('hex');
 
 export const daemonUnit = (stateDir: string): string => `${unitPrefix(stateDir)}daemon-${randomSuffix()}.scope`;
 export const hubUnit = (stateDir: string): string => `${unitPrefix(stateDir)}hub-${randomSuffix()}.scope`;
+export const editorUnit = (stateDir: string): string => `${unitPrefix(stateDir)}editor-${randomSuffix()}.scope`;
 export const terminalUnit = (stateDir: string, instance: string, termId: number): string =>
   `${unitPrefix(stateDir)}term-${instance}-${String(termId)}.scope`;
 

@@ -13,6 +13,7 @@ import {
   fx,
   installedBox,
   nodeRemote,
+  restartHub,
   useHubRouterHost,
   watching,
 } from '../support/hub-router.js';
@@ -24,6 +25,9 @@ const SHELL = { name: 'shell', command: null };
 const CLAUDE = { name: 'claude', command: 'claude' };
 /** The presets of a configuration without `presets`. */
 const DEFAULT_PRESETS = [SHELL, CLAUDE, { name: 'codex', command: 'codex' }];
+
+/** The commands of every `editor` message received so far. */
+const editorsOf = (client: HubClient): string[] => client.messages.flatMap((m) => (m.t === 'editor' ? [m.command] : []));
 
 /** The preset lists of every `presets` message received so far. */
 const presetsOf = (client: HubClient): HubMessageOf<'presets'>['presets'][] =>
@@ -459,5 +463,162 @@ describe('preset memory limits', () => {
       () => readFileSync(fx.host.logPath, 'utf8').includes('memory limits ignored: terminal scopes are off'),
       'the daemon to ignore the limits it was given',
     );
+  });
+});
+
+describe('editor command snapshots', () => {
+  it('sends kate without an editor in config.json', async () => {
+    expect(editorsOf(await fx.host.session())).toEqual(['kate']);
+  });
+
+  it('sends kate without a config.json', async () => {
+    rmSync(fx.host.configPath);
+    expect(editorsOf(await fx.host.session())).toEqual(['kate']);
+  });
+
+  it('sends the configured editor command as written', async () => {
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], editor: 'code --new-window {path}' });
+    expect(editorsOf(await fx.host.session())).toEqual(['code --new-window {path}']);
+  });
+
+  it('gives a new session a hand-edited command, leaving an open session unchanged', async () => {
+    const open = await fx.host.session();
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], editor: 'subl {path}' });
+    const fresh = await fx.host.session();
+    expect(editorsOf(fresh)).toEqual(['subl {path}']);
+    await open.expectNone('editor', () => true, 300);
+    expect(editorsOf(open)).toEqual(['kate']);
+  });
+
+  it('gives a new session an internal error and the last valid command after an invalid edit', async () => {
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], editor: 'subl {path}' });
+    expect(editorsOf(await fx.host.session())).toEqual(['subl {path}']);
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], editor: 'code "{path}' });
+    const client = await fx.host.open(['wtd', `wtd.token.${fx.host.token()}`]);
+    await client.handshake();
+    const error = await client.waitFor('error');
+    expect(error).toMatchObject({ req: null, host: null, code: 'internal' });
+    expect(error.message).toContain('editor');
+    expect(editorsOf(client)).toEqual(['subl {path}']);
+  });
+});
+
+describe('editing the editor command', () => {
+  it('sets the command in config.json, answers done, then sends it to every open session', async () => {
+    const a = await fx.host.session();
+    const b = await fx.host.session();
+    const [fromA, fromB] = [a.mark(), b.mark()];
+    expect(await a.hubRequest({ t: 'setEditor', command: 'code {path}' })).toEqual({ from: 'hub', m: { t: 'done', req: 1 } });
+    for (const [client, from] of [
+      [a, fromA],
+      [b, fromB],
+    ] as const) {
+      expect((await client.waitFor('editor', () => true, { from })).command).toBe('code {path}');
+    }
+    const doneAt = a.messages.findIndex((m, i) => i >= fromA && m.t === 'done');
+    const editorAt = a.messages.findIndex((m, i) => i >= fromA && m.t === 'editor');
+    expect(doneAt).toBeLessThan(editorAt);
+    expect(configFile()).toEqual({ port: fx.host.port, repos: [fx.repo], editor: 'code {path}' });
+  });
+
+  it('removes the key on reset, keeping the rest as written, and sends kate to every open session', async () => {
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], presets: [SHELL], editor: 'code {path}' });
+    const a = await fx.host.session();
+    const b = await fx.host.session();
+    const fromB = b.mark();
+    expect((await a.hubRequest({ t: 'setEditor', command: null })).m).toEqual({ t: 'done', req: 1 });
+    expect((await b.waitFor('editor', () => true, { from: fromB })).command).toBe('kate');
+    expect(configFile()).toEqual({ port: fx.host.port, repos: [fx.repo], presets: [SHELL] });
+  });
+
+  it('answers done without sending editor or touching the file on a reset without an override', async () => {
+    const before = readFileSync(fx.host.configPath, 'utf8');
+    const client = await fx.host.session();
+    expect((await client.hubRequest({ t: 'setEditor', command: null })).m).toEqual({ t: 'done', req: 1 });
+    await client.expectNone('editor', () => true, 300);
+    expect(readFileSync(fx.host.configPath, 'utf8')).toBe(before);
+  });
+
+  it('answers done without sending editor or touching the file for the command it holds', async () => {
+    fx.host.writeConfig({ port: fx.host.port, repos: [fx.repo], editor: 'code {path}' });
+    const before = readFileSync(fx.host.configPath, 'utf8');
+    const client = await fx.host.session();
+    expect((await client.hubRequest({ t: 'setEditor', command: 'code {path}' })).m).toEqual({ t: 'done', req: 1 });
+    await client.expectNone('editor', () => true, 300);
+    expect(readFileSync(fx.host.configPath, 'utf8')).toBe(before);
+  });
+
+  it('creates config.json owner-only to record the command when there was none', async () => {
+    rmSync(fx.host.configPath);
+    const client = await fx.host.session();
+    expect((await client.hubRequest({ t: 'setEditor', command: 'subl {path}' })).m).toEqual({ t: 'done', req: 1 });
+    expect(configFile()).toEqual({ editor: 'subl {path}' });
+    expect(statSync(fx.host.configPath).mode & 0o777).toBe(0o600);
+  });
+
+  it('keeps the command across a hub restart', async () => {
+    const client = await fx.host.session();
+    expect((await client.hubRequest({ t: 'setEditor', command: 'subl {path}' })).m).toEqual({ t: 'done', req: 1 });
+    await restartHub({});
+    expect(editorsOf(await fx.host.session())).toEqual(['subl {path}']);
+  });
+
+  it.each([
+    ['a command', 'kate'],
+    ['a reset', null],
+  ])('refuses %s for an invalid config.json with internal, leaving it unchanged', async (_name, command) => {
+    const client = await fx.host.session();
+    writeFileSync(fx.host.configPath, JSON.stringify({ port: fx.host.port, editor: 'subl {path}', theme: 'dark' }));
+    const before = readFileSync(fx.host.configPath, 'utf8');
+    const reply = await client.hubRequest({ t: 'setEditor', command });
+    expect(reply).toMatchObject({ from: 'hub', m: { t: 'error', req: 1, host: null, code: 'internal' } });
+    expect(reply.m.t === 'error' ? reply.m.message : '').toContain('theme');
+    expect(readFileSync(fx.host.configPath, 'utf8')).toBe(before);
+    await client.expectNone('editor', () => true, 300);
+  });
+
+  it('sends no editor after a repo or preset edit', async () => {
+    const added = makeRepo(join(fx.host.dir, 'added'));
+    const client = await fx.host.session();
+    await connected(client);
+    const from = client.mark();
+    expect((await client.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toEqual({ t: 'done', req: 1 });
+    expect((await client.hubRequest({ t: 'removePreset', name: 'codex' })).m).toEqual({ t: 'done', req: 2 });
+    await client.waitFor('presets', () => true, { from });
+    await client.expectNone('editor', () => true, 300);
+  });
+
+  it('rejects a setEditor carrying an invalid command as a bad message, leaving config.json unchanged', async () => {
+    const before = readFileSync(fx.host.configPath, 'utf8');
+    const client = await fx.host.session();
+    client.sendJson({ t: 'setEditor', req: 1, command: 'code "{path}' });
+    expect(await client.waitFor('error')).toMatchObject({ code: 'bad-message' });
+    expect(readFileSync(fx.host.configPath, 'utf8')).toBe(before);
+  });
+});
+
+describe('edits while a session awaits the browser’s hello', () => {
+  it('sends the session every edit made after its snapshot was read, after the snapshot’s values', async () => {
+    fx.host.presets = [SHELL];
+    fx.host.writeRepos([fx.repo]);
+    const added = makeRepo(join(fx.host.dir, 'added'));
+    const HTOP = { name: 'htop', command: 'htop' };
+    const opening = await fx.host.open(['wtd', `wtd.token.${fx.host.token()}`]);
+    await opening.waitFor('hello');
+    await sleep(300); // lets the hub read the opening session's snapshot
+    const editing = await fx.host.session();
+    await connected(editing);
+    expect((await editing.hubRequest({ t: 'setEditor', command: 'code {path}' })).m).toMatchObject({ t: 'done' });
+    expect((await editing.hubRequest({ t: 'addPreset', preset: HTOP })).m).toMatchObject({ t: 'done' });
+    expect((await editing.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toMatchObject({ t: 'done' });
+    opening.sendHello();
+    await opening.waitFor('editor', (m) => m.command === 'code {path}');
+    // The snapshot predates the edits, so they reached the session as broadcasts.
+    expect(editorsOf(opening)[0]).toBe('kate');
+    await opening.waitFor('presets', (m) => m.presets.length === 2);
+    await opening.waitHost(0, (h) => h.repos.includes(added));
+    expect(editorsOf(opening).at(-1)).toBe('code {path}');
+    expect(presetsOf(opening).at(-1)).toEqual([SHELL, HTOP]);
+    expect(opening.hosts()[0]?.repos).toEqual([fx.repo, added]);
   });
 });

@@ -265,6 +265,18 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'error', req: 1, code: 'hub-outdated', message: 'x' },
   { t: 'error', req: 1, code: 'hub-failed', message: 'x' },
   { t: 'error', req: 1, host: 1, code: 'hub-gone', message: 'x' },
+  { t: 'error', req: 1, code: 'editor-missing', message: 'x' },
+  { t: 'error', req: 1, code: 'editor-failed', message: 'x' },
+  { t: 'openEditor', req: 1, worktree: 'repo/a' },
+  { t: 'openEditor', req: 1, host: 0, worktree: WT },
+  { t: 'setEditor', req: 1 },
+  { t: 'setEditor', req: 1, command: '' },
+  { t: 'editor', command: null },
+  { t: 'editor', command: '' },
+  { t: 'editor', command: '   ' },
+  { t: 'editor', command: 'code "{path}' },
+  { t: 'editor', command: 'code \\' },
+  { t: 'editor', command: 'e'.repeat(4097) },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -372,8 +384,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 11 and browser protocol 14', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 11, browser: 14 });
+  it('is blessed for daemon protocol 11 and browser protocol 15', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 11, browser: 15 });
   });
 
   it('records every sample as valid in its own direction', () => {

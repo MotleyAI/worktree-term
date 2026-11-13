@@ -99,8 +99,9 @@ const tabBarOrder = (page: Page): Promise<TabBarOrder> =>
 const splitsAtRightEnd = async (page: Page): Promise<boolean> => {
   const bar = await boxOf(page.locator('.term-tabs'));
   const down = await boxOf(page.locator(byTestId(TID.splitDown)));
-  const gap = bar.x + bar.width - (down.x + down.width);
-  return gap >= 0 && gap <= 16;
+  const editor = await boxOf(page.locator(byTestId(TID.openEditor)));
+  const gap = bar.x + bar.width - (editor.x + editor.width);
+  return gap >= 0 && gap <= 16 && down.x + down.width <= editor.x;
 };
 
 const CONTROLS = [byTestId(TID.newTab), byTestId(TID.splitRight), byTestId(TID.splitDown)];

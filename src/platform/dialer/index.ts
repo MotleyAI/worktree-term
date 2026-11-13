@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { connect, type Socket } from 'node:net';
-import { openLog, pathExists, preparePrivateDirs, sshControlPath, UNIT_NAME, type HostPaths } from '../files/index.js';
+import { isDirectory, openLog, pathExists, preparePrivateDirs, sshControlPath, UNIT_NAME, type HostPaths } from '../files/index.js';
 
 const RETRY_MS = 50;
 const START_WAIT_MS = 5000;
@@ -24,24 +24,58 @@ const tryConnect = (path: string): Promise<Socket> =>
     });
   });
 
+/** Why a detached program did not start. */
+export type SpawnFailure = 'missing-program' | 'missing-directory' | 'failed';
+
+/** A detached program that did not start; `cause` holds the spawn error, if any. */
+export class SpawnError extends Error {
+  override readonly name = 'SpawnError';
+  constructor(
+    readonly failure: SpawnFailure,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
+export interface SpawnOptions {
+  /** Working directory; must be an existing directory. */
+  cwd?: string;
+}
+
+const missingDirectory = (cwd: string, options?: ErrorOptions): SpawnError =>
+  new SpawnError('missing-directory', `not a directory: ${cwd}`, options);
+
+/** The SpawnError for a failed spawn of `file`, telling a vanished working directory from a missing program. */
+const spawnFailure = async (file: string, cwd: string | undefined, error: Error): Promise<SpawnError> => {
+  if (!hasCode(error, 'ENOENT')) return new SpawnError('failed', `cannot start ${file}: ${error.message}`, { cause: error });
+  if (cwd !== undefined && !(await isDirectory(cwd))) return missingDirectory(cwd, { cause: error });
+  return new SpawnError('missing-program', `cannot find ${file}`, { cause: error });
+};
+
 /**
  * Starts `command` in its own session with stdin from /dev/null and its output appended to `log`
- * (ignored when null); resolves once it has started, rejects naming a program that cannot start.
+ * (ignored when null); resolves to its pid once it has started, rejects with a SpawnError otherwise.
  */
-export const spawnDetached = async (command: readonly string[], log: string | null): Promise<void> => {
+export const spawnDetached = async (command: readonly string[], log: string | null, options: SpawnOptions = {}): Promise<number> => {
   const [file, ...args] = command;
   if (file === undefined) throw new Error('empty command');
+  const { cwd } = options;
+  if (cwd !== undefined && !(await isDirectory(cwd))) throw missingDirectory(cwd);
   const handle = log === null ? null : await openLog(log);
   try {
     const output = handle === null ? 'ignore' : handle.fd;
-    const child = spawn(file, args, { detached: true, stdio: ['ignore', output, output] });
-    await new Promise<void>((resolve, reject) => {
-      child.once('spawn', resolve);
-      child.once('error', (error) => {
-        reject(new Error(`cannot start ${file}: ${error.message}`, { cause: error }));
+    const child = spawn(file, args, { detached: true, stdio: ['ignore', output, output], cwd });
+    const started = await new Promise<number | Error>((resolve) => {
+      child.once('spawn', () => {
+        resolve(child.pid ?? new Error('no pid'));
       });
+      child.once('error', resolve);
     });
+    if (started instanceof Error) throw await spawnFailure(file, cwd, started);
     child.unref();
+    return started;
   } finally {
     await handle?.close();
   }

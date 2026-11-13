@@ -73,7 +73,7 @@ button {
     color 100ms ease;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--hover);
 }
 
@@ -487,9 +487,50 @@ input:focus-visible,
 }
 
 .new-tab:disabled,
-.tab-controls button:disabled {
+.tab-controls button:disabled,
+.tab-controls button[aria-disabled='true'] {
   color: var(--muted);
   cursor: default;
+}
+
+.editor-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.editor-form {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 16px));
+  padding: 10px;
+  background: var(--panel-raised);
+  border: 1px solid #3a414c;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+}
+
+.editor-form .hint {
+  color: var(--muted);
+}
+
+.editor-form .error {
+  color: #f38ba8;
+}
+
+.editor-form .buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.editor-form .buttons button {
+  border-color: var(--border);
 }
 
 .pane {
@@ -703,6 +744,17 @@ dialog.add-repo-dialog {
   width: 8px;
   height: 8px;
   margin: 0 4px;
+  border-radius: 50%;
+}
+
+.ring {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  margin: 0 4px;
+  border: 1px solid var(--muted);
   border-radius: 50%;
 }
 

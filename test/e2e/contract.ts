@@ -90,6 +90,26 @@ export const TID = {
   splitRight: 'split-right',
   /** Tab-bar button: split the focused pane down; `title` names Ctrl+Shift+E; `disabled` when not possible. */
   splitDown: 'split-down',
+  /** Tab-bar button, the bar's last control, after `splitDown`; `title` = "Open in editor (right-click to change the command)" while enabled, else the reason it is `disabled`; a click sends `openEditor` for the selected worktree; a right-click on it, enabled or disabled, opens `editorForm` except on a remote page. */
+  openEditor: 'open-editor',
+  /** Dialog after a failed `openEditor`; text says what failed, markup shown as text. */
+  editorDialog: 'editor-dialog',
+  /** Closes `editorDialog`. */
+  editorDialogClose: 'editor-dialog-close',
+  /** Form beside `openEditor` editing the editor command; text holds its hint; Escape or a press outside closes it without sending anything. */
+  editorForm: 'editor-form',
+  /** Text input of `editorForm`, opened holding the shown command, focused and selected; Enter saves. */
+  editorCommand: 'editor-command',
+  /** Saves `editorForm`: sends `setEditor` with the trimmed command when it is valid and changed. */
+  editorSave: 'editor-save',
+  /** Sends `setEditor` with a null command. */
+  editorReset: 'editor-reset',
+  /** Closes `editorForm` without sending anything. */
+  editorCancel: 'editor-cancel',
+  /** In `editorForm` after a refused command or a failed `setEditor`; text says why. */
+  editorError: 'editor-error',
+  /** Hollow ring in a worktree entry with terminals and no mark, in the mark's place; `title` = `open: <N>`; absent elsewhere. */
+  ring: 'ring',
   /** Pane frame of the shown tab, placed over its terminal; `data-term`, `data-focused="true"` on the focused pane. */
   pane: 'pane',
   /** Close button in the header of a pane of a split (a lone pane has no header); closes its terminal, confirming first when it is running. */

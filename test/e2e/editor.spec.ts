@@ -163,11 +163,16 @@ test.describe('open in editor', () => {
     expect(await dialogText(page)).toContain(`Could not find ${NO_EDITOR}.`);
   });
 
-  test('is disabled, saying why, while no worktree is selected', async ({ hub, page }) => {
+  test('is disabled, saying why, while no worktree is selected, and a click sends nothing', async ({ hub, page, wire }) => {
     configure(hub, []);
     await openUi(hub, page);
     await expect(control(page)).toBeDisabled();
     await expect(control(page)).toHaveAttribute('title', /no worktree is selected/i);
+    const from = wire.markSent();
+    await control(page).click({ force: true });
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(editorRequests(wire, from)).toEqual([]);
+    await expect(dialog(page)).toHaveCount(0);
   });
 
   test('is disabled for a prunable worktree and for a gone worktree with a live terminal', async ({ hub, page }) => {
@@ -438,6 +443,37 @@ test.describe('editing the editor command', () => {
     await expect(control(page)).toBeEnabled();
     await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(form(page)).toHaveCount(0);
+  });
+
+  test('the context-menu key opens the form from the control disabled for want of a worktree', async ({ hub, page }) => {
+    configure(hub, []);
+    await openUi(hub, page);
+    await expect(control(page)).toBeDisabled();
+    await expect(async () => {
+      await control(page).focus();
+      await page.keyboard.press('Shift+F10');
+      await expect(form(page)).toBeVisible({ timeout: 500 });
+    }).toPass();
+    await expect(field(page)).toBeFocused();
+  });
+
+  test('a save answered after its form closed leaves the form opened since alone', async ({ hub, page }) => {
+    const route = await routeEditor(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    await openForm(page);
+    await field(page).fill('code {path}');
+    await field(page).press('Enter');
+    const req = await heldReq(route);
+    await field(page).press('Escape');
+    await expect(form(page)).toHaveCount(0);
+    await openForm(page);
+    await field(page).fill('subl {path}');
+    route.answer({ t: 'done', req });
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(form(page)).toBeVisible();
+    await expect(field(page)).toHaveValue('subl {path}');
   });
 
   test('fits a viewport narrower than its width', async ({ hub, page }) => {

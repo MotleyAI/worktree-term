@@ -727,7 +727,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
     if (command === null) setEditing(false);
   }, [command]);
   const open = (): void => {
-    if (worktree === null) return;
+    if (worktree === null || blocker !== null) return;
     const sent = command;
     setPending(true);
     client
@@ -754,7 +754,8 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
         data-testid="open-editor"
         aria-label="Open selected worktree in editor"
         title={blocker ?? EDITOR_TITLE}
-        disabled={blocker !== null}
+        // Not `disabled`: it stays focusable, so the context-menu key opens the form in every state.
+        aria-disabled={blocker !== null}
         onClick={open}
       >
         ✎
@@ -820,6 +821,7 @@ const EditorForm = ({ client, shown, onClose }: { client: HubClient; shown: stri
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const touched = useRef(false);
+  const mounted = useRef(true);
   useLayoutEffect(() => {
     // An untouched field follows the command another page saved.
     if (field.current !== null && !touched.current) field.current.value = shown;
@@ -836,19 +838,26 @@ const EditorForm = ({ client, shown, onClose }: { client: HubClient; shown: stri
     };
     document.addEventListener('pointerdown', outside, true);
     return () => {
+      mounted.current = false;
       document.removeEventListener('pointerdown', outside, true);
     };
   }, []);
   const send = (command: string | null): void => {
     setSending(true);
     setError(null);
+    // A reply after this form closed belongs to no form shown now.
     client
       .setEditor(command)
-      .then(onClose, (error_: unknown) => {
-        setError(messageOf(error_));
-      })
+      .then(
+        () => {
+          if (mounted.current) onClose();
+        },
+        (error_: unknown) => {
+          if (mounted.current) setError(messageOf(error_));
+        },
+      )
       .finally(() => {
-        setSending(false);
+        if (mounted.current) setSending(false);
       });
   };
   return (

@@ -626,11 +626,15 @@ Once it holds the start lock and before it serves its socket, the daemon SHALL f
 - **THEN** it serves from the cgroup it was started in
 
 ### Requirement: Terminal scopes
-At start the daemon SHALL write one line to its standard error: `terminal scopes: on` when it has a lasting user manager, else `terminal scopes: off (<reason>)`. While terminal scopes are on, the daemon SHALL start each terminal's process in its terminal scope with the `memory` limits of its `createTerm`, so that every process the terminal starts, detached ones included, belongs to that scope and to no other terminal's; and at start it SHALL reset every failed unit whose name begins `wtd-<h>-term-`. While terminal scopes are off, terminals SHALL start as without scopes and their limits SHALL be ignored, the first `createTerm` with a limit writing `memory limits ignored: terminal scopes are off` to standard error once per daemon. In either case, where `/proc` exists, the shell and every process it starts SHALL have an `oom_score_adj` of at least 500, set before the shell runs.
+At start the daemon SHALL write one line to its standard error: `terminal scopes: on` when it has a lasting user manager, else `terminal scopes: off (<reason>)`. While terminal scopes are on, the daemon SHALL start each terminal's process in its terminal scope with the `memory` limits of its `createTerm`, so that every process the terminal starts, detached ones included, belongs to that scope and to no other terminal's; and at start it SHALL cap the terminal slice (see `platform`) at two thirds of physical memory, rounded down to a whole MiB, reporting a failure to cap it on its standard error, and reset every failed unit whose name begins `wtd-<h>-term-`. While terminal scopes are off, terminals SHALL start as without scopes and their limits SHALL be ignored, the first `createTerm` with a limit writing `memory limits ignored: terminal scopes are off` to standard error once per daemon. In either case, where `/proc` exists, the shell and every process it starts SHALL have an `oom_score_adj` of at least 500, set before the shell runs.
 
 #### Scenario: Terminal processes in the terminal's scope
 - **WHEN** terminal scopes are on and a terminal's shell runs `sleep 1000 &`, `sh -c 'sleep 1001' &` and `setsid sleep 1002 &`
 - **THEN** the shell and the three `sleep` processes have that terminal's `wtd-<h>-term-<instance>-<termId>.scope` cgroup, which is neither the daemon's nor another terminal's
+
+#### Scenario: Terminals capped together
+- **WHEN** terminal scopes are on and a terminal is created
+- **THEN** its scope's parent, `app-wtd-terminals.slice`, has a `memory.max` of two thirds of physical memory rounded down to a whole MiB, and the daemon's cgroup is outside that slice
 
 #### Scenario: Limits applied
 - **WHEN** terminal scopes are on and a terminal is created with `memory` `{max: "64M", swapMax: "0"}`

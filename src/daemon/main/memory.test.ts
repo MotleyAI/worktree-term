@@ -312,7 +312,7 @@ describe('closed terminals', () => {
 
 describe('terminal scope figures', () => {
   const UNIT = 'wtd-01234567-term-inst-1.scope';
-  const SCOPE_PATH = `/user.slice/user-1.slice/user@1.service/app.slice/app-wtd.slice/${UNIT}`;
+  const SCOPE_PATH = `/user.slice/user-1.slice/user@1.service/app.slice/app-wtd.slice/app-wtd-terminals.slice/${UNIT}`;
   const FIGURES: ProcessCgroup = {
     path: SCOPE_PATH,
     current: 1000,

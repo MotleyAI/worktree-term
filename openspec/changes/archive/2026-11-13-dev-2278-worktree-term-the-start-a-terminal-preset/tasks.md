@@ -12,4 +12,4 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Run `pnpm test` (all default tiers), `pnpm lint`, `tsc -b`, `la-arch-check` and the LikeC4 validation; all green.
+- [x] 3.1 Run `pnpm test` (all default tiers), `pnpm lint`, `tsc -b`, `la-arch-check` and the LikeC4 validation; all green.

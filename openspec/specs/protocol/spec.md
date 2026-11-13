@@ -6,7 +6,7 @@ The wire contract between the browser UI, the hub and every daemon: which messag
 ## Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 11, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 14, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 11, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 15, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -129,8 +129,8 @@ A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Browser-link message catalogue
-Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `openHub{req, host}`; `installHub{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63.
-Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable and `code` a hub error code; `reposDiscovered{req, host, repos}`; `hubLogin{req, login}` with `login` a login URL as in a host entry; `hubOpened{req, url}`.
+Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `openHub{req, host}`; `installHub{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63; `openEditor{req, worktree}` where `worktree` is a path; `setEditor{req, command}` where `command` is an editor command or null.
+Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `editor{command}` where `command` is an editor command; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable and `code` a hub error code; `reposDiscovered{req, host, repos}`; `hubLogin{req, login}` with `login` a login URL as in a host entry; `hubOpened{req, url}`.
 A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instance, login, repos}` with `status` one of `connecting`, `connected`, `reconnecting`, `down`, `outdated`, `needs-login`, and `reason`, `daemonVersion`, `instance` and `login` nullable; `instance` SHALL be the `hello.instance` of the daemon the host is `connected` to or found `outdated`, and null in every other status. `login` SHALL be a string of at most 1024 characters starting with `https://login.tailscale.com/`, non-null exactly when `status` is `needs-login`; decoding SHALL reject any other `login`. A preset SHALL be `{name, command, memory}` with `command` nullable and `memory` optional memory limits. A `hubOpened` `url` SHALL be `http://127.0.0.1:<port>/#` with `<port>` from 1024 to 65535 without leading zeros, followed by a remote page fragment; decoding SHALL reject any other `url`.
 
 #### Scenario: Envelope cannot carry a handshake message
@@ -201,6 +201,18 @@ A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instan
 - **WHEN** a `presets` message whose preset has no `memory` is decoded
 - **THEN** decoding succeeds and the preset has no `memory`
 
+#### Scenario: Editor messages only in their direction
+- **WHEN** an `editor` is decoded as a browser-to-hub message, or an `openEditor` or `setEditor` as a hub-to-browser or client-to-daemon message
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Editor reset carries null
+- **WHEN** a `setEditor` with `command` null is decoded
+- **THEN** decoding succeeds and yields `command` null
+
+#### Scenario: Open request needs an absolute path
+- **WHEN** an `openEditor` whose `worktree` is "repo/a" is decoded
+- **THEN** decoding fails with a protocol error
+
 ### Requirement: Request correlation
 Every message that asks a peer to act and can fail SHALL carry `req`, an integer from 1 to 2^32−1, and its outcome SHALL be correlated by that `req`: `termCreated` for `createTerm`, `reposDiscovered` for `discoverRepos`, `worktreeAtRisk` or `done` for `removeWorktree`, `done` for every other request, `error` for any failed request. A `termCreated` or `error` with `req` null SHALL correlate with no request. `resize`, `ack`, `setVisible`, input frames, `hello` and `shutdown` SHALL carry no `req`.
 
@@ -221,7 +233,7 @@ Every message that asks a peer to act and can fail SHALL carry `req`, an integer
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Value limits
-Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; discovery roots are absolute paths, `~`, or `~/` followed by at least one character, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names and tab ids are 1–64 characters; preset names are 1–64 characters with at least one non-whitespace character; `branch` and `command` are null or at most 4096 characters, and a preset's `command` is null or 1–4096 characters; `signal` is null or at most 32 characters; a memory size is a positive integer of at most 16 digits without a leading zero, optionally followed by `K`, `M`, `G` or `T`, or an integer from 1 to 100 followed by `%`, and a `swapMax` may also be `0`; `version` is 1–64 characters; tokens and one-time codes are exactly 64 lowercase hex digits; error messages and host reasons are at most 1024 characters; daemon error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `not-a-repo`, `host-unavailable`, `internal`; hub error codes, used only by the hub-to-browser `error`, are the daemon error codes and `hub-outdated` and `hub-failed`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
+Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; discovery roots are absolute paths, `~`, or `~/` followed by at least one character, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names and tab ids are 1–64 characters; preset names are 1–64 characters with at least one non-whitespace character; `branch` and `command` are null or at most 4096 characters, and a preset's `command` is null or 1–4096 characters; an editor command is 1–4096 characters forming a valid editor command; `signal` is null or at most 32 characters; a memory size is a positive integer of at most 16 digits without a leading zero, optionally followed by `K`, `M`, `G` or `T`, or an integer from 1 to 100 followed by `%`, and a `swapMax` may also be `0`; `version` is 1–64 characters; tokens and one-time codes are exactly 64 lowercase hex digits; error messages and host reasons are at most 1024 characters; daemon error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `not-a-repo`, `host-unavailable`, `internal`; hub error codes, used only by the hub-to-browser `error`, are the daemon error codes and `hub-outdated`, `hub-failed`, `editor-missing` and `editor-failed`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
 
 #### Scenario: Relative path rejected
 - **WHEN** a `watchRepo` whose `repo` is "repo/a" is decoded
@@ -256,7 +268,7 @@ Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters
 - **THEN** decoding succeeds
 
 #### Scenario: Hub error codes only from the hub
-- **WHEN** a hub `error` whose `code` is "hub-outdated" or "hub-failed" is decoded, and a daemon `error` with either code is decoded
+- **WHEN** a hub `error` whose `code` is "hub-outdated", "hub-failed", "editor-missing" or "editor-failed" is decoded, and a daemon `error` with any of those codes is decoded
 - **THEN** the hub error decodes, and the daemon error fails with a protocol error
 
 #### Scenario: Malformed token rejected
@@ -281,6 +293,10 @@ Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters
 
 #### Scenario: Malformed memory sizes rejected
 - **WHEN** memory limits whose `max` is "0", "1.5G", "64m", "64MB", "101%", "0%" or "064M" are decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Invalid editor commands rejected
+- **WHEN** an `editor` message whose `command` is "", "   ", `code "{path}`, `code \` or 4097 characters long is decoded
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Layout validity
@@ -361,7 +377,7 @@ On a stream, an output or snapshot payload SHALL be a 4-byte terminal id, an 8-b
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Shared constants
-The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 10; `BROWSER_PROTOCOL_VERSION` = 13; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
+The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 11; `BROWSER_PROTOCOL_VERSION` = 15; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
 
 #### Scenario: Constants hold their values
 - **WHEN** the exported constants are read
@@ -407,3 +423,22 @@ The protocol SHALL define two page fragments, each the text after `#` in a page 
 #### Scenario: Malformed fragments rejected
 - **WHEN** a home fragment `hub=a b`, `hub=box&hub=gpu` or `code=x`, or a remote fragment lacking `home`, with `home=0080`, with `hubs=gpu` while `host=box`, or with an extra parameter `token`, is decoded
 - **THEN** decoding fails with a protocol error
+
+### Requirement: Editor command syntax
+An editor command SHALL be split into words as follows: unquoted whitespace separates words; text between single quotes is taken literally; between double quotes, `\"` and `\\` stand for `"` and `\` and every other character is taken literally; outside quotes, a backslash takes the next character literally; quoted and unquoted text that touch form one word, and `''` or `""` alone forms an empty word. A command with an unclosed quote, a trailing backslash outside quotes, or no word SHALL be invalid. The arguments a command yields for a path SHALL be its words with every `{path}` in them replaced by the path, or, when no word holds `{path}`, its words followed by the path; the path SHALL never be split, quoted or expanded. The first argument SHALL name the program.
+
+#### Scenario: Quoted words
+- **WHEN** the command `my-ed --title 'a b' "c \"d\"" e\ f` yields arguments for `/w`
+- **THEN** the arguments are `my-ed`, `--title`, `a b`, `c "d"`, `e f` and `/w`
+
+#### Scenario: Placeholder inside a word
+- **WHEN** the command `code --folder-uri=file://{path} {path}` yields arguments for `/w x`
+- **THEN** the arguments are `code`, `--folder-uri=file:///w x` and `/w x`
+
+#### Scenario: Path is never expanded
+- **WHEN** the command `kate` yields arguments for `/w/$HOME/~/{path}`
+- **THEN** the arguments are `kate` and `/w/$HOME/~/{path}`
+
+#### Scenario: Invalid commands
+- **WHEN** the command is `code "{path}`, `code 'x`, `code \` or `   `
+- **THEN** it is invalid

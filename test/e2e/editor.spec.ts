@@ -25,6 +25,7 @@ import {
   watcher,
   writeHubConfig,
 } from './fixture.js';
+import { holdAddReplies } from './held-presets.js';
 import { pickerSeen, watchPicker } from './panes.js';
 import type { BrowserMessage, HubMessage, WireRecorder } from './wire.js';
 
@@ -272,6 +273,29 @@ test.describe('open in editor', () => {
     await page.keyboard.press('Escape');
     await expect(dialog(page)).toHaveCount(0);
     await expect(options.nth(0)).toBeFocused();
+  });
+
+  test('an add in the choices completing while the failure dialog is open closes its form and leaves the dialog the focus', async ({
+    hub,
+    page,
+  }) => {
+    const adds = await holdAddReplies(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    await choices.locator(byTestId(TID.presetName)).fill('added');
+    await choices.locator(byTestId(TID.presetCommand)).press('Enter');
+    await expect.poll(() => adds.held()).toBe(1);
+    await control(page).click();
+    await expect(dialog(page)).toBeFocused();
+
+    adds.release();
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), 'added']);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(dialog(page)).toBeFocused();
   });
 
   test('names the first word of the shown command as the missing program', async ({ hub, page }) => {

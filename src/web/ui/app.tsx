@@ -1149,19 +1149,23 @@ const PresetAdder = ({ view, presets, onClose }: { view: View; presets: readonly
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   /** Bumped on each close, so a submission completing later leaves the form alone. */
   const generation = useRef(0);
   useLayoutEffect(() => {
     if (open) nameInput.current?.focus();
   }, [open]);
+  /** Closes the form; `onClose` returns the focus only from the form or the page body. */
   const close = (): void => {
+    const active = document.activeElement;
+    const focusHere = active === null || active === document.body || form.current?.contains(active) === true;
     generation.current++;
     setOpen(false);
     setName('');
     setCommand('');
     setError(null);
     setSending(false);
-    onClose();
+    if (focusHere) onClose();
   };
   if (!open) {
     return (
@@ -1179,6 +1183,7 @@ const PresetAdder = ({ view, presets, onClose }: { view: View; presets: readonly
   }
   return (
     <form // NOSONAR(S6847) — handles Escape bubbling from its fields; the form itself takes no focus
+      ref={form}
       class="preset-form"
       data-testid="preset-form"
       onSubmit={(event) => {

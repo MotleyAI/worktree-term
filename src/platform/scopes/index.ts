@@ -2,6 +2,7 @@ export {
   capTerminalSlice,
   cgroupPath,
   daemonUnit,
+  editorUnit,
   enterScope,
   findUserManager,
   hostScopeRoots,

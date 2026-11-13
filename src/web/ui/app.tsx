@@ -1,12 +1,13 @@
 import type { JSX, TargetedKeyboardEvent } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { HostEntry, Preset, Terminal } from '../../protocol/index.js';
-import { repoKey, type HubClient } from '../client/index.js';
+import { repoKey, RequestError, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction, statusText } from './hosts.js';
 import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
-import { aggregate, exitNote, markTitle, worktreeTitle, type Aggregate } from './marks.js';
+import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, type EditorFailure } from './editor.js';
+import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
@@ -511,8 +512,15 @@ const WorktreeEntry = ({
       {entry.gone ? ' (gone)' : ''}
     </button>
     <Mark of={aggregate(terminals, 'group')} />
+    <Ring terminals={terminals} />
   </div>
 );
+
+/** A hollow ring where a worktree with terminals shows no mark; its title gives their number. */
+const Ring = ({ terminals }: { terminals: readonly Terminal[] }) => {
+  const title = ringTitle(terminals);
+  return title === null ? null : <span class="ring" data-testid="ring" title={title} />;
+};
 
 /** The worktree context menu; Escape or a press outside closes it. */
 const WorktreeMenuBox = ({ view, menu }: { view: View; menu: WorktreeMenu }) => {
@@ -677,7 +685,7 @@ const NewTabButton = ({ view }: { view: View }) => (
   </button>
 );
 
-const TabControls = ({ view }: { view: View }) => (
+const TabControls = ({ client, view }: { client: HubClient; view: View }) => (
   <span class="tab-controls">
     {(['right', 'down'] as const).map((dir) => (
       <button
@@ -694,8 +702,222 @@ const TabControls = ({ view }: { view: View }) => (
         {dir === 'right' ? '◫' : '⬓'}
       </button>
     ))}
+    <EditorControl client={client} view={view} />
   </span>
 );
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** "Open in editor": opens the selected local worktree; a right-click, enabled or not, edits the command. */
+const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<EditorFailure | null>(null);
+  const [editing, setEditing] = useState(false);
+  const worktree = view.worktree.value;
+  const command = client.store.editor.value;
+  const remotePage = client.remote !== null;
+  const blocker = editorBlocker({
+    remotePage,
+    worktree: view.entries.value.find((e) => e.path === worktree) ?? null,
+    remoteHost: view.host.value?.remote ?? false,
+    command,
+    pending,
+  });
+  useEffect(() => {
+    if (command === null) setEditing(false);
+  }, [command]);
+  const open = (): void => {
+    if (worktree === null || blocker !== null) return;
+    const sent = command;
+    setPending(true);
+    client
+      .openEditor(worktree)
+      .catch((error: unknown) => {
+        const code = error instanceof RequestError ? error.code : null;
+        setFailure(editorFailure(code, messageOf(error), sent));
+      })
+      .finally(() => {
+        setPending(false);
+      });
+  };
+  return (
+    <span // NOSONAR(S6848) — a pointer shortcut; the form is also reachable through the button
+      class="editor-control"
+      title={blocker ?? EDITOR_TITLE}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        if (!remotePage && command !== null) setEditing(true);
+      }}
+    >
+      <button
+        type="button"
+        data-testid="open-editor"
+        aria-label="Open selected worktree in editor"
+        title={blocker ?? EDITOR_TITLE}
+        // Not `disabled`: it stays focusable, so the context-menu key opens the form in every state.
+        aria-disabled={blocker !== null}
+        onClick={open}
+      >
+        ✎
+      </button>
+      {editing && command !== null && (
+        <EditorForm
+          client={client}
+          shown={command}
+          onClose={() => {
+            setEditing(false);
+          }}
+        />
+      )}
+      {failure !== null && (
+        <EditorDialog
+          failure={failure}
+          onClose={() => {
+            setFailure(null);
+          }}
+        />
+      )}
+    </span>
+  );
+};
+
+/** The dialog after a failed launch: the missing program, or the error's message as text. */
+const EditorDialog = ({ failure, onClose }: { failure: EditorFailure; onClose: () => void }) => {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    dialog.current?.focus();
+  }, []);
+  return (
+    <dialog
+      open
+      class="confirm-dialog"
+      data-testid="editor-dialog"
+      aria-label="Open in editor"
+      tabIndex={-1}
+      ref={dialog}
+      onKeyDown={dialogKeys(onClose, onClose)}
+    >
+      {failure.t === 'missing' ? (
+        <p>
+          Could not find <code>{failure.program}</code>. Install it, or right-click the editor button to set the command of the editor you
+          prefer.
+        </p>
+      ) : (
+        <p>Could not open the editor: {failure.message}</p>
+      )}
+      <div class="buttons">
+        <button type="button" data-testid="editor-dialog-close" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </dialog>
+  );
+};
+
+/** The editor command form beside the control; Escape, Cancel or a press outside closes it without sending. */
+const EditorForm = ({ client, shown, onClose }: { client: HubClient; shown: string; onClose: () => void }) => {
+  const box = useRef<HTMLFormElement>(null);
+  const field = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const touched = useRef(false);
+  const mounted = useRef(true);
+  useLayoutEffect(() => {
+    // An untouched field follows the command another page saved.
+    if (field.current !== null && !touched.current) field.current.value = shown;
+  }, [shown]);
+  useLayoutEffect(() => {
+    const input = field.current;
+    if (input !== null) {
+      input.value = shown;
+      input.focus();
+      input.select();
+    }
+    const outside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && box.current?.contains(event.target) !== true) onClose();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => {
+      mounted.current = false;
+      document.removeEventListener('pointerdown', outside, true);
+    };
+  }, []);
+  const send = (command: string | null): void => {
+    setSending(true);
+    setError(null);
+    // A reply after this form closed belongs to no form shown now.
+    client
+      .setEditor(command)
+      .then(
+        () => {
+          if (mounted.current) onClose();
+        },
+        (error_: unknown) => {
+          if (mounted.current) setError(messageOf(error_));
+        },
+      )
+      .finally(() => {
+        if (mounted.current) setSending(false);
+      });
+  };
+  return (
+    <form // NOSONAR(S6847) — handles Escape bubbling from its field; the form itself takes no focus
+      class="editor-form"
+      data-testid="editor-form"
+      ref={box}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const save = editorSave(field.current?.value ?? '', shown);
+        if (save.t === 'refused') setError(save.error);
+        else if (save.t === 'unchanged') onClose();
+        else send(save.command);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        onClose();
+      }}
+      onContextMenu={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <input
+        type="text"
+        data-testid="editor-command"
+        aria-label="Editor command"
+        ref={field}
+        onInput={() => {
+          touched.current = true;
+        }}
+      />
+      <div class="hint">{EDITOR_HINT}</div>
+      {error !== null && (
+        <div class="error" data-testid="editor-error">
+          {error}
+        </div>
+      )}
+      <div class="buttons">
+        <button
+          type="button"
+          data-testid="editor-reset"
+          disabled={sending}
+          onClick={() => {
+            send(null);
+          }}
+        >
+          Reset to default
+        </button>
+        <button type="button" data-testid="editor-cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="submit" data-testid="editor-save" disabled={sending}>
+          Save
+        </button>
+      </div>
+    </form>
+  );
+};
 
 /** A pane of the shown tab; only in a split does it have a header naming it, with its mark and close button. */
 const PaneFrame = ({ pane, focused, header, view }: { pane: ShownPane; focused: boolean; header: boolean; view: View }) => (
@@ -1300,7 +1522,7 @@ const Workspace = ({ client, manager, view }: AppProps) => {
             <NewTabButton view={view} />
           </div>
           <span class="spacer" />
-          <TabControls view={view} />
+          <TabControls client={client} view={view} />
         </div>
         <TerminalArea client={client} manager={manager} view={view} />
       </main>

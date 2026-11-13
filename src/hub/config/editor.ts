@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { fileIdentity, makePrivateDirs, readFileIfExists, writeFileAtomic } from '../../platform/files/index.js';
 import type { Preset } from '../../protocol/index.js';
-import { ConfigError, expandHome, MAX_PRESETS, MAX_REPOS, nextHostPort, parseConfig, type HubConfig } from './config.js';
+import { ConfigError, DEFAULT_EDITOR, expandHome, MAX_PRESETS, MAX_REPOS, nextHostPort, parseConfig, type HubConfig } from './config.js';
 
 const ATTEMPTS = 3;
 
@@ -17,6 +17,12 @@ export interface PresetEdit {
   presets: Preset[];
 }
 
+/** The outcome of an editor command edit: whether the file changed, and the editor command afterwards. */
+export interface EditorEdit {
+  changed: boolean;
+  command: string;
+}
+
 export interface EditorHooks {
   /** Runs after an attempt computed its result and before it checks the file and replaces it. */
   beforeReplace?: (attempt: number) => void | Promise<void>;
@@ -30,22 +36,25 @@ export interface PortAssignment {
   port: number;
 }
 
-/** A change to one value in the file. */
-interface FieldEdit<T> {
+/** Returned by a field edit's `change` to remove the key. */
+const REMOVE: unique symbol = Symbol('remove');
+
+/** A change to one value in the file; `R` adds REMOVE when the edit may remove the key. */
+interface FieldEdit<T, R extends T | typeof REMOVE = T> {
   /** The object holding the value, and its key there. */
   owner: (raw: JsonObject) => JsonObject;
   key: string;
   /** The current value, from the parsed configuration or the object as written. */
   current: (config: HubConfig, owner: JsonObject) => T;
-  /** The new value, null to leave the file alone; throws ConfigError to refuse the edit. */
-  change: (current: T, config: HubConfig) => T | null;
+  /** The new value, REMOVE to remove the key, null to leave the file alone; throws ConfigError to refuse the edit. */
+  change: (current: T, config: HubConfig) => R | null;
 }
 
 const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const stringsOf = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
 
-/** Edits the repos or port of one host, or the presets, in `config.json`, keeping everything else as written; one edit at a time. */
+/** Edits the repos or port of one host, the presets or the editor command in `config.json`, keeping everything else as written; one edit at a time. */
 export class ConfigEditor {
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -132,6 +141,20 @@ export class ConfigEditor {
     return { changed, port: value };
   }
 
+  /** Sets the editor command, or removes it from the file when `command` is null. */
+  async setEditor(command: string | null): Promise<EditorEdit> {
+    const { changed } = await this.edit<string | null, string | typeof REMOVE>({
+      owner: (raw) => raw,
+      key: 'editor',
+      current: (_config, owner) => (typeof owner['editor'] === 'string' ? owner['editor'] : null),
+      change: (current) => {
+        if (command === null) return current === null ? null : REMOVE;
+        return current === command ? null : command;
+      },
+    });
+    return { changed, command: command ?? DEFAULT_EDITOR };
+  }
+
   private names(host: string | null, entry: string, repo: string): boolean {
     return entry === repo || (host === null && expandHome(entry, this.home) === repo);
   }
@@ -151,13 +174,16 @@ export class ConfigEditor {
     return { changed, presets: value };
   }
 
-  private edit<T>(field: FieldEdit<T>): Promise<{ changed: boolean; value: T }> {
+  private edit<T, R extends T | typeof REMOVE = T>(field: FieldEdit<T, R>): Promise<{ changed: boolean; value: T | R }> {
     const run = this.queue.then(() => this.attempt(field, 1));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async attempt<T>(field: FieldEdit<T>, attempt: number): Promise<{ changed: boolean; value: T }> {
+  private async attempt<T, R extends T | typeof REMOVE>(
+    field: FieldEdit<T, R>,
+    attempt: number,
+  ): Promise<{ changed: boolean; value: T | R }> {
     const identity = await fileIdentity(this.path);
     const text = await readFileIfExists(this.path);
     const config = parseConfig(text, this.home);
@@ -167,7 +193,8 @@ export class ConfigEditor {
     const current = field.current(config, owner);
     const next = field.change(current, config);
     if (next === null) return { changed: false, value: current };
-    owner[field.key] = next;
+    if (next === REMOVE) Reflect.deleteProperty(owner, field.key);
+    else owner[field.key] = next;
     await this.hooks.beforeReplace?.(attempt);
     if ((await fileIdentity(this.path)) !== identity || (await readFileIfExists(this.path)) !== text) {
       if (attempt >= ATTEMPTS) throw new ConfigError(`${this.path} kept changing while being edited`);

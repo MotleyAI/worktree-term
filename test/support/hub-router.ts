@@ -132,7 +132,7 @@ export const remoteInstance = async (client: HubClient, idx: number, from = 0): 
 export const PRINT_CODE = '"$HOME/.local/bin/wtd" ui --print-code';
 
 /** Restarts the hub with `env` over the usual budgets, e.g. a shorter `WTD_HUB_OPEN_MS`. */
-export const restartHub = async (env: Record<string, string>): Promise<void> => {
+export const restartHub = async (env: Record<string, string | undefined>): Promise<void> => {
   fx.hub.kill('SIGTERM');
   await fx.hub.exited;
   fx.hub = await fx.host.startHub({ ...HUB_ENV, ...env });

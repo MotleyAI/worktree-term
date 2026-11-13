@@ -179,6 +179,10 @@ describe('wtd hub', () => {
     ],
     ['a host port of 7417 without a top-level port', { port: undefined, hosts: [{ name: 'box', ssh: 'box', port: 7417 }] }, 'port'],
     ['a host port below 1024', { hosts: [{ name: 'box', ssh: 'box', port: 80 }] }, 'port'],
+    ['an empty editor command', { editor: '' }, 'editor'],
+    ['a blank editor command', { editor: '   ' }, 'editor'],
+    ['an editor command with an unclosed quote', { editor: 'code "{path}' }, 'editor'],
+    ['an editor command of 4097 characters', { editor: 'e'.repeat(4097) }, 'editor'],
   ])('reports a configuration with %s in one line naming the file and the key', async (_name, config, key) => {
     host.writeConfig({ port: host.port, ...config });
     const hub = host.wtd(['hub']);

@@ -1,7 +1,17 @@
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { readFileIfExists } from '../../platform/files/index.js';
-import { discoveryRootSchema, memoryLimitsSchema, presetSchema, type MemoryLimits, type Preset } from '../../protocol/index.js';
+import {
+  DEFAULT_EDITOR,
+  discoveryRootSchema,
+  editorCommandSchema,
+  memoryLimitsSchema,
+  presetSchema,
+  type MemoryLimits,
+  type Preset,
+} from '../../protocol/index.js';
+
+export { DEFAULT_EDITOR } from '../../protocol/index.js';
 
 export const DEFAULT_PORT = 7417;
 
@@ -38,6 +48,8 @@ export interface HubConfig {
   hosts: RemoteHostConfig[];
   /** Memory limits of every preset's terminals, each overridden by the preset's own. */
   terminalMemory: MemoryLimits;
+  /** The command opening a worktree in an editor. */
+  editor: string;
 }
 
 /** An unusable configuration; the message is one line. */
@@ -88,6 +100,7 @@ const configSchema = z
       .refine((list) => new Set(list.map((p) => p.name)).size === list.length, 'preset names must be unique')
       .optional(),
     terminalMemory: memoryLimitsSchema.optional(),
+    editor: editorCommandSchema.optional(),
   })
   .superRefine((config, ctx) => {
     const terminalMemory = config.terminalMemory ?? {};
@@ -157,7 +170,15 @@ const expand = (path: string, home: string): string => {
 /** Parses `config.json` text (null for a missing file); throws ConfigError naming the first problem. */
 export const parseConfig = (text: string | null, home: string): HubConfig => {
   if (text === null)
-    return { port: DEFAULT_PORT, repos: [], roots: [...DEFAULT_ROOTS], presets: [...DEFAULT_PRESETS], hosts: [], terminalMemory: {} };
+    return {
+      port: DEFAULT_PORT,
+      repos: [],
+      roots: [...DEFAULT_ROOTS],
+      presets: [...DEFAULT_PRESETS],
+      hosts: [],
+      terminalMemory: {},
+      editor: DEFAULT_EDITOR,
+    };
   const result = configSchema.safeParse(parseJson(text));
   if (!result.success) {
     const [issue] = result.error.issues;
@@ -177,6 +198,7 @@ export const parseConfig = (text: string | null, home: string): HubConfig => {
       roots: h.roots ?? [...DEFAULT_ROOTS],
     })),
     terminalMemory: result.data.terminalMemory ?? {},
+    editor: result.data.editor ?? DEFAULT_EDITOR,
   };
 };
 

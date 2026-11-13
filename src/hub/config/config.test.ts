@@ -2,7 +2,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ConfigError, ConfigSource, DEFAULT_PORT, effectivePresets, loadConfig, nextHostPort, parseConfig } from './index.js';
+import {
+  ConfigError,
+  ConfigSource,
+  DEFAULT_EDITOR,
+  DEFAULT_PORT,
+  effectivePresets,
+  loadConfig,
+  nextHostPort,
+  parseConfig,
+} from './index.js';
 
 const HOME = '/home/u';
 
@@ -42,11 +51,27 @@ const presets = (n: number): { name: string; command: string | null }[] =>
 describe('parseConfig', () => {
   it('uses port 7417, no repos and the shell, claude and codex presets for a missing file', () => {
     expect(DEFAULT_PORT).toBe(7417);
-    expect(parseConfig(null, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
+    expect(parseConfig(null, HOME)).toEqual({
+      port: 7417,
+      repos: [],
+      roots: ['~'],
+      presets: DEFAULT_PRESETS,
+      hosts: [],
+      terminalMemory: {},
+      editor: 'kate',
+    });
   });
 
   it('uses the defaults for an empty object', () => {
-    expect(parse({})).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
+    expect(parse({})).toEqual({
+      port: 7417,
+      repos: [],
+      roots: ['~'],
+      presets: DEFAULT_PRESETS,
+      hosts: [],
+      terminalMemory: {},
+      editor: 'kate',
+    });
   });
 
   it.each([1024, 8080, 65535])('accepts port %d', (port) => {
@@ -341,14 +366,30 @@ describe('nextHostPort', () => {
 describe('loadConfig', () => {
   it('uses the defaults for a missing file without creating it or its directory', async () => {
     const path = join(dir, 'worktree-term', 'config.json');
-    expect(await loadConfig(path, HOME)).toEqual({ port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
+    expect(await loadConfig(path, HOME)).toEqual({
+      port: 7417,
+      repos: [],
+      roots: ['~'],
+      presets: DEFAULT_PRESETS,
+      hosts: [],
+      terminalMemory: {},
+      editor: 'kate',
+    });
     expect(existsSync(join(dir, 'worktree-term'))).toBe(false);
   });
 
   it('reads the file', async () => {
     const path = join(dir, 'config.json');
     writeFileSync(path, JSON.stringify({ port: 9000, repos: ['~/app'], roots: ['~'], presets: [CLAUDE], hosts: [] }));
-    expect(await loadConfig(path, HOME)).toEqual({ port: 9000, repos: ['/home/u/app'], roots: ['~'], presets: [CLAUDE], hosts: [], terminalMemory: {} });
+    expect(await loadConfig(path, HOME)).toEqual({
+      port: 9000,
+      repos: ['/home/u/app'],
+      roots: ['~'],
+      presets: [CLAUDE],
+      hosts: [],
+      terminalMemory: {},
+      editor: 'kate',
+    });
   });
 
   it('fails with one line naming the file and the problem', async () => {
@@ -391,7 +432,7 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a', '/b'] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} },
+      config: { port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {}, editor: 'kate' },
       problem: null,
     });
   });
@@ -404,13 +445,21 @@ describe('ConfigSource', () => {
     await source.snapshot();
     write(path, { repos: ['relative'] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a', '/b'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} });
+    expect(snapshot.config).toEqual({
+      port: 7417,
+      repos: ['/a', '/b'],
+      roots: ['~'],
+      presets: DEFAULT_PRESETS,
+      hosts: [],
+      terminalMemory: {},
+      editor: 'kate',
+    });
     expect(snapshot.problem).toContain('repos');
     write(path, '{');
     expect((await source.snapshot()).config.repos).toEqual(['/a', '/b']);
     write(path, { repos: ['/c'] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} },
+      config: { port: 7417, repos: ['/c'], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {}, editor: 'kate' },
       problem: null,
     });
   });
@@ -421,12 +470,20 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     write(path, { repos: ['/a'], presets: [CLAUDE, ...SHELL] });
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [], terminalMemory: {} },
+      config: { port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [], terminalMemory: {}, editor: 'kate' },
       problem: null,
     });
     write(path, { repos: ['/b'], presets: [{ name: 'claude', command: '' }] });
     const snapshot = await source.snapshot();
-    expect(snapshot.config).toEqual({ port: 7417, repos: ['/a'], roots: ['~'], presets: [CLAUDE, ...SHELL], hosts: [], terminalMemory: {} });
+    expect(snapshot.config).toEqual({
+      port: 7417,
+      repos: ['/a'],
+      roots: ['~'],
+      presets: [CLAUDE, ...SHELL],
+      hosts: [],
+      terminalMemory: {},
+      editor: 'kate',
+    });
     expect(snapshot.problem).toContain('presets');
   });
 
@@ -436,7 +493,7 @@ describe('ConfigSource', () => {
     const source = new ConfigSource(path, HOME, await loadConfig(path, HOME));
     rmSync(path);
     expect(await source.snapshot()).toEqual({
-      config: { port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {} },
+      config: { port: 7417, repos: [], roots: ['~'], presets: DEFAULT_PRESETS, hosts: [], terminalMemory: {}, editor: 'kate' },
       problem: null,
     });
   });
@@ -493,9 +550,56 @@ describe('README', () => {
     expect(readme).toContain(text);
   });
 
+  it('gives a configuration example with an editor command', () => {
+    const configs = jsonBlocks(section('Configuration')).map((block) => parseConfig(block, HOME));
+    expect(configs.some((config) => config.editor !== DEFAULT_EDITOR && config.editor.includes('{path}'))).toBe(true);
+  });
+
+  it('documents the editor command syntax and that only local worktrees open', () => {
+    const text = section('Configuration');
+    expect(text).toContain('`editor`');
+    expect(text).toContain('{path}');
+    expect(text).toContain('kate');
+    expect(readme).toMatch(/[Oo]pen in editor/);
+  });
+
   it('tells Claude Code to ring the bell', () => {
     const [settings] = jsonBlocks(section('Attention marks'));
     expect(JSON.parse(settings ?? '')).toEqual({ preferredNotifChannel: 'terminal_bell' });
+  });
+});
+
+describe('editor command', () => {
+  it('defaults to kate', () => {
+    expect(DEFAULT_EDITOR).toBe('kate');
+    expect(parse({}).editor).toBe('kate');
+  });
+
+  it.each([
+    ['a placeholder', 'code --new-window {path}'],
+    ['a quoted word', `my-ed --title 'a b' {path}`],
+    ['surrounding whitespace', ' kate '],
+    ['4096 characters', 'e'.repeat(4096)],
+  ])('keeps a command with %s as written', (_name, editor) => {
+    expect(parse({ editor }).editor).toBe(editor);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['an unclosed quote', 'code "{path}'],
+    ['a trailing backslash', 'code \\'],
+    ['4097 characters', 'e'.repeat(4097)],
+    ['null', null],
+    ['a list', ['code', '{path}']],
+  ])('refuses an editor command that is %s, naming editor', (_name, editor) => {
+    expect(problem(JSON.stringify({ editor }))).toContain('editor');
+  });
+
+  it('names the file and editor when loading fails on it', async () => {
+    const file = join(dir, 'config.json');
+    writeFileSync(file, JSON.stringify({ editor: 'code "{path}' }));
+    await expect(loadConfig(file, HOME)).rejects.toThrow(new RegExp(`^${file}: .*editor`));
   });
 });
 
@@ -557,7 +661,9 @@ describe('memory limits', () => {
   });
 
   it('accepts a preset max that lifts terminalMemory high above terminalMemory max', () => {
-    expect(() => parse({ terminalMemory: { high: '32G', max: '16G' }, presets: [{ name: 'big', command: null, memory: { max: '64G' } }] })).not.toThrow();
+    expect(() =>
+      parse({ terminalMemory: { high: '32G', max: '16G' }, presets: [{ name: 'big', command: null, memory: { max: '64G' } }] }),
+    ).not.toThrow();
   });
 
   it('names the file and terminalMemory when loading fails on it', async () => {
@@ -582,7 +688,9 @@ describe('effective presets', () => {
 
   it('carry no memory when the limits are empty', () => {
     expect(effectivePresets(parse({}))).toEqual(DEFAULT_PRESETS);
-    expect(effectivePresets(parse({ presets: [{ name: 'tests', command: null, memory: {} }] }))).toEqual([{ name: 'tests', command: null }]);
+    expect(effectivePresets(parse({ presets: [{ name: 'tests', command: null, memory: {} }] }))).toEqual([
+      { name: 'tests', command: null },
+    ]);
   });
 
   it('carry a preset’s own limits without terminalMemory', () => {

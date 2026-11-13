@@ -1,4 +1,4 @@
-export { ACK_EVERY } from '../../protocol/index.js';
+export { ACK_EVERY, editorWords } from '../../protocol/index.js';
 export {
   HubClient,
   RequestError,

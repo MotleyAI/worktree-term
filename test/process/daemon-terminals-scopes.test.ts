@@ -205,8 +205,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('terminal scopes on, b
   it('resets the failed terminal units of its state directory at start, and only those', async () => {
     const ours = terminalUnit(host.stateDir, 'oldinstance', 1);
     const theirs = terminalUnit(`${host.stateDir}-other`, 'oldinstance', 1);
-    failUnit(ours);
-    failUnit(theirs);
+    await failUnit(ours);
+    await failUnit(theirs);
     try {
       await startDaemon(userManagerEnv());
       await waitUntil(() => !isFailed(ours), `${ours} to be reset`, 10_000);

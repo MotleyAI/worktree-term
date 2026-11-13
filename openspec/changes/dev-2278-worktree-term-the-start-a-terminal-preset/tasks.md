@@ -7,8 +7,8 @@
 
 ## 2. Implementation (pr-implement)
 
-- [ ] 2.1 `src/web/ui/picker.ts`: `pickerKey` with `repeat`; the focus-spot classifier over a plain element description; `choicesTakeFocus`; verify 1.1 and 1.2 pass.
-- [ ] 2.2 `src/web/ui/app.tsx`: `PresetList` — reorder keys only when enabled (picker), Alt+Up/Down untouched otherwise (decision 12); refocus after an index/order change only when the list held the focus at render (decision 10); focus on mount when told to. `PresetAdder` reports closing; the parent's layout effect refocuses the highlighted option after the form left the DOM (decision 11). `PresetChoices` decides at mount and on the falling edge of `view.modal` via `choicesTakeFocus` (decisions 8, 9). `TerminalArea` keys `PresetChoices` per host/repo/worktree (decision 6) and drops `last`/`emptied`. Verify 1.3 and 1.4 pass.
+- [x] 2.1 `src/web/ui/picker.ts`: `pickerKey` with `repeat`; the focus-spot classifier over a plain element description; `choicesTakeFocus`; verify 1.1 and 1.2 pass.
+- [x] 2.2 `src/web/ui/app.tsx`: `PresetList` — reorder keys only when enabled (picker), Alt+Up/Down untouched otherwise (decision 12); refocus after an index/order change only when the list held the focus at render (decision 10); focus on mount when told to. `PresetAdder` reports closing; the parent's layout effect refocuses the highlighted option after the form left the DOM (decision 11). `PresetChoices` decides at mount and on the falling edge of `view.modal` via `choicesTakeFocus` (decisions 8, 9). `TerminalArea` keys `PresetChoices` per host/repo/worktree (decision 6) and drops `last`/`emptied`. Verify 1.3 and 1.4 pass.
 
 ## 3. Verification
 

@@ -711,7 +711,7 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 /** "Open in editor": opens the selected local worktree; a right-click, enabled or not, edits the command. */
 const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
   const [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState<EditorFailure | null>(null);
+  const failure = view.editorFailure.value;
   const [editing, setEditing] = useState(false);
   const worktree = view.worktree.value;
   const command = client.store.editor.value;
@@ -734,7 +734,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
       .openEditor(worktree)
       .catch((error: unknown) => {
         const code = error instanceof RequestError ? error.code : null;
-        setFailure(editorFailure(code, messageOf(error), sent));
+        view.editorFailure.value = editorFailure(code, messageOf(error), sent);
       })
       .finally(() => {
         setPending(false);
@@ -773,7 +773,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
         <EditorDialog
           failure={failure}
           onClose={() => {
-            setFailure(null);
+            view.editorFailure.value = null;
           }}
         />
       )}

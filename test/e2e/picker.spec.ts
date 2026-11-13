@@ -18,7 +18,7 @@ import {
   waitScreen,
   watcher,
 } from './fixture.js';
-import { holdPresets } from './held-presets.js';
+import { holdAddReplies, holdPresets } from './held-presets.js';
 import { boxOf, createsSent, pickerSeen, watchPicker } from './panes.js';
 
 const [SHELL, CAT] = PRESETS;
@@ -518,6 +518,50 @@ test.describe('editing presets', () => {
     await expect(options).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
     await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
     await expect(options.nth(1)).toBeFocused();
+  });
+
+  test('an add that completes after Escape leaves the focus in the worktree search', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    const adds = await holdAddReplies(page);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    await choices.locator(byTestId(TID.presetName)).fill(NEW.name);
+    await choices.locator(byTestId(TID.presetCommand)).fill(NEW.command);
+    await choices.locator(byTestId(TID.presetCommand)).press('Enter');
+    await expect.poll(() => adds.held()).toBe(1);
+    await page.keyboard.press('Escape');
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    const search = page.locator(byTestId(TID.worktreeSearch));
+    await search.focus();
+
+    adds.release();
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(search).toBeFocused();
+  });
+
+  test('an add that completes after its form was cancelled and reopened leaves the new form open', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    const adds = await holdAddReplies(page);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await addPreset(choices, NEW.name, NEW.command);
+    await expect.poll(() => adds.held()).toBe(1);
+    await choices.locator(byTestId(TID.presetForm)).getByRole('button', { name: 'Cancel' }).click();
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    const name = choices.locator(byTestId(TID.presetName));
+    await expect(name).toBeFocused();
+    await page.keyboard.type('ab');
+
+    adds.release();
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue('ab');
+    await expect(choices.locator(byTestId(TID.presetSubmit))).toBeEnabled();
   });
 
   test('an add the hub refuses keeps the form open with the focus in its name field', async ({ hub, page, wire }) => {

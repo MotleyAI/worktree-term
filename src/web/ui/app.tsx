@@ -927,14 +927,18 @@ const PresetAdder = ({ view, presets, onClose }: { view: View; presets: readonly
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
+  /** Bumped on each close, so a submission completing later leaves the form alone. */
+  const generation = useRef(0);
   useLayoutEffect(() => {
     if (open) nameInput.current?.focus();
   }, [open]);
   const close = (): void => {
+    generation.current++;
     setOpen(false);
     setName('');
     setCommand('');
     setError(null);
+    setSending(false);
     onClose();
   };
   if (!open) {
@@ -963,14 +967,17 @@ const PresetAdder = ({ view, presets, onClose }: { view: View; presets: readonly
           return;
         }
         setSending(true);
-        view
-          .addPreset(result.preset)
-          .then(close, (error_: unknown) => {
+        const mine = generation.current;
+        view.addPreset(result.preset).then(
+          () => {
+            if (generation.current === mine) close();
+          },
+          (error_: unknown) => {
+            if (generation.current !== mine) return;
             setError(error_ instanceof Error ? error_.message : String(error_));
-          })
-          .finally(() => {
             setSending(false);
-          });
+          },
+        );
       }}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;

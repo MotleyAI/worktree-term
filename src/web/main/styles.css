@@ -510,7 +510,8 @@ input:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 420px;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 16px));
   padding: 10px;
   background: var(--panel-raised);
   border: 1px solid #3a414c;

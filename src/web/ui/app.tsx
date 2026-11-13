@@ -723,14 +723,18 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
     command,
     pending,
   });
+  useEffect(() => {
+    if (command === null) setEditing(false);
+  }, [command]);
   const open = (): void => {
     if (worktree === null) return;
+    const sent = command;
     setPending(true);
     client
       .openEditor(worktree)
       .catch((error: unknown) => {
         const code = error instanceof RequestError ? error.code : null;
-        setFailure(editorFailure(code, messageOf(error), client.store.editor.value));
+        setFailure(editorFailure(code, messageOf(error), sent));
       })
       .finally(() => {
         setPending(false);
@@ -745,7 +749,14 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
         if (!remotePage && command !== null) setEditing(true);
       }}
     >
-      <button type="button" data-testid="open-editor" title={blocker ?? EDITOR_TITLE} disabled={blocker !== null} onClick={open}>
+      <button
+        type="button"
+        data-testid="open-editor"
+        aria-label="Open selected worktree in editor"
+        title={blocker ?? EDITOR_TITLE}
+        disabled={blocker !== null}
+        onClick={open}
+      >
         ✎
       </button>
       {editing && command !== null && (
@@ -808,6 +819,11 @@ const EditorForm = ({ client, shown, onClose }: { client: HubClient; shown: stri
   const field = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const touched = useRef(false);
+  useLayoutEffect(() => {
+    // An untouched field follows the command another page saved.
+    if (field.current !== null && !touched.current) field.current.value = shown;
+  }, [shown]);
   useLayoutEffect(() => {
     const input = field.current;
     if (input !== null) {
@@ -857,7 +873,15 @@ const EditorForm = ({ client, shown, onClose }: { client: HubClient; shown: stri
         event.stopPropagation();
       }}
     >
-      <input type="text" data-testid="editor-command" aria-label="Editor command" ref={field} />
+      <input
+        type="text"
+        data-testid="editor-command"
+        aria-label="Editor command"
+        ref={field}
+        onInput={() => {
+          touched.current = true;
+        }}
+      />
       <div class="hint">{EDITOR_HINT}</div>
       {error !== null && (
         <div class="error" data-testid="editor-error">

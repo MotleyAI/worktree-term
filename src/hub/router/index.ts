@@ -90,6 +90,8 @@ export class Router {
   private readonly local: LocalDaemon;
   private readonly hello: SessionContext['hello'];
   private readonly sessions = new Set<Session>();
+  /** Queues of sessions whose snapshot was read or is being read but which have not started. */
+  private readonly opening = new Set<(action: (s: Session) => void) => void>();
   private readonly coordinators = new Map<string, HostCoordinator>();
   private readonly budgets: RouterBudgets;
   private readonly launcher: EditorLauncher;
@@ -114,18 +116,24 @@ export class Router {
         return change === 'add' ? this.editor.addRepo(name, repo) : this.editor.removeRepo(name, repo);
       },
       reposEdited: (host, repos) => {
-        for (const session of this.sessions) session.showRepos(host, repos);
+        this.broadcast((session) => {
+          session.showRepos(host, repos);
+        });
       },
       editPresets: (edit) => {
         if (edit.t === 'add') return this.editor.addPreset(edit.preset);
         return edit.t === 'remove' ? this.editor.removePreset(edit.name) : this.editor.movePreset(edit.name, edit.to);
       },
       presetsEdited: (presets) => {
-        for (const session of this.sessions) session.showPresets(presets);
+        this.broadcast((session) => {
+          session.showPresets(presets);
+        });
       },
       editEditor: (command) => this.editor.setEditor(command),
       editorEdited: (command) => {
-        for (const session of this.sessions) session.showEditor(command);
+        this.broadcast((session) => {
+          session.showEditor(command);
+        });
       },
       openEditor: (command, worktree) => this.launcher.launch(command, worktree),
       greeted: (host, from) => {
@@ -139,6 +147,12 @@ export class Router {
         await this.coordinator({ idx: 0, name, ssh: host.ssh, repos: [], roots: [] }).install();
       },
     };
+  }
+
+  /** Shows a configuration edit to every session, and to every opening one once it starts, after its older snapshot. */
+  private broadcast(action: (s: Session) => void): void {
+    for (const session of this.sessions) action(session);
+    for (const queue of this.opening) queue(action);
   }
 
   /** Reads the configuration, reporting a valid read; an invalid file gives the last valid one. */
@@ -285,10 +299,15 @@ export class Router {
     let greeted = false;
     let closed = false;
     const pending: ((s: Session) => void)[] = [];
+    const queue = (action: (s: Session) => void): void => {
+      pending.push(action);
+    };
+    this.opening.add(queue);
     const start = (): void => {
       if (closed || snapshot === null || !greeted || session !== null) return;
       const started = new Session(channel, this.context, snapshot, this.hostsOf(snapshot.config));
       session = started;
+      this.opening.delete(queue);
       this.sessions.add(started);
       started.start();
       for (const action of pending.splice(0)) action(started);
@@ -303,6 +322,7 @@ export class Router {
         start();
       },
       (error: unknown) => {
+        this.opening.delete(queue);
         this.options.report(error);
       },
     );
@@ -324,6 +344,7 @@ export class Router {
       drained: () => session?.drained(),
       close: () => {
         closed = true;
+        this.opening.delete(queue);
         pending.length = 0;
         if (session !== null) {
           this.sessions.delete(session);

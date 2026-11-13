@@ -18,6 +18,7 @@ import {
   ready,
   selectRepo,
   selectWorktree,
+  stopHub,
   test,
   writeHubConfig,
 } from './fixture.js';
@@ -230,6 +231,26 @@ test.describe('open in editor', () => {
     expect(await dialogText(page)).toContain('Could not find my ed. Install it');
   });
 
+  test('names the program of the command shown when it was clicked, not of one received since', async ({ hub, page }) => {
+    const route = await routeEditor(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo], null);
+    await openUi(hub, page);
+    await control(page).click();
+    const req = await heldReq(route);
+    route.answer({ t: 'editor', command: 'code {path}' });
+    route.answer({ t: 'error', req, host: null, code: 'editor-missing', message: 'kate' });
+    await expect(dialog(page)).toBeVisible();
+    expect(await dialogText(page)).toContain('Could not find kate. Install it');
+  });
+
+  test('has an accessible name', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    await expect(page.getByRole('button', { name: 'Open selected worktree in editor' })).toHaveAttribute('data-testid', TID.openEditor);
+  });
+
   test('shows another failure’s message as text', async ({ hub, page }) => {
     const route = await routeEditor(page);
     const { repo } = makeRepoWith(hub, 'app', []);
@@ -388,6 +409,46 @@ test.describe('editing the editor command', () => {
     await expect(form(other.page)).toHaveCount(0);
     await openForm(page);
     await expect(field(page)).toHaveValue('subl {path}');
+  });
+
+  test('an open, untouched form follows a command received meanwhile; an edited one keeps its text', async ({ hub, page }) => {
+    const route = await routeEditor(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo], 'code {path}');
+    await openUi(hub, page);
+    await openForm(page);
+    route.answer({ t: 'editor', command: 'subl {path}' });
+    await expect(field(page)).toHaveValue('subl {path}');
+    await field(page).fill('subl {path}'); // edited, if to the text it already showed
+    route.answer({ t: 'editor', command: 'zed {path}' });
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(field(page)).toHaveValue('subl {path}');
+  });
+
+  test('closes when the hub session closes and stays closed once the page reconnects', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    await openForm(page);
+    await stopHub(hub);
+    await expect(page.locator(byTestId(TID.reconnecting))).toBeVisible();
+    await expect(form(page)).toHaveCount(0);
+    await hub.startHub();
+    await expect(page.locator(byTestId(TID.reconnecting))).toBeHidden({ timeout: 15_000 });
+    await expect(control(page)).toBeEnabled();
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(form(page)).toHaveCount(0);
+  });
+
+  test('fits a viewport narrower than its width', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await page.setViewportSize({ width: 360, height: 640 });
+    await openUi(hub, page);
+    await openForm(page);
+    const box = await form(page).boundingBox();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
   });
 
   test('before the hub sent the command, the control is disabled and right-click opens no form', async ({ hub, page }) => {

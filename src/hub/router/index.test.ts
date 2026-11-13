@@ -101,3 +101,30 @@ it('runs no print-code for an opening its session closed while the configuration
   await sleep(500);
   expect(printRuns()).toEqual([]);
 });
+
+it('forgets an opening session whose configuration snapshot failed', async () => {
+  const configPath = join(dir, 'config.json');
+  const text = JSON.stringify({ port: 7417 });
+  writeFileSync(configPath, text);
+  const reported: unknown[] = [];
+  const router = new Router({
+    paths: hostPaths({ env: { XDG_STATE_HOME: join(dir, 's') }, home: dir, host: 'local' }),
+    daemonCommand: ['true'],
+    configPath,
+    home: dir,
+    config: parseConfig(text, dir),
+    version: '0.0.0',
+    instance: 'router-test',
+    hostName: 'local',
+    bundle: join(dir, 'wtd.mjs'),
+    report: (error) => reported.push(error),
+    tunnels,
+    configRead: () => {
+      throw new Error('read hook failed');
+    },
+  });
+  routed.push(router.open({ send: () => undefined, unsent: () => 0 }));
+  await waitFor(() => reported.length > 0, 'the failed snapshot');
+  const opening: unknown = Reflect.get(router, 'opening');
+  expect(opening instanceof Set ? opening.size : null).toBe(0);
+});

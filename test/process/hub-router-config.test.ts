@@ -596,3 +596,29 @@ describe('editing the editor command', () => {
     expect(readFileSync(fx.host.configPath, 'utf8')).toBe(before);
   });
 });
+
+describe('edits while a session awaits the browser’s hello', () => {
+  it('sends the session every edit made after its snapshot was read, after the snapshot’s values', async () => {
+    fx.host.presets = [SHELL];
+    fx.host.writeRepos([fx.repo]);
+    const added = makeRepo(join(fx.host.dir, 'added'));
+    const HTOP = { name: 'htop', command: 'htop' };
+    const opening = await fx.host.open(['wtd', `wtd.token.${fx.host.token()}`]);
+    await opening.waitFor('hello');
+    await sleep(300); // lets the hub read the opening session's snapshot
+    const editing = await fx.host.session();
+    await connected(editing);
+    expect((await editing.hubRequest({ t: 'setEditor', command: 'code {path}' })).m).toMatchObject({ t: 'done' });
+    expect((await editing.hubRequest({ t: 'addPreset', preset: HTOP })).m).toMatchObject({ t: 'done' });
+    expect((await editing.hubRequest({ t: 'addRepo', host: 0, repo: added })).m).toMatchObject({ t: 'done' });
+    opening.sendHello();
+    await opening.waitFor('editor', (m) => m.command === 'code {path}');
+    // The snapshot predates the edits, so they reached the session as broadcasts.
+    expect(editorsOf(opening)[0]).toBe('kate');
+    await opening.waitFor('presets', (m) => m.presets.length === 2);
+    await opening.waitHost(0, (h) => h.repos.includes(added));
+    expect(editorsOf(opening).at(-1)).toBe('code {path}');
+    expect(presetsOf(opening).at(-1)).toEqual([SHELL, HTOP]);
+    expect(opening.hosts()[0]?.repos).toEqual([fx.repo, added]);
+  });
+});

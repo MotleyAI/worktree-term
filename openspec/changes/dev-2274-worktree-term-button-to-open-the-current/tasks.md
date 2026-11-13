@@ -25,4 +25,4 @@
 ## 5. Docs and verification
 
 - [x] 5.1 README: the `editor` config key, command syntax and the local-only scope; verify by reading it against the specs.
-- [ ] 5.2 Run `pnpm test`, `pnpm lint`, `tsc -b`, `la-arch-check` and LikeC4 validation; verify all pass.
+- [x] 5.2 Run `pnpm test`, `pnpm lint`, `tsc -b`, `la-arch-check` and LikeC4 validation; verify all pass.

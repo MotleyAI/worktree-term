@@ -118,7 +118,7 @@ export const TID = {
   divider: 'divider',
   /** The preset picker over the terminal area. */
   presetPicker: 'preset-picker',
-  /** The preset list a worktree without terminals shows in its terminal area; its first option takes the keyboard focus when the shown worktree's last terminal closed with the focus left on the page body. */
+  /** The preset list a worktree without terminals shows in its terminal area; each showing highlights its first option and focuses it unless a text field other than a terminal has the focus. */
   presetChoices: 'preset-choices',
   /** One preset in a picker or in the choices, in configured order; text = preset name; `aria-selected="true"` on the highlighted one. */
   presetOption: 'preset-option',

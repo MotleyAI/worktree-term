@@ -25,6 +25,7 @@ import {
 } from '../layout/index.js';
 import type { Box, TerminalManager } from '../terminals/index.js';
 import { closeTargets, needsConfirm } from './closing.js';
+import type { EditorFailure } from './editor.js';
 import { hostAction, Latest, offeredRepos, type HostAction } from './hosts.js';
 import { keymap, type Action } from './keymap.js';
 import { pickerValid, type PickerContext, type PickerOp, type PickerWorld } from './picker.js';
@@ -209,6 +210,8 @@ export class View {
   readonly confirmation = signal<Confirmation | null>(null);
   readonly worktreeMenu = signal<WorktreeMenu | null>(null);
   readonly addRepo = signal<AddRepoDialog | null>(null);
+  /** The failed editor launch the editor dialog shows. */
+  readonly editorFailure = signal<EditorFailure | null>(null);
   private readonly drag = signal<Drag | null>(null);
   /** The focused pane per tab key, with the tab's panes when it was last resolved; replaced when the user chooses a pane. */
   private readonly focusRecords = signal(new Map<string, { termId: number; root: Pane }>());
@@ -355,7 +358,8 @@ export class View {
       this.closing.value !== null ||
       this.confirmation.value !== null ||
       this.addRepo.value !== null ||
-      this.worktreeMenu.value !== null,
+      this.worktreeMenu.value !== null ||
+      this.editorFailure.value !== null,
   );
 
   private shownKey = '';

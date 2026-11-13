@@ -6,9 +6,10 @@ import { addWorktree, fakeWorktrees, git, makeRepo } from '../support/daemon-hos
 import { installRemote } from '../support/fake-ssh.js';
 import { freePort, type HubHost } from '../support/hub-host.js';
 import { remoteHub } from '../support/remote-hub.js';
-import { byTestId, hubsEntry, repoTab, TID, worktreeEntry } from './contract.js';
+import { byTestId, hubsEntry, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
 import {
   expect,
+  LOCAL,
   makeRepoWith,
   newTerminal,
   nodeRemote,
@@ -20,8 +21,12 @@ import {
   selectWorktree,
   stopHub,
   test,
+  waitScreen,
+  watcher,
   writeHubConfig,
 } from './fixture.js';
+import { holdAddReplies } from './held-presets.js';
+import { pickerSeen, watchPicker } from './panes.js';
 import type { BrowserMessage, HubMessage, WireRecorder } from './wire.js';
 
 const ENABLED_TITLE = 'Open in editor (right-click to change the command)';
@@ -223,6 +228,74 @@ test.describe('open in editor', () => {
     await page.locator(byTestId(TID.editorDialogClose)).click();
     await expect(dialog(page)).toHaveCount(0);
     await expect(control(page)).toBeEnabled();
+  });
+
+  test('while the failure dialog is open shortcuts act not; once it closes, the terminal takes typed input', async ({ hub, page }) => {
+    const route = await routeEditor(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo], null);
+    await openUi(hub, page);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    await control(page).click();
+    route.answer({ t: 'error', req: await heldReq(route), host: null, code: 'editor-missing', message: 'kate' });
+    await expect(dialog(page)).toBeFocused();
+
+    await watchPicker(page);
+    await page.keyboard.press('Control+Shift+KeyT');
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(await pickerSeen(page)).toBe(false);
+    await expect(dialog(page)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog(page)).toHaveCount(0);
+    await page.keyboard.type("echo EDITOR''-CLOSED");
+    await page.keyboard.press('Enter');
+    await waitScreen(page, term, 'EDITOR-CLOSED');
+  });
+
+  test('preset choices shown while the failure dialog is open leave it the focus, and take it once it closes', async ({ hub, page }) => {
+    const route = await routeEditor(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo], null);
+    await openUi(hub, page);
+    const daemon = await watcher(hub, repo);
+    const term = await daemon.create(repo, { command: 'read -r _; exit 0' });
+    await expect(page.locator(terminalBox(LOCAL, term.termId))).toBeVisible();
+    await control(page).click();
+    route.answer({ t: 'error', req: await heldReq(route), host: null, code: 'editor-missing', message: 'kate' });
+    await expect(dialog(page)).toBeFocused();
+
+    daemon.sendInput(term.termId, '\r');
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await expect(options.nth(0)).toBeVisible();
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(dialog(page)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(options.nth(0)).toBeFocused();
+  });
+
+  test('an add in the choices completing while the failure dialog is open closes its form and leaves the dialog the focus', async ({
+    hub,
+    page,
+  }) => {
+    const adds = await holdAddReplies(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    await choices.locator(byTestId(TID.presetName)).fill('added');
+    await choices.locator(byTestId(TID.presetCommand)).press('Enter');
+    await expect.poll(() => adds.held()).toBe(1);
+    await control(page).click();
+    await expect(dialog(page)).toBeFocused();
+
+    adds.release();
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), 'added']);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(dialog(page)).toBeFocused();
   });
 
   test('names the first word of the shown command as the missing program', async ({ hub, page }) => {

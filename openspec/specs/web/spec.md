@@ -131,7 +131,7 @@ The selected repo tab and each repo's selected worktree SHALL be stored per brow
 - **THEN** the second repo tab and that worktree are selected
 
 ### Requirement: Terminal tabs
-The terminal area SHALL show the selected worktree's layout tabs, each labelled by its name, or without a name by its first terminal, with the layout's active tab shown and its tab shown in the accent colour; live terminals of the worktree missing from its layout SHALL be shown as further single-pane tabs. Choosing a tab SHALL show it at once and then store it as active with `setLayout`. The tab bar SHALL offer controls to create a new tab, split the focused pane right and split it down, each naming its keyboard shortcut on hover and each starting a new terminal through the preset picker; the new-tab control SHALL sit directly after the last tab, or at the left end of the tab bar when there are no tabs, and the split controls at the tab bar's right end; when the tabs overflow the tab bar they SHALL scroll horizontally while all three controls stay fully visible and usable, without making the tab bar taller; the split controls SHALL be disabled when the focused pane's tab cannot be split further, the new-tab control when the layout holds 64 tabs, and all of them while the host is not `connected`, the worktree is prunable or gone, or no presets have been received. Double-clicking a tab, outside its close button, SHALL replace its label with a text field holding the label's text without its exit note and marks, selected and focused; keys typed in the field SHALL reach only the field. Enter or the field losing focus SHALL close the field and, unless the trimmed text equals the text it started with, store it, at most 64 characters, as the tab's name with exactly one `setLayout`, an empty text removing the name; Escape SHALL close the field and store nothing. Each edit SHALL end exactly once, however Enter, Escape and the loss of focus follow one another. Renaming a tab missing from the layout SHALL add it to the layout as choosing it does; such a tab SHALL NOT be renamable while the layout holds 64 tabs. A new tab SHALL send `createTerm` with the chosen preset's name and command and the size of the terminal area, then add the terminal as a new active tab with `setLayout`. A terminal SHALL never be created again because a request failed or the session closed. The tab of a terminal whose process failed, and its pane header in a split, SHALL show that it exited and keep its screen readable until closed; a terminal whose process exited cleanly SHALL leave the tabs of every page, as any closed terminal does. A worktree without terminals SHALL show the presets as choices in the terminal area; no terminal SHALL be created without the user choosing one. When the selected worktree's last terminal closes and the keyboard focus is left on the page body, the choices SHALL take the keyboard focus on their first preset; otherwise showing them SHALL NOT move the keyboard focus.
+The terminal area SHALL show the selected worktree's layout tabs, each labelled by its name, or without a name by its first terminal, with the layout's active tab shown and its tab shown in the accent colour; live terminals of the worktree missing from its layout SHALL be shown as further single-pane tabs. Choosing a tab SHALL show it at once and then store it as active with `setLayout`. The tab bar SHALL offer controls to create a new tab, split the focused pane right and split it down, each naming its keyboard shortcut on hover and each starting a new terminal through the preset picker; the new-tab control SHALL sit directly after the last tab, or at the left end of the tab bar when there are no tabs, and the split controls at the tab bar's right end; when the tabs overflow the tab bar they SHALL scroll horizontally while all three controls stay fully visible and usable, without making the tab bar taller; the split controls SHALL be disabled when the focused pane's tab cannot be split further, the new-tab control when the layout holds 64 tabs, and all of them while the host is not `connected`, the worktree is prunable or gone, or no presets have been received. Double-clicking a tab, outside its close button, SHALL replace its label with a text field holding the label's text without its exit note and marks, selected and focused; keys typed in the field SHALL reach only the field. Enter or the field losing focus SHALL close the field and, unless the trimmed text equals the text it started with, store it, at most 64 characters, as the tab's name with exactly one `setLayout`, an empty text removing the name; Escape SHALL close the field and store nothing. Each edit SHALL end exactly once, however Enter, Escape and the loss of focus follow one another. Renaming a tab missing from the layout SHALL add it to the layout as choosing it does; such a tab SHALL NOT be renamable while the layout holds 64 tabs. A new tab SHALL send `createTerm` with the chosen preset's name and command and the size of the terminal area, then add the terminal as a new active tab with `setLayout`. A terminal SHALL never be created again because a request failed or the session closed. The tab of a terminal whose process failed, and its pane header in a split, SHALL show that it exited and keep its screen readable until closed; a terminal whose process exited cleanly SHALL leave the tabs of every page, as any closed terminal does. A worktree without terminals SHALL show the presets as choices in the terminal area; no terminal SHALL be created without the user choosing one. Each time a worktree's choices are shown, their first preset SHALL be highlighted. When the choices are shown they SHALL take the keyboard focus, on their highlighted preset, unless the keyboard focus is in a text field of the page other than a terminal or in an open menu; when a picker or dialog over them closes and leaves the keyboard focus on the page body, they SHALL take it again. Showing the choices SHALL NOT otherwise move the keyboard focus.
 
 #### Scenario: New terminal
 - **WHEN** the user picks a preset in a worktree without terminals
@@ -164,6 +164,38 @@ The terminal area SHALL show the selected worktree's layout tabs, each labelled 
 #### Scenario: Choices leave the focus elsewhere alone
 - **WHEN** the only terminal of the selected worktree exits cleanly while the keyboard focus is in the worktree search
 - **THEN** the preset choices are shown and the search keeps the keyboard focus
+
+#### Scenario: Choices leave an open menu its focus
+- **WHEN** the user opens the Hubs menu on a page whose selected worktree has no terminals, before its preset choices are shown
+- **THEN** the preset choices are shown, the Hubs button keeps the keyboard focus, and Escape closes the menu
+
+#### Scenario: Choices focused on selection
+- **WHEN** the user clicks a worktree without terminals in the sidebar, then presses ArrowDown and Enter
+- **THEN** the first preset is highlighted and focused once the choices are shown, then the second, and exactly one `createTerm` is sent, for the second preset in that worktree
+
+#### Scenario: Choices focused after worktree navigation
+- **WHEN** a terminal has the keyboard focus, the user presses Alt+Down onto a worktree without terminals and then presses Enter
+- **THEN** the first preset starts as a new terminal of that worktree
+
+#### Scenario: Choices focused after a repo switch
+- **WHEN** the user selects a repo tab whose selected worktree has no terminals and then presses Enter
+- **THEN** the first preset starts as a new terminal of that worktree
+
+#### Scenario: Each showing starts at the first preset
+- **WHEN** the user highlights the second preset in the choices of one worktree without terminals and then selects another worktree without terminals
+- **THEN** the other worktree's choices show the first preset highlighted and focused
+
+#### Scenario: Choices focused again after the picker
+- **WHEN** the selected worktree has no terminals and the user presses Ctrl+Shift+T, then Escape, then Enter
+- **THEN** the first preset starts as a new terminal of that worktree
+
+#### Scenario: Choices focused after a close dialog ends by itself
+- **WHEN** the close dialog for the only, running, terminal of the selected worktree is open and another page closes that terminal
+- **THEN** the dialog closes, the preset choices are shown with their first preset focused, and Enter starts it in that worktree
+
+#### Scenario: Presets arriving after a reconnect leave the search focused
+- **WHEN** the selected worktree has no terminals, the keyboard focus is in the worktree search, and the session closes and reconnects
+- **THEN** the preset choices are shown again and the search keeps the keyboard focus
 
 #### Scenario: New-tab control follows the last tab
 - **WHEN** the selected worktree shows two tabs and the user opens a third, then closes it
@@ -345,7 +377,11 @@ Each tab SHALL have one focused pane, kept per page and not stored: the first pa
 - **THEN** the remaining pane is focused and receives typed input
 
 ### Requirement: Preset picker
-The page SHALL keep the presets the hub sent for the session and forget them when the session closes. Starting a new terminal SHALL open a picker listing the presets in order, over the terminal area, for the selected worktree and the requested operation; with exactly one preset it SHALL use that preset without showing the picker. Digits 1–9 SHALL choose the preset at that position; arrow keys and Enter SHALL move and choose; Escape or a click outside SHALL cancel without creating anything. The picker SHALL close without creating anything when the selected worktree changes, its host leaves `connected`, the pane it would split closes, or the operation is no longer possible; choosing SHALL check again that the operation is possible. A worktree without terminals SHALL show the same list in the terminal area, choosable by click, digits or arrows and Enter.
+The page SHALL keep the presets the hub sent for the session and forget them when the session closes. Starting a new terminal SHALL open a picker listing the presets in order, over the terminal area, for the selected worktree and the requested operation; with exactly one preset it SHALL use that preset without showing the picker. Digits 1–9 SHALL choose the preset at that position; arrow keys and Enter SHALL move and choose; Escape or a click outside SHALL cancel without creating anything. The picker SHALL close without creating anything when the selected worktree changes, its host leaves `connected`, the pane it would split closes, or the operation is no longer possible; choosing SHALL check again that the operation is possible. A worktree without terminals SHALL show the same list in the terminal area, choosable by click, digits or arrows and Enter. In either list, the repeats of a held digit or Enter SHALL choose nothing; the repeats of a held arrow key SHALL keep moving.
+
+#### Scenario: Held Enter starts nothing
+- **WHEN** the user focuses the label of a worktree without terminals and holds Enter until it repeats
+- **THEN** that worktree is selected, its choices are shown, and no `createTerm` is sent
 
 #### Scenario: Picker chooses a preset
 - **WHEN** two presets are configured and the user presses Ctrl+Shift+T and then 2
@@ -539,7 +575,23 @@ The sidebar's right edge SHALL be a separator that the user can drag, and move b
 - **THEN** the sidebar is 384 px wide
 
 ### Requirement: Editing presets
-The preset picker and a worktree's preset choices SHALL offer "+ Add preset", opening a form for a name and a command; submitting SHALL trim both, treat an empty command as the login shell (`command` null) and send `addPreset`, closing the form on `done` and showing the refusal in the form otherwise. A blank name, a name of more than 64 characters, a name already taken, or a command of more than 4096 characters SHALL be refused in the form without sending anything; Escape SHALL close the form without sending anything and without closing the picker. While more than one preset exists, each SHALL offer a remove control sending `removePreset` for it; a refusal SHALL be shown on the page. While more than one preset exists, each SHALL be draggable to another position, the gap it would be dropped into marked while dragging, and dropping it elsewhere SHALL send `movePreset` with its new position; Alt+Up and Alt+Down SHALL move the highlighted preset one position, which stays highlighted and focused; until the new order arrives, or the move fails, further keyboard moves SHALL be ignored, so each moves the preset that is highlighted. Every list SHALL show the presets the hub last sent, and the picker SHALL stay open while presets are edited.
+The preset picker and a worktree's preset choices SHALL offer "+ Add preset", opening a form for a name and a command; submitting SHALL trim both, treat an empty command as the login shell (`command` null) and send `addPreset`, closing the form on `done` and showing the refusal in the form otherwise. A blank name, a name of more than 64 characters, a name already taken, or a command of more than 4096 characters SHALL be refused in the form without sending anything; Escape SHALL close the form without sending anything and without closing the picker. While more than one preset exists, each SHALL offer a remove control sending `removePreset` for it; a refusal SHALL be shown on the page. While more than one preset exists, each SHALL be draggable to another position, the gap it would be dropped into marked while dragging, and dropping it elsewhere SHALL send `movePreset` with its new position; in the picker, Alt+Up and Alt+Down SHALL move the highlighted preset one position, which stays highlighted and focused; until the new order arrives, or the move fails, further keyboard moves SHALL be ignored, so each moves the preset that is highlighted. In a worktree's choices, Alt+Up and Alt+Down SHALL act as the worktree shortcuts. Every list SHALL show the presets the hub last sent, and the picker SHALL stay open while presets are edited. A change to the presets SHALL NOT move the keyboard focus out of the add form, and SHALL keep it on the list's highlighted preset when the list had it; closing the add form SHALL return the keyboard focus to the list's highlighted preset while the keyboard focus is in the form or on the page body.
+
+#### Scenario: Alt+Down in the choices selects the next worktree
+- **WHEN** the choices of a worktree without terminals have the keyboard focus and the user presses Alt+Down once
+- **THEN** the next listed worktree is selected, exactly one worktree further, and the presets keep their order with no `movePreset` sent
+
+#### Scenario: Add form keeps the focus while presets change
+- **WHEN** the add form is open in a worktree's choices with the keyboard focus in its name field and another page moves a preset
+- **THEN** the list shows the new order and the name field keeps the keyboard focus
+
+#### Scenario: Escape returns the focus to the list
+- **WHEN** the user opens the add form in a worktree's choices, presses Escape and then Enter
+- **THEN** the form closes and the first preset starts as a new terminal of that worktree
+
+#### Scenario: A completed add leaves a dialog its focus
+- **WHEN** an add is pending in a worktree's choices and the editor failure dialog takes the keyboard focus before the add is done
+- **THEN** the form closes and the dialog keeps the keyboard focus
 
 #### Scenario: Preset added from the choices
 - **WHEN** the user adds a preset `echo` with a command in a worktree's preset choices while another page is open

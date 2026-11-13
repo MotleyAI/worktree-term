@@ -8,7 +8,7 @@ import { hasBanner, hostAction, statusText } from './hosts.js';
 import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
 import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, type EditorFailure } from './editor.js';
 import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
-import { dropPosition, pickerKey, presetFromForm } from './picker.js';
+import { choicesTakeFocus, dropPosition, focusSpot, pickerKey, presetFromForm, type FocusSpot } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import {
@@ -711,7 +711,7 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 /** "Open in editor": opens the selected local worktree; a right-click, enabled or not, edits the command. */
 const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
   const [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState<EditorFailure | null>(null);
+  const failure = view.editorFailure.value;
   const [editing, setEditing] = useState(false);
   const worktree = view.worktree.value;
   const command = client.store.editor.value;
@@ -734,7 +734,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
       .openEditor(worktree)
       .catch((error: unknown) => {
         const code = error instanceof RequestError ? error.code : null;
-        setFailure(editorFailure(code, messageOf(error), sent));
+        view.editorFailure.value = editorFailure(code, messageOf(error), sent);
       })
       .finally(() => {
         setPending(false);
@@ -773,7 +773,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
         <EditorDialog
           failure={failure}
           onClose={() => {
-            setFailure(null);
+            view.editorFailure.value = null;
           }}
         />
       )}
@@ -993,7 +993,8 @@ const PresetList = ({
   cancel,
   remove,
   reorder,
-  focusFirst,
+  keyboardReorder,
+  focusRequest,
 }: {
   presets: readonly Preset[];
   index: number;
@@ -1002,22 +1003,30 @@ const PresetList = ({
   cancel: () => void;
   /** Removes the named preset; offered while more than one is left. */
   remove: (name: string) => void;
-  /** Moves the named preset to position `to`, by dragging or Alt+Up/Down; resolves with whether the hub did. */
+  /** Moves the named preset to position `to`, by dragging or, with `keyboardReorder`, Alt+Up/Down; resolves with whether the hub did. */
   reorder: (name: string, to: number) => Promise<boolean>;
-  /** Whether the list takes the keyboard focus when shown; it follows the highlighted option once it has it. */
-  focusFirst: boolean;
+  /** Whether Alt+Up/Down move the highlighted preset; otherwise they pass through untouched. */
+  keyboardReorder: boolean;
+  /** While positive, focuses the highlighted option at mount and on each change. */
+  focusRequest: number;
 }) => {
   const list = useRef<HTMLDivElement>(null);
-  const shown = useRef(false);
   /** The dragged preset's position and the gap it would be dropped into (0 = before the first). */
   const [drag, setDrag] = useState<{ from: number; slot: number | null } | null>(null);
   const order = presets.map((p) => p.name).join('\n');
-  // Before the browser handles the next key, so no key meant for the list reaches a terminal; again after a reorder.
+  const focusHighlighted = (): void => {
+    list.current?.querySelectorAll<HTMLElement>('[data-testid="preset-option"]')[index]?.focus();
+  };
+  // Read before this render changes the DOM: a keyed reorder or a removed option may blur the focused one.
+  const held = useRef(false);
+  held.current = list.current?.contains(document.activeElement) ?? false;
+  // Before the browser handles the next key, so no key meant for the list reaches a terminal.
   useLayoutEffect(() => {
-    const options = list.current?.querySelectorAll<HTMLElement>('[data-testid="preset-option"]');
-    if (focusFirst || shown.current) options?.[index]?.focus();
-    shown.current = true;
-  }, [index, focusFirst, order]);
+    if (focusRequest > 0) focusHighlighted();
+  }, [focusRequest]);
+  useLayoutEffect(() => {
+    if (held.current) focusHighlighted();
+  }, [index, order]);
   /** The order a keyboard move was sent from; further moves wait until the new order arrives or the move fails. */
   const movingFrom = useRef<string | null>(null);
   const moveBy = (step: number): void => {
@@ -1042,13 +1051,18 @@ const PresetList = ({
       ref={list}
       onKeyDown={(event) => {
         if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+          if (!keyboardReorder) return;
           event.preventDefault();
           event.stopPropagation();
           moveBy(event.key === 'ArrowUp' ? -1 : 1);
           return;
         }
-        const key = pickerKey(event.key, index, presets.length);
-        if (key === null) return;
+        const key = pickerKey(event.key, index, presets.length, event.repeat);
+        if (key === null) {
+          // Else a held Enter's repeats click the focused option.
+          if (event.key === 'Enter') event.preventDefault();
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (key.t === 'choose') choose(key.index);
@@ -1128,21 +1142,30 @@ const PresetList = ({
 };
 
 /** "+ Add preset", which opens a form for a new preset's name and command; Escape closes the form. */
-const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
+const PresetAdder = ({ view, presets, onClose }: { view: View; presets: readonly Preset[]; onClose: () => void }) => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  /** Bumped on each close, so a submission completing later leaves the form alone. */
+  const generation = useRef(0);
   useLayoutEffect(() => {
     if (open) nameInput.current?.focus();
   }, [open]);
+  /** Closes the form; `onClose` returns the focus only from the form or the page body. */
   const close = (): void => {
+    const active = document.activeElement;
+    const focusHere = active === null || active === document.body || form.current?.contains(active) === true;
+    generation.current++;
     setOpen(false);
     setName('');
     setCommand('');
     setError(null);
+    setSending(false);
+    if (focusHere) onClose();
   };
   if (!open) {
     return (
@@ -1160,6 +1183,7 @@ const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[]
   }
   return (
     <form // NOSONAR(S6847) — handles Escape bubbling from its fields; the form itself takes no focus
+      ref={form}
       class="preset-form"
       data-testid="preset-form"
       onSubmit={(event) => {
@@ -1170,14 +1194,17 @@ const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[]
           return;
         }
         setSending(true);
-        view
-          .addPreset(result.preset)
-          .then(close, (error_: unknown) => {
+        const mine = generation.current;
+        view.addPreset(result.preset).then(
+          () => {
+            if (generation.current === mine) close();
+          },
+          (error_: unknown) => {
+            if (generation.current !== mine) return;
             setError(error_ instanceof Error ? error_.message : String(error_));
-          })
-          .finally(() => {
             setSending(false);
-          });
+          },
+        );
       }}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
@@ -1225,6 +1252,7 @@ const PresetAdder = ({ view, presets }: { view: View; presets: readonly Preset[]
 /** The picker for a new terminal; any pointer press outside it cancels it. */
 const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[] }) => {
   const box = useRef<HTMLDialogElement>(null);
+  const [focusRequest, setFocusRequest] = useState(1);
   const picker = view.picker.value;
   const open = picker !== null;
   useLayoutEffect(() => {
@@ -1244,7 +1272,8 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
       <PresetList
         presets={presets}
         index={Math.min(picker.index, presets.length - 1)}
-        focusFirst
+        keyboardReorder
+        focusRequest={focusRequest}
         move={(i) => {
           view.movePicker(i);
         }}
@@ -1259,23 +1288,56 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
         }}
         reorder={(name, to) => view.movePreset(name, to)}
       />
-      <PresetAdder view={view} presets={presets} />
+      <PresetAdder
+        view={view}
+        presets={presets}
+        onClose={() => {
+          setFocusRequest((n) => n + 1);
+        }}
+      />
     </dialog>
   );
 };
 
-/** The presets a worktree without terminals offers; with `emptied`, they take a keyboard focus left on the page body. */
-const PresetChoices = ({ view, presets, emptied }: { view: View; presets: readonly Preset[]; emptied: boolean }) => {
+/** Where the page's keyboard focus is. */
+const activeSpot = (manager: TerminalManager): FocusSpot => {
+  const active = document.activeElement;
+  return focusSpot(
+    active === null
+      ? null
+      : {
+          tag: active.tagName.toLowerCase(),
+          type: active instanceof HTMLInputElement ? active.type : '',
+          editable: active instanceof HTMLElement && active.isContentEditable,
+          terminal: manager.owns(active),
+          menu: active.getAttribute('aria-expanded') === 'true' || active.closest('[role="menu"]') !== null,
+        },
+  );
+};
+
+/** The presets a worktree without terminals offers; they take the keyboard focus as `choicesTakeFocus` says. */
+const PresetChoices = ({ view, manager, presets }: { view: View; manager: TerminalManager; presets: readonly Preset[] }) => {
   const [index, setIndex] = useState(0);
-  // Decided at mount, after the closed terminal's xterm left the document.
-  const [focus] = useState(() => emptied && (document.activeElement === null || document.activeElement === document.body));
+  const [focusRequest, setFocusRequest] = useState(() => (choicesTakeFocus('shown', activeSpot(manager), view.modal.peek()) ? 1 : 0));
+  const modal = view.modal.value;
+  const wasModal = useRef(modal);
+  useLayoutEffect(() => {
+    if (wasModal.current && !modal) {
+      // After this render flush, once the closed picker or dialog has left the DOM.
+      queueMicrotask(() => {
+        if (choicesTakeFocus('modalClosed', activeSpot(manager), view.modal.peek())) setFocusRequest((n) => n + 1);
+      });
+    }
+    wasModal.current = modal;
+  }, [manager, view, modal]);
   return (
     <div class="preset-choices" data-testid="preset-choices">
       <div class="title">Start a terminal</div>
       <PresetList
         presets={presets}
         index={Math.min(index, presets.length - 1)}
-        focusFirst={focus}
+        keyboardReorder={false}
+        focusRequest={focusRequest}
         move={setIndex}
         choose={(i) => {
           const preset = presets[i];
@@ -1287,7 +1349,13 @@ const PresetChoices = ({ view, presets, emptied }: { view: View; presets: readon
         }}
         reorder={(name, to) => view.movePreset(name, to)}
       />
-      <PresetAdder view={view} presets={presets} />
+      <PresetAdder
+        view={view}
+        presets={presets}
+        onClose={() => {
+          setFocusRequest((n) => n + 1);
+        }}
+      />
     </div>
   );
 };
@@ -1363,13 +1431,8 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
   const presets = client.store.presets.value;
   const focused = view.focused.value;
   const empty = view.termTabs.value.tabs.length === 0;
-  const worktree = view.worktree.value;
-  /** The worktree and whether it was empty at the last render. */
-  const last = useRef<{ worktree: string | null; empty: boolean }>({ worktree, empty });
-  const emptied = empty && last.current.worktree === worktree && !last.current.empty;
-  useLayoutEffect(() => {
-    last.current = { worktree, empty };
-  });
+  const tab = view.tab.value;
+  const choicesKey = `${String(tab?.host)}\n${String(tab?.repo)}\n${String(view.worktree.value)}`;
   return (
     <div class="terminal-area" ref={area}>
       {view.panes.value.map((pane) => (
@@ -1384,7 +1447,9 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
       {view.dividers.value.map((divider) => (
         <DividerHandle key={divider.path.join('.')} divider={divider} view={view} />
       ))}
-      {empty && view.canCreate.value && presets !== null && <PresetChoices view={view} presets={presets} emptied={emptied} />}
+      {empty && view.canCreate.value && presets !== null && (
+        <PresetChoices key={choicesKey} view={view} manager={manager} presets={presets} />
+      )}
       {presets !== null && <PresetPicker view={view} presets={presets} />}
     </div>
   );

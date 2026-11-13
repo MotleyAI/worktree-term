@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
-import type { Locator, Page } from '@playwright/test';
-import { decodeMessage } from '../../src/protocol/index.js';
+import type { Locator } from '@playwright/test';
 import { byTestId, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
   activeTerm,
   expect,
+  listedWorktrees,
   LOCAL,
   makeRepoWith,
   newTerminal,
@@ -18,79 +18,10 @@ import {
   waitScreen,
   watcher,
 } from './fixture.js';
+import { holdAddReplies, holdPresets } from './held-presets.js';
 import { boxOf, createsSent, pickerSeen, watchPicker } from './panes.js';
 
 const [SHELL, CAT] = PRESETS;
-
-interface Session {
-  /** Closes both sides of the session. */
-  cut: () => void;
-  /** Whether the session holds back the hub's messages. */
-  holding: () => boolean;
-  /** Delivers the held messages in order and passes later ones through. */
-  release: () => void;
-}
-
-interface HeldPresets {
-  /** WebSocket sessions the page opened. */
-  sessions: () => number;
-  /** The latest session. */
-  current: () => Session;
-  /** `createTerm` requests the page sent over every session. */
-  creates: () => number;
-}
-
-/** Routes the page's WebSockets through the test; every session after the first holds back `presets` and every later hub message. */
-const holdPresets = async (page: Page): Promise<HeldPresets> => {
-  let sessions = 0;
-  let creates = 0;
-  let current: Session | null = null;
-  await page.routeWebSocket(
-    (url) => url.pathname === '/ws',
-    (ws) => {
-      sessions++;
-      const later = sessions > 1;
-      const server = ws.connectToServer();
-      let held: (string | Buffer)[] | null = null;
-      let released = false;
-      current = {
-        cut: () => {
-          void ws.close();
-          void server.close();
-        },
-        holding: () => held !== null,
-        release: () => {
-          released = true;
-          for (const message of held ?? []) ws.send(message);
-          held = null;
-        },
-      };
-      ws.onMessage((message) => {
-        if (typeof message === 'string') {
-          const m = decodeMessage('browserToHub', message);
-          if (m.t === 'host' && m.m.t === 'createTerm') creates++;
-        }
-        server.send(message);
-      });
-      server.onMessage((message) => {
-        // `presets` precedes `hosts`: holding it and everything after keeps the hub's order.
-        if (later && !released && held === null && typeof message === 'string' && decodeMessage('hubToBrowser', message).t === 'presets') {
-          held = [];
-        }
-        if (held === null) ws.send(message);
-        else held.push(message);
-      });
-    },
-  );
-  return {
-    sessions: () => sessions,
-    current: () => {
-      if (current === null) throw new Error('no WebSocket session');
-      return current;
-    },
-    creates: () => creates,
-  };
-};
 
 test.describe('preset picker', () => {
   test('the tab-bar controls name their shortcuts', async ({ hub, page }) => {
@@ -310,6 +241,64 @@ test.describe('preset choices of a worktree without terminals', () => {
     await page.keyboard.press('Enter');
     await expect.poll(() => createsSent(wire, mark).map((m) => [m.preset, m.command])).toEqual([[SHELL.name, SHELL.command]]);
   });
+
+  test('Enter held on the label of a worktree without terminals selects it and starts nothing', async ({ hub, page, wire }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await expect(page.locator(byTestId(TID.presetChoices))).toBeVisible();
+    const mark = wire.markSent();
+
+    await page.locator(worktreeEntry(feat)).locator(byTestId(TID.worktreeLabel)).focus();
+    // Every `down` after the first is a repeat of the held key.
+    for (let i = 0; i < 6; i++) await page.keyboard.down('Enter');
+    await page.keyboard.up('Enter');
+    await expect(page.locator(worktreeEntry(feat))).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption)).nth(0)).toBeFocused();
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    expect(createsSent(wire, mark)).toEqual([]);
+    await expect(page.locator(byTestId(TID.termTab))).toHaveCount(0);
+  });
+
+  test('Alt+Down in the choices selects the next worktree, one step, without moving a preset', async ({ hub, page, wire }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b', 'c']);
+    const [a = '', b = '', c = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await expect(page.locator(worktreeEntry(c))).toBeVisible();
+    const listed = await listedWorktrees(page);
+    expect([listed.indexOf(b), listed.indexOf(c)]).toEqual([listed.indexOf(a) + 1, listed.indexOf(a) + 2]);
+    await selectWorktree(page, a);
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await options.nth(0).focus();
+    const mark = wire.markSent();
+
+    await page.keyboard.press('Alt+ArrowDown');
+    await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
+    await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
+    await expect(options).toHaveText(PRESETS.map((p) => p.name));
+    expect(presetRequests(wire, mark)).toEqual([]);
+    expect(createsSent(wire, mark)).toEqual([]);
+  });
+
+  test('a held arrow key keeps moving through the choices', async ({ hub, page, wire }) => {
+    hub.presets = [...PRESETS, { name: 'third', command: 'echo THIRD' }];
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const options = page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetOption));
+    await options.nth(0).focus();
+    const mark = wire.markSent();
+
+    // Every `down` after the first is a repeat of the held key.
+    for (let i = 0; i < 3; i++) await page.keyboard.down('ArrowDown');
+    await page.keyboard.up('ArrowDown');
+    await expect(options.nth(2)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(2)).toBeFocused();
+    expect(createsSent(wire, mark)).toEqual([]);
+  });
 });
 
 test.describe('editing presets', () => {
@@ -465,5 +454,214 @@ test.describe('editing presets', () => {
       [CAT.name, third.name, SHELL.name],
     ]).toContainEqual(order);
     expect(configured(hub.configPath)).toEqual(order.map((name) => [...PRESETS, third].find((p) => p.name === name)));
+  });
+
+  test('the add form in the choices keeps the focus while another page moves a preset', async ({ hub, page, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const other = await openPage(hub, context);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    const name = choices.locator(byTestId(TID.presetName));
+    await expect(name).toBeFocused();
+    await page.keyboard.type('ab');
+
+    const otherRow = (preset: string): Locator =>
+      other.page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetRow), { hasText: preset });
+    await otherRow(CAT.name).dragTo(otherRow(SHELL.name), { targetPosition: { x: 20, y: 2 } });
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([CAT.name, SHELL.name]);
+    await expect(name).toBeFocused();
+    await page.keyboard.type('c');
+    await expect(name).toHaveValue('abc');
+  });
+
+  test('Escape in the add form of the choices returns the focus to the list, and Enter starts the first preset', async ({
+    hub,
+    page,
+    wire,
+  }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    await expect(choices.locator(byTestId(TID.presetName))).toBeFocused();
+    const mark = wire.markSent();
+
+    await page.keyboard.press('Escape');
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(choices.locator(byTestId(TID.presetOption)).nth(0)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => createsSent(wire, mark)).toEqual([expect.objectContaining({ worktree: repo, preset: SHELL.name })]);
+  });
+
+  test('in the choices, Cancel and a resolved add return the focus to the highlighted preset', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    const options = choices.locator(byTestId(TID.presetOption));
+    await options.nth(0).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toBeFocused();
+
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    await expect(choices.locator(byTestId(TID.presetName))).toBeFocused();
+    await choices.locator(byTestId(TID.presetForm)).getByRole('button', { name: 'Cancel' }).click();
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(1)).toBeFocused();
+
+    await addPreset(choices, NEW.name, NEW.command);
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(options).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(1)).toBeFocused();
+  });
+
+  test('an add that completes after Escape leaves the focus in the worktree search', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    const adds = await holdAddReplies(page);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    await choices.locator(byTestId(TID.presetName)).fill(NEW.name);
+    await choices.locator(byTestId(TID.presetCommand)).fill(NEW.command);
+    await choices.locator(byTestId(TID.presetCommand)).press('Enter');
+    await expect.poll(() => adds.held()).toBe(1);
+    await page.keyboard.press('Escape');
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    const search = page.locator(byTestId(TID.worktreeSearch));
+    await search.focus();
+
+    adds.release();
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(search).toBeFocused();
+  });
+
+  test('an add that completes after its form was cancelled and reopened leaves the new form open', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    const adds = await holdAddReplies(page);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await addPreset(choices, NEW.name, NEW.command);
+    await expect.poll(() => adds.held()).toBe(1);
+    await choices.locator(byTestId(TID.presetForm)).getByRole('button', { name: 'Cancel' }).click();
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    const name = choices.locator(byTestId(TID.presetName));
+    await expect(name).toBeFocused();
+    await page.keyboard.type('ab');
+
+    adds.release();
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue('ab');
+    await expect(choices.locator(byTestId(TID.presetSubmit))).toBeEnabled();
+  });
+
+  test('an add the hub refuses keeps the form open with the focus in its name field', async ({ hub, page, wire }) => {
+    // At the hub's limit the form's own checks pass and the hub refuses.
+    hub.presets = Array.from({ length: 64 }, (_, i) => ({ name: `p${String(i)}`, command: null }));
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await choices.locator(byTestId(TID.presetAdd)).click();
+    const name = choices.locator(byTestId(TID.presetName));
+    await name.fill(NEW.name);
+    const mark = wire.markSent();
+
+    await name.press('Enter');
+    await expect.poll(() => presetRequests(wire, mark)).toEqual([{ t: 'addPreset', preset: { name: NEW.name, command: null } }]);
+    await expect(choices.locator(byTestId(TID.presetError))).toContainText('more than 64 presets');
+    await expect(choices.locator(byTestId(TID.presetForm))).toHaveCount(1);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(name).toBeFocused();
+  });
+
+  test('a preset change from another page leaves the focus on a control outside the choices', async ({ hub, page, context }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const other = await openPage(hub, context);
+    const choices = page.locator(byTestId(TID.presetChoices));
+    await expect(choices).toBeVisible();
+    const filter = page.locator(byTestId(TID.filterChecked));
+    await filter.focus();
+
+    const otherRow = (preset: string): Locator =>
+      other.page.locator(byTestId(TID.presetChoices)).locator(byTestId(TID.presetRow), { hasText: preset });
+    await otherRow(CAT.name).dragTo(otherRow(SHELL.name), { targetPosition: { x: 20, y: 2 } });
+    await expect(choices.locator(byTestId(TID.presetOption))).toHaveText([CAT.name, SHELL.name]);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(filter).toBeFocused();
+  });
+
+  test('in the picker, Cancel and a resolved add return the focus to the highlighted preset; a refused add keeps it in the form', async ({
+    hub,
+    page,
+  }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await newTerminal(page);
+    await page.locator(byTestId(TID.newTab)).click();
+    const picker = page.locator(byTestId(TID.presetPicker));
+    const options = picker.locator(byTestId(TID.presetOption));
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toBeFocused();
+
+    await picker.locator(byTestId(TID.presetAdd)).click();
+    await expect(picker.locator(byTestId(TID.presetName))).toBeFocused();
+    await picker.locator(byTestId(TID.presetForm)).getByRole('button', { name: 'Cancel' }).click();
+    await expect(picker.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(1)).toBeFocused();
+
+    await picker.locator(byTestId(TID.presetAdd)).click();
+    const name = picker.locator(byTestId(TID.presetName));
+    await name.fill(CAT.name);
+    await name.press('Enter');
+    await expect(picker.locator(byTestId(TID.presetError))).toHaveText(`A preset named ${CAT.name} exists`);
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(name).toBeFocused();
+    await name.press('Escape');
+    await expect(options.nth(1)).toBeFocused();
+
+    await addPreset(picker, NEW.name, NEW.command);
+    await expect(picker.locator(byTestId(TID.presetForm))).toHaveCount(0);
+    await expect(options).toHaveText([...PRESETS.map((p) => p.name), NEW.name]);
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(1)).toBeFocused();
+    await expect(picker).toBeVisible();
+  });
+
+  test('removing the highlighted preset on another page leaves the focus on the surviving one in the picker', async ({
+    hub,
+    page,
+    context,
+  }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['feat']);
+    const feat = worktrees[0] ?? '';
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await newTerminal(page);
+    const other = await openPage(hub, context);
+    await selectWorktree(other.page, feat);
+    await page.locator(byTestId(TID.newTab)).click();
+    const options = page.locator(byTestId(TID.presetPicker)).locator(byTestId(TID.presetOption));
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toBeFocused();
+
+    const otherChoices = other.page.locator(byTestId(TID.presetChoices));
+    await otherChoices.locator(byTestId(TID.presetOption), { hasText: CAT.name }).locator('..').locator(byTestId(TID.presetRemove)).click();
+    await expect(options).toHaveText([SHELL.name]);
+    await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(options.nth(0)).toBeFocused();
   });
 });

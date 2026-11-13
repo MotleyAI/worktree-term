@@ -523,8 +523,8 @@ describe.skipIf(NO_USER_MANAGER !== null)(withUserManager('scopes of the real us
   it('resets the failed units with a prefix, and only those', async () => {
     const ours = `${unitPrefix(dir)}term-old-1.scope`;
     const theirs = `${unitPrefix(`${dir}/other`)}term-old-1.scope`;
-    failUnit(ours);
-    failUnit(theirs);
+    await failUnit(ours);
+    await failUnit(theirs);
     try {
       await resetFailedScopes(`${unitPrefix(dir)}term-`, report);
       expect(isFailed(ours)).toBe(false);

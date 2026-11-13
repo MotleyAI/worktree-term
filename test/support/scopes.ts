@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
+import { waitUntil } from './daemon-host.js';
 
 /** The slice every scope lives in. */
 export const SLICE = 'app-wtd.slice';
@@ -93,8 +94,8 @@ export const resetFailed = (unit: string): void => {
   spawnSync('systemctl', ['--user', 'reset-failed', unit], { stdio: 'ignore' }); // NOSONAR(S4036) — the host's own systemctl, as the product uses
 };
 
-/** Leaves `unit` failed, its process killed for lack of memory. */
-export const failUnit = (unit: string): void => {
+/** Leaves `unit` failed, its process killed for lack of memory; the manager marks it failed after systemd-run returns. */
+export const failUnit = async (unit: string): Promise<void> => {
   spawnSync(
     'systemd-run', // NOSONAR(S4036) — the host's own systemd-run, as the product uses
     [
@@ -116,7 +117,9 @@ export const failUnit = (unit: string): void => {
     ],
     { stdio: 'ignore' },
   );
-  if (!isFailed(unit)) throw new Error(`${unit} did not fail: ${JSON.stringify(unitState(unit))}`);
+  await waitUntil(() => isFailed(unit), `${unit} to fail`).catch((error: unknown) => {
+    throw new Error(`${unit} did not fail: ${JSON.stringify(unitState(unit))}`, { cause: error });
+  });
 };
 
 /** A stand-in program at `path` that appends its arguments, one call per line, to `<path>.calls`, then runs `body`. */

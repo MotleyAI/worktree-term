@@ -19,6 +19,47 @@ export interface HeldPresets {
   creates: () => number;
 }
 
+export interface HeldMessage {
+  /** Whether the message is held back. */
+  holding: () => boolean;
+  /** Delivers the held message. */
+  release: () => void;
+}
+
+/** Routes the page's WebSockets through the test, holding back only the hub's first `presets` message until released. */
+export const holdFirstPresets = async (page: Page): Promise<HeldMessage> => {
+  let held: string | null = null;
+  let seen = false;
+  let release = (): void => undefined;
+  await page.routeWebSocket(
+    (url) => url.pathname === '/ws',
+    (ws) => {
+      const server = ws.connectToServer();
+      ws.onMessage((message) => {
+        server.send(message);
+      });
+      server.onMessage((message) => {
+        if (!seen && typeof message === 'string' && decodeMessage('hubToBrowser', message).t === 'presets') {
+          seen = true;
+          held = message;
+          return;
+        }
+        ws.send(message);
+      });
+      release = () => {
+        if (held !== null) ws.send(held);
+        held = null;
+      };
+    },
+  );
+  return {
+    holding: () => held !== null,
+    release: () => {
+      release();
+    },
+  };
+};
+
 export interface HeldAdds {
   /** Hub replies to `addPreset` held back so far. */
   held: () => number;

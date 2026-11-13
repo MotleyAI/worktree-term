@@ -1083,6 +1083,7 @@ const activeSpot = (manager: TerminalManager): FocusSpot => {
           type: active instanceof HTMLInputElement ? active.type : '',
           editable: active instanceof HTMLElement && active.isContentEditable,
           terminal: manager.owns(active),
+          menu: active.getAttribute('aria-expanded') === 'true' || active.closest('[role="menu"]') !== null,
         },
   );
 };

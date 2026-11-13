@@ -63,16 +63,19 @@ export interface FocusedElement {
   editable: boolean;
   /** Owned by a terminal. */
   terminal: boolean;
+  /** On a control whose menu is open, or inside an open menu. */
+  menu: boolean;
 }
 
-export type FocusSpot = 'none' | 'terminal' | 'textField' | 'other';
+export type FocusSpot = 'none' | 'terminal' | 'menu' | 'textField' | 'other';
 
 const TEXT_INPUT_TYPES = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
 
-/** Where the keyboard focus is: nowhere (the page body), a terminal, a text field, or any other element. */
+/** Where the keyboard focus is: nowhere (the page body), a terminal, an open menu, a text field, or any other element. */
 export const focusSpot = (element: FocusedElement | null): FocusSpot => {
   if (element === null) return 'none';
   if (element.terminal) return 'terminal';
+  if (element.menu) return 'menu';
   if (element.editable || element.tag === 'textarea') return 'textField';
   if (element.tag === 'input' && TEXT_INPUT_TYPES.has(element.type)) return 'textField';
   return element.tag === 'body' ? 'none' : 'other';
@@ -84,7 +87,7 @@ export type ChoicesTrigger = 'shown' | 'modalClosed';
 /** Whether a worktree's preset choices take the keyboard focus from `spot`. */
 export const choicesTakeFocus = (trigger: ChoicesTrigger, spot: FocusSpot, modalOpen: boolean): boolean => {
   if (modalOpen) return false;
-  return trigger === 'shown' ? spot !== 'textField' : spot === 'none';
+  return trigger === 'shown' ? spot !== 'textField' && spot !== 'menu' : spot === 'none';
 };
 
 const MAX_PRESET_NAME = 64;

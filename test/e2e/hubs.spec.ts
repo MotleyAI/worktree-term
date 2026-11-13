@@ -16,6 +16,7 @@ import {
   writeHubConfig,
   type HostConfig,
 } from './fixture.js';
+import { holdFirstPresets } from './held-presets.js';
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box: Name or service not known';
 
@@ -118,6 +119,23 @@ test.describe('Hubs menu', () => {
     await expect.poll(() => colours(button)).toEqual(tab);
     await button.hover();
     await expect.poll(() => colours(button)).toEqual(tab);
+  });
+
+  test('preset choices shown while the menu is open leave it the focus, and Escape closes it', async ({ hub, page, ssh }) => {
+    ssh.failHost('box', RESOLVE_ERROR);
+    const presets = await holdFirstPresets(page);
+    await home(hub, page, [{ name: 'box', ssh: 'box' }]);
+    await expect.poll(() => presets.holding()).toBe(true);
+    const button = page.locator(byTestId(TID.hubsMenu));
+    await button.click();
+    await expect(button).toBeFocused();
+
+    presets.release();
+    await expect(page.locator(byTestId(TID.presetChoices))).toBeVisible();
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.locator(byTestId(TID.hubsList))).toHaveCount(0);
   });
 
   test('is absent without remote hosts', async ({ hub, page }) => {

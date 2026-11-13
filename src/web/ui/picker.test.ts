@@ -138,6 +138,7 @@ describe('focusSpot', () => {
     type: '',
     editable: false,
     terminal: false,
+    menu: false,
     ...fields,
   });
 
@@ -166,21 +167,28 @@ describe('focusSpot', () => {
     expect(focusSpot(element({ tag: 'dialog' }))).toBe('other');
   });
 
+  it('is a menu on a control whose menu is open or inside an open menu, even a text field', () => {
+    expect(focusSpot(element({ tag: 'button', menu: true }))).toBe('menu');
+    expect(focusSpot(element({ tag: 'input', type: 'text', menu: true }))).toBe('menu');
+  });
+
   it('is a terminal for an element the terminal manager owns, even a textarea', () => {
     expect(focusSpot(element({ tag: 'textarea', terminal: true }))).toBe('terminal');
     expect(focusSpot(element({ tag: 'div', terminal: true }))).toBe('terminal');
     expect(focusSpot(element({ tag: 'div', editable: true, terminal: true }))).toBe('terminal');
+    expect(focusSpot(element({ tag: 'div', terminal: true, menu: true }))).toBe('terminal');
   });
 });
 
 describe('choicesTakeFocus', () => {
-  const spots: readonly FocusSpot[] = ['none', 'terminal', 'other', 'textField'];
+  const spots: readonly FocusSpot[] = ['none', 'terminal', 'other', 'textField', 'menu'];
 
   it.each<[FocusSpot, boolean]>([
     ['none', true],
     ['terminal', true],
     ['other', true],
     ['textField', false],
+    ['menu', false],
   ])('when shown, takes the focus from %s: %s', (spot, takes) => {
     expect(choicesTakeFocus('shown', spot, false)).toBe(takes);
   });
@@ -190,6 +198,7 @@ describe('choicesTakeFocus', () => {
     ['terminal', false],
     ['other', false],
     ['textField', false],
+    ['menu', false],
   ])('after a picker or dialog closed, takes the focus from %s: %s', (spot, takes) => {
     expect(choicesTakeFocus('modalClosed', spot, false)).toBe(takes);
   });

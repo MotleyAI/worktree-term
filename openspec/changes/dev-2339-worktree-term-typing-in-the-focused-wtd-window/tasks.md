@@ -1,12 +1,12 @@
 ## 1. Tests first (pr-tests)
 
-- [ ] 1.1 `src/web/ui/focus.test.ts`: full truth table of `terminalTakesFocus` (trigger click / key / windowFocus × spot none / terminal / menu / textField / other-clicked / other-not-clicked × modal × open menu present × current terminal × page selection × Ctrl/Meta × composing incl. `Process`/`Dead`), including the no-current-terminal row standing for the preset choices (design D15); move the `focusSpot` / `choicesTakeFocus` cases from `picker.test.ts`; verify they fail for the missing module
-- [ ] 1.2 `focus.test.ts`: focus-origin tracker transitions (pointerdown → focusin → after the click task = clicked; Tab/script focus = not clicked; a later script focus after a click = not clicked) and the page-selection classifier (collapsed, terminal-only, page-only, mixed, disconnected endpoint); verify they fail
-- [ ] 1.3 `view` unit test for the claim (typed fake `TerminalManager`): claims `forwardKey`/`focus` on the focused pane only when the rule allows, never for a key whose default was prevented; repo-tab stepping in shown order, stopping at both ends; verify they fail
-- [ ] 1.4 Align `src/web/ui/keymap.test.ts` to design D14 (Alt+Left/Right → repo tab, Ctrl+Shift+Left/Right → terminal tab, both navigation/repeating); verify the new rows fail
-- [ ] 1.5 New `test/e2e/focus.spec.ts` covering every new `Pane focus` scenario of the delta; assert terminal screen contents (via `__wtdInspect` / `cat -v`) and `document.activeElement`; first-key scenario covers lower-case, upper-case, an arrow, Backspace, Enter, Ctrl+C with no duplicates; verify they fail
-- [ ] 1.6 Align `test/e2e/keyboard.spec.ts` and `test/e2e/splits.spec.ts` (Alt+Left/Right as terminal-tab keys) to Ctrl+Shift+Left/Right; add the `Repo navigation`, `Navigation keeps the keyboard in the terminal` and extended `Shortcut does not reach the program` scenarios; verify they fail
-- [ ] 1.7 Codex review of the tests against the spec delta and design
+- [x] 1.1 `src/web/ui/focus.test.ts`: full truth table of `terminalTakesFocus` (trigger click / key / windowFocus × spot none / terminal / menu / textField / other-clicked / other-not-clicked × modal × open menu present × current terminal × page selection × Ctrl/Meta × composing incl. `Process`/`Dead`), including the no-current-terminal row standing for the preset choices (design D15); move the `focusSpot` / `choicesTakeFocus` cases from `picker.test.ts`; verify they fail for the missing module
+- [x] 1.2 `focus.test.ts`: focus-origin tracker transitions (pointerdown → focusin → after the click task = clicked; Tab/script focus = not clicked; a later script focus after a click = not clicked) and the page-selection classifier (collapsed, terminal-only, page-only, mixed, disconnected endpoint); verify they fail
+- [x] 1.3 `view` unit test for the claim (typed fake `TerminalManager`): claims `forwardKey`/`focus` on the focused pane only when the rule allows, never for a key whose default was prevented; repo-tab stepping in shown order, stopping at both ends; verify they fail
+- [x] 1.4 Align `src/web/ui/keymap.test.ts` to design D14 (Alt+Left/Right → repo tab, Ctrl+Shift+Left/Right → terminal tab, both navigation/repeating); verify the new rows fail
+- [x] 1.5 New `test/e2e/focus.spec.ts` covering every new `Pane focus` scenario of the delta; assert terminal screen contents (via `__wtdInspect` / `cat -v`) and `document.activeElement`; first-key scenario covers lower-case, upper-case, an arrow, Backspace, Enter, Ctrl+C with no duplicates; verify they fail
+- [x] 1.6 Align `test/e2e/keyboard.spec.ts` and `test/e2e/splits.spec.ts` (Alt+Left/Right as terminal-tab keys) to Ctrl+Shift+Left/Right; add the `Repo navigation`, `Navigation keeps the keyboard in the terminal` and extended `Shortcut does not reach the program` scenarios; verify they fail
+- [x] 1.7 Codex review of the tests against the spec delta and design
 
 ## 2. Focus rule and tracking (`src/web/ui/focus.ts`)
 

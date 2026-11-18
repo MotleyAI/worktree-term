@@ -395,9 +395,9 @@ test.describe('dragging dividers', () => {
     await page.locator(terminalBox(LOCAL, left)).click();
 
     holding = true;
-    await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Control+Shift+ArrowRight');
     await expect.poll(() => paneIds(page)).toEqual([other]);
-    await page.keyboard.press('Alt+ArrowLeft');
+    await page.keyboard.press('Control+Shift+ArrowLeft');
     await expect.poll(() => paneIds(page)).toEqual([left, right]);
     await startDrag(page, '', 'right', await pointFor(page, left, right, 'right', 0.3));
     await expect.poll(() => shareOf(page, left, right, 'right')).toBeCloseTo(0.3, 1);

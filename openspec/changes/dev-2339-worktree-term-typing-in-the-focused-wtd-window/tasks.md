@@ -10,25 +10,26 @@
 
 ## 2. Focus rule and tracking (`src/web/ui/focus.ts`)
 
-- [ ] 2.1 Create `focus.ts`; move `focusSpot`, `FocusSpot`, `FocusedElement`, `choicesTakeFocus`, `ChoicesTrigger` from `picker.ts` and `activeSpot` from `app.tsx`; update imports; verify `pnpm test` unit tier for picker/focus passes
-- [ ] 2.2 Implement `terminalTakesFocus`, the page-selection classifier and the focus-origin tracker (design D2–D4, D6–D8); verify 1.1–1.2 pass
+- [x] 2.1 Create `focus.ts`; move `focusSpot`, `FocusSpot`, `FocusedElement`, `choicesTakeFocus`, `ChoicesTrigger` from `picker.ts` and `activeSpot` from `app.tsx`; update imports; verify `pnpm test` unit tier for picker/focus passes
+- [x] 2.2 Implement `terminalTakesFocus`, the page-selection classifier and the focus-origin tracker (design D2–D4, D6–D8); verify 1.1–1.2 pass
 
 ## 3. Terminal key delivery (`src/web/terminals/manager.ts`)
 
-- [ ] 3.1 Add public `forwardKey(host, termId, event)` per design D5 (replay keydown on xterm's textarea with `keyCode` defined, cancel the original only when xterm handled the replay); verify the first-key e2e scenario passes with no duplicate input
+- [x] 3.1 Add public `forwardKey(host, termId, event)` per design D5 (replay keydown on xterm's textarea with `keyCode` defined, cancel the original only when xterm handled the replay); verify the first-key e2e scenario passes with no duplicate input
 
 ## 4. Wiring (`view.ts`, `main/index.ts`)
 
-- [ ] 4.1 `View`: claim method applying the rule for the three triggers; key trigger runs after `handleKey` and skips default-prevented keys; verify 1.3 passes
-- [ ] 4.2 `main/index.ts`: document `keydown` → claim; document `click` (pointer clicks only, `detail !== 0`) → claim a task later, re-reading the focus, cancelled by `dblclick`; `window` `focus` → claim; install the origin tracker (design D9)
-- [ ] 4.3 Find why `sync()`'s own focus call loses after clicking a new worktree row or repo tab and remove that cause (design D10); verify the `Clicking another worktree/repo tab` scenarios pass
+- [x] 4.1 `View`: claim method applying the rule for the three triggers; key trigger runs after `handleKey` and skips default-prevented keys; verify 1.3 passes
+- [x] 4.2 `main/index.ts`: document `keydown` → claim; document `click` (pointer clicks only, `detail !== 0`) → claim a task later, re-reading the focus, cancelled by `dblclick`; `window` `focus` → claim; install the origin tracker (design D9)
+- [x] 4.3 Find why `sync()`'s own focus call loses after clicking a new worktree row or repo tab and remove that cause (design D10); verify the `Clicking another worktree/repo tab` scenarios pass
+  - Probe: with the click claim disabled, `sync()`'s focus call already wins for a new or previously viewed worktree row and repo tab, with fast and slow clicks; no losing cause reproduced, nothing removed. Both scenarios pass with and without the click claim.
 
 ## 5. Shortcuts
 
-- [ ] 5.1 `keymap.ts`: new `repo` action on Alt+Left/Right, `tab` on Ctrl+Shift+Left/Right (navigation); `View.stepRepo` over the shown repo tabs; verify 1.4 and 1.6 pass
-- [ ] 5.2 README shortcut table updated to the new bindings
+- [x] 5.1 `keymap.ts`: new `repo` action on Alt+Left/Right, `tab` on Ctrl+Shift+Left/Right (navigation); `View.stepRepo` over the shown repo tabs; verify 1.4 and 1.6 pass
+- [x] 5.2 README shortcut table updated to the new bindings
 
 ## 6. Gates
 
 - [ ] 6.1 Run the local test scope (`la-affected-tests --base main` plus the e2e specs above, `keyboard.spec.ts`, `splits.spec.ts`, `picker.spec.ts`, `sidebar.spec.ts`, `tab-names.spec.ts`, `terminals.spec.ts`); all green
-- [ ] 6.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `tsc -b`, `pnpm lint`; all green
+- [x] 6.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `tsc -b`, `pnpm lint`; all green

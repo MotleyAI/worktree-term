@@ -14,6 +14,7 @@ export interface KeyLike {
 
 export type Action =
   | { t: 'worktree'; dir: -1 | 1 }
+  | { t: 'repo'; dir: -1 | 1 }
   | { t: 'tab'; dir: -1 | 1 }
   | { t: 'pane'; dir: Direction }
   | { t: 'newTab' }
@@ -46,9 +47,9 @@ const altArrow = (dir: Direction): Action => {
     case 'down':
       return { t: 'worktree', dir: 1 };
     case 'left':
-      return { t: 'tab', dir: -1 };
+      return { t: 'repo', dir: -1 };
     case 'right':
-      return { t: 'tab', dir: 1 };
+      return { t: 'repo', dir: 1 };
   }
 };
 
@@ -57,6 +58,9 @@ const actionOf = (e: KeyLike): { action: Action; navigation: boolean } | null =>
   const arrow = ARROWS[e.code];
   if (arrow !== undefined && e.altKey && !e.ctrlKey) {
     return { action: e.shiftKey ? { t: 'pane', dir: arrow } : altArrow(arrow), navigation: true };
+  }
+  if ((arrow === 'left' || arrow === 'right') && e.ctrlKey && e.shiftKey && !e.altKey) {
+    return { action: { t: 'tab', dir: arrow === 'left' ? -1 : 1 }, navigation: true };
   }
   const action = CTRL_SHIFT[e.code];
   if (action !== undefined && e.ctrlKey && e.shiftKey && !e.altKey) return { action, navigation: false };

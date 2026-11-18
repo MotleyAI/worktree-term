@@ -8,7 +8,8 @@ import { hasBanner, hostAction, statusText } from './hosts.js';
 import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
 import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, type EditorFailure } from './editor.js';
 import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
-import { choicesTakeFocus, dropPosition, focusSpot, pickerKey, presetFromForm, type FocusSpot } from './picker.js';
+import { activeSpot, choicesTakeFocus } from './focus.js';
+import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import {
@@ -173,8 +174,11 @@ const Hubs = ({ client }: { client: HubClient }) => {
     if (event.key !== 'Escape') return;
     event.stopPropagation();
     setOpen(false);
-    // The focused entry goes with the menu: keep the keyboard on the Hubs button.
-    menuButton.current?.focus();
+    // The focused entry goes with the menu: keep the keyboard on the Hubs button. Re-focusing an already focused
+    // button fires no focusin, so blur it first: the focus is then the page's, not a click's.
+    const button = menuButton.current;
+    if (button !== null && button === document.activeElement) button.blur();
+    button?.focus();
   };
   const install = (): void => {
     const pending = stateRef.current.line;
@@ -1296,22 +1300,6 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
         }}
       />
     </dialog>
-  );
-};
-
-/** Where the page's keyboard focus is. */
-const activeSpot = (manager: TerminalManager): FocusSpot => {
-  const active = document.activeElement;
-  return focusSpot(
-    active === null
-      ? null
-      : {
-          tag: active.tagName.toLowerCase(),
-          type: active instanceof HTMLInputElement ? active.type : '',
-          editable: active instanceof HTMLElement && active.isContentEditable,
-          terminal: manager.owns(active),
-          menu: active.getAttribute('aria-expanded') === 'true' || active.closest('[role="menu"]') !== null,
-        },
   );
 };
 

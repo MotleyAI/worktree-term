@@ -1,7 +1,7 @@
 import { h, render } from 'preact';
 import { HubClient, pageTitle, RequestError, Restorer } from '../client/index.js';
 import { TerminalManager } from '../terminals/index.js';
-import { App, View } from '../ui/index.js';
+import { App, FocusOrigin, readPageFocus, trackFocusOrigin, View } from '../ui/index.js';
 
 /** The package version, defined at build time. */
 declare const __WTD_VERSION__: string;
@@ -10,10 +10,40 @@ const client = new HubClient(__WTD_VERSION__);
 const manager = new TerminalManager(client);
 const view = new View(client, manager);
 
+const origin = new FocusOrigin<Element>();
+trackFocusOrigin(origin);
+
 manager.setKeyFilter((event) => !view.handleKey(event, true));
 document.addEventListener('keydown', (event) => {
   // Keys in a terminal reach the view through the terminal's key filter.
-  if (!manager.owns(event.target instanceof Node ? event.target : null)) view.handleKey(event, false);
+  if (manager.owns(event.target instanceof Node ? event.target : null)) return;
+  view.handleKey(event, false);
+  view.claimKey(event, readPageFocus(manager, origin));
+});
+
+// A click claims once its own handlers and renders have run; a double click leaves the focus to them.
+// Captured, so controls that stop a click's propagation are seen too.
+let clickClaim: ReturnType<typeof setTimeout> | undefined;
+document.addEventListener(
+  'click',
+  (event) => {
+    if (event.detail === 0) return;
+    clearTimeout(clickClaim);
+    clickClaim = setTimeout(() => {
+      view.claimFocus('click', readPageFocus(manager, origin));
+    });
+  },
+  true,
+);
+document.addEventListener(
+  'dblclick',
+  () => {
+    clearTimeout(clickClaim);
+  },
+  true,
+);
+window.addEventListener('focus', () => {
+  view.claimFocus('windowFocus', readPageFocus(manager, origin));
 });
 
 const restorer = new Restorer({

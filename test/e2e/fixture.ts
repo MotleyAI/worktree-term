@@ -326,6 +326,21 @@ export const ready = async (page: Page, termId: number, host = LOCAL): Promise<v
   await waitScreen(page, termId, 'READY-MARK', 10_000, host);
 };
 
+/** The id of the terminal holding the keyboard focus; null when none does. */
+export const focusedTerminal = (page: Page): Promise<number | null> =>
+  page.evaluate((selector) => {
+    const box = document.activeElement?.closest(selector);
+    return box instanceof HTMLElement ? Number(box.dataset['term']) : null;
+  }, byTestId(TID.terminal));
+
+/** Moves the keyboard focus to the page body. */
+export const focusBody = async (page: Page): Promise<void> => {
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  });
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+};
+
 /** The terminal's `.xterm` element. */
 export const xtermOf = (page: Page, termId: number, host = LOCAL): Promise<ElementHandle<Element>> => {
   return page.locator(terminalBox(host, termId)).locator('.xterm').elementHandle();

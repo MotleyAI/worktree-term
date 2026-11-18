@@ -118,6 +118,26 @@ const openLink = (_event: MouseEvent, uri: string): void => {
   window.open(uri, '_blank', 'noopener,noreferrer');
 };
 
+/** A cancelable copy of the `keydown` `event`, carrying the legacy `keyCode` xterm.js reads. */
+const replayOf = (event: KeyboardEvent): KeyboardEvent => {
+  const copy = new KeyboardEvent('keydown', {
+    bubbles: true,
+    cancelable: true,
+    key: event.key,
+    code: event.code,
+    location: event.location,
+    repeat: event.repeat,
+    isComposing: event.isComposing,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+  });
+  // The legacy fields are not part of the event init.
+  for (const name of ['keyCode', 'which'] as const) Object.defineProperty(copy, name, { value: event[name] });
+  return copy;
+};
+
 /** One xterm.js terminal per daemon terminal, kept outside Preact and never re-created while its PTY lives (design D11, D12). */
 export class TerminalManager {
   private readonly layer = document.createElement('div');
@@ -212,6 +232,19 @@ export class TerminalManager {
 
   focus(host: number, termId: number): void {
     this.entries.get(keyOf(host, termId))?.term.focus();
+  }
+
+  /**
+   * Focuses the terminal and replays the `keydown` `event`, pressed elsewhere, on it; cancels `event` when
+   * the terminal handled the replay, else lets its default proceed so the following `keypress` reaches the terminal.
+   */
+  forwardKey(host: number, termId: number, event: KeyboardEvent): void {
+    const entry = this.entries.get(keyOf(host, termId));
+    if (entry === undefined) return;
+    entry.term.focus();
+    const textarea = entry.term.textarea;
+    if (textarea === undefined || document.activeElement !== textarea) return;
+    if (!textarea.dispatchEvent(replayOf(event))) event.preventDefault();
   }
 
   /** The terminal's selected text; empty without a selection. */

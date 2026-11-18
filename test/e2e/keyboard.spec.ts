@@ -1,9 +1,11 @@
 import type { Page } from '@playwright/test';
-import { byTestId, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
+import { byTestId, repoTab, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
   activeTerm,
+  createShells,
   expect,
   focusedPane,
+  focusedTerminal,
   listedWorktrees,
   LOCAL,
   makeRepoWith,
@@ -12,6 +14,7 @@ import {
   PRESETS,
   ready,
   screenOf,
+  selectRepo,
   selectWorktree,
   splitPane,
   test,
@@ -82,21 +85,73 @@ test.describe('worktree navigation', () => {
   });
 });
 
+test.describe('navigation and the keyboard focus', () => {
+  test('Alt+Down onto a worktree with a terminal leaves the keyboard in its terminal', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['b']);
+    const [b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const [[mainTerm = 0] = [], [bTerm = 0] = []] = await createShells(await watcher(hub, repo), [repo, b]);
+    await expect.poll(() => listedWorktrees(page)).toEqual([repo, b]);
+    await selectWorktree(page, repo);
+    await page.locator(terminalBox(LOCAL, mainTerm)).click();
+    await expect.poll(() => focusedTerminal(page)).toBe(mainTerm);
+
+    await page.keyboard.press('Alt+ArrowDown');
+    await selected(page, b);
+    await expect.poll(() => focusedTerminal(page)).toBe(bTerm);
+    await page.keyboard.type("echo NAV''-B");
+    await page.keyboard.press('Enter');
+    await waitScreen(page, bTerm, 'NAV-B');
+  });
+});
+
+test.describe('repo navigation', () => {
+  test('Alt+Right twice from the first of three repo tabs selects the third and focuses its terminal, and stops there', async ({
+    hub,
+    page,
+  }) => {
+    const repos = ['app', 'lib', 'tool'].map((name) => makeRepoWith(hub, name, []).repo);
+    const [app = '', lib = '', tool = ''] = repos;
+    hub.writeRepos(repos);
+    await openUi(hub, page);
+    const terms: number[] = [];
+    for (const repo of repos) {
+      const [[term = 0] = []] = await createShells(await watcher(hub, repo), [repo]); // NOSONAR(S9382) — sequential setup
+      terms.push(term);
+    }
+    const [appTerm = 0, , toolTerm = 0] = terms;
+    await selectRepo(page, app);
+    await page.locator(terminalBox(LOCAL, appTerm)).click();
+
+    await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Alt+ArrowRight');
+    await expect(page.locator(repoTab(tool))).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(() => focusedTerminal(page)).toBe(toolTerm);
+    await page.keyboard.press('Alt+ArrowRight');
+    await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
+    await expect(page.locator(repoTab(tool))).toHaveAttribute('aria-selected', 'true');
+    expect(await focusedTerminal(page)).toBe(toolTerm);
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect(page.locator(repoTab(lib))).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
 test.describe('tab and pane navigation', () => {
-  test('Alt+Right twice from the first of three tabs shows the third, and stops there', async ({ hub, page }) => {
+  test('Ctrl+Shift+Right twice from the first of three tabs shows the third, and stops there', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', []);
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const [, second = 0, third = 0] = await threeTabs(page);
 
-    await page.keyboard.press('Alt+ArrowRight');
-    await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Control+Shift+ArrowRight');
+    await page.keyboard.press('Control+Shift+ArrowRight');
     await expect(page.locator(termTab(third))).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator(terminalBox(LOCAL, third))).toBeVisible();
-    await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Control+Shift+ArrowRight');
     await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(await activeTerm(page)).toBe(third);
-    await page.keyboard.press('Alt+ArrowLeft');
+    await page.keyboard.press('Control+Shift+ArrowLeft');
     await expect(page.locator(termTab(second))).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -138,7 +193,7 @@ test.describe('tab and pane navigation', () => {
     const first = await newTerminal(page);
     const second = await newTerminal(page);
     await page.locator(byTestId(TID.filterChecked)).focus();
-    await page.keyboard.press('Alt+ArrowLeft');
+    await page.keyboard.press('Control+Shift+ArrowLeft');
     await expect(page.locator(termTab(first))).toHaveAttribute('aria-selected', 'true');
     await page.locator(byTestId(TID.filterChecked)).focus();
     await page.keyboard.press('Control+Shift+KeyT');
@@ -165,12 +220,14 @@ test.describe('shortcuts and the terminal program', () => {
     await waitScreen(page, term, 'PRESET-CAT');
     await page.locator(terminalBox(LOCAL, term)).click();
 
-    // Each does nothing here: one worktree, one tab, one pane, no selection.
+    // Each does nothing here: one repo, one worktree, one tab, one pane, no selection.
     for (const key of [
       'Alt+ArrowUp',
       'Alt+ArrowDown',
       'Alt+ArrowLeft',
       'Alt+ArrowRight',
+      'Control+Shift+ArrowLeft',
+      'Control+Shift+ArrowRight',
       'Alt+Shift+ArrowLeft',
       'Alt+Shift+ArrowRight',
       'Alt+Shift+ArrowUp',
@@ -273,6 +330,7 @@ test.describe('shortcuts while a picker or dialog is open', () => {
     await expect(picker).toBeVisible();
     await page.keyboard.press('Alt+ArrowDown');
     await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Control+Shift+ArrowRight');
     await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await selected(page, worktree);
     expect(await activeTerm(page)).toBe(first);
@@ -294,6 +352,7 @@ test.describe('shortcuts while a picker or dialog is open', () => {
     const mark = wire.markSent();
     await page.keyboard.press('Alt+ArrowDown');
     await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Control+Shift+ArrowRight');
     await page.keyboard.press('Control+Shift+KeyT');
     await page.waitForTimeout(500); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await selected(page, worktree);
@@ -313,12 +372,14 @@ test.describe('held shortcuts', () => {
     await openUi(hub, page);
     const [, , third = 0] = await threeTabs(page);
 
-    await page.keyboard.down('Alt');
+    await page.keyboard.down('Control');
+    await page.keyboard.down('Shift');
     await page.keyboard.down('ArrowRight');
     // A second keydown of a held key is an auto-repeat.
     await page.keyboard.down('ArrowRight');
     await page.keyboard.up('ArrowRight');
-    await page.keyboard.up('Alt');
+    await page.keyboard.up('Shift');
+    await page.keyboard.up('Control');
     await expect(page.locator(termTab(third))).toHaveAttribute('aria-selected', 'true');
   });
 

@@ -1,18 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Layout } from '../../protocol/index.js';
-import {
-  choicesTakeFocus,
-  dropPosition,
-  focusSpot,
-  pickerKey,
-  pickerValid,
-  presetFromForm,
-  type ChoicesTrigger,
-  type FocusedElement,
-  type FocusSpot,
-  type PickerContext,
-  type PickerWorld,
-} from './picker.js';
+import { dropPosition, pickerKey, pickerValid, presetFromForm, type PickerContext, type PickerWorld } from './picker.js';
 
 type Pane = Layout['tabs'][number]['root'];
 
@@ -129,82 +117,6 @@ describe('pickerKey', () => {
     expect(pickerKey('ArrowDown', 2, 3, true)).toEqual({ t: 'move', index: 2 });
     expect(pickerKey('ArrowUp', 2, 3, true)).toEqual({ t: 'move', index: 1 });
     expect(pickerKey('ArrowUp', 0, 3, true)).toEqual({ t: 'move', index: 0 });
-  });
-});
-
-describe('focusSpot', () => {
-  const element = (fields: Partial<FocusedElement> = {}): FocusedElement => ({
-    tag: 'div',
-    type: '',
-    editable: false,
-    terminal: false,
-    menu: false,
-    ...fields,
-  });
-
-  it('is none without a focused element or on the page body', () => {
-    expect(focusSpot(null)).toBe('none');
-    expect(focusSpot(element({ tag: 'body' }))).toBe('none');
-  });
-
-  it.each(['text', 'search', 'email', 'url', 'tel', 'password', 'number'])('is a text field for an input of type %j', (type) => {
-    expect(focusSpot(element({ tag: 'input', type }))).toBe('textField');
-  });
-
-  it('is a text field for a textarea and inside an editable element', () => {
-    expect(focusSpot(element({ tag: 'textarea' }))).toBe('textField');
-    expect(focusSpot(element({ tag: 'div', editable: true }))).toBe('textField');
-    expect(focusSpot(element({ tag: 'span', editable: true }))).toBe('textField');
-  });
-
-  it.each(['checkbox', 'radio', 'button', 'submit', 'range', 'color', 'file'])('is other for an input of type %j', (type) => {
-    expect(focusSpot(element({ tag: 'input', type }))).toBe('other');
-  });
-
-  it('is other for buttons, options and plain elements', () => {
-    expect(focusSpot(element({ tag: 'button' }))).toBe('other');
-    expect(focusSpot(element({ tag: 'div' }))).toBe('other');
-    expect(focusSpot(element({ tag: 'dialog' }))).toBe('other');
-  });
-
-  it('is a menu on a control whose menu is open or inside an open menu, even a text field', () => {
-    expect(focusSpot(element({ tag: 'button', menu: true }))).toBe('menu');
-    expect(focusSpot(element({ tag: 'input', type: 'text', menu: true }))).toBe('menu');
-  });
-
-  it('is a terminal for an element the terminal manager owns, even a textarea', () => {
-    expect(focusSpot(element({ tag: 'textarea', terminal: true }))).toBe('terminal');
-    expect(focusSpot(element({ tag: 'div', terminal: true }))).toBe('terminal');
-    expect(focusSpot(element({ tag: 'div', editable: true, terminal: true }))).toBe('terminal');
-    expect(focusSpot(element({ tag: 'div', terminal: true, menu: true }))).toBe('terminal');
-  });
-});
-
-describe('choicesTakeFocus', () => {
-  const spots: readonly FocusSpot[] = ['none', 'terminal', 'other', 'textField', 'menu'];
-
-  it.each<[FocusSpot, boolean]>([
-    ['none', true],
-    ['terminal', true],
-    ['other', true],
-    ['textField', false],
-    ['menu', false],
-  ])('when shown, takes the focus from %s: %s', (spot, takes) => {
-    expect(choicesTakeFocus('shown', spot, false)).toBe(takes);
-  });
-
-  it.each<[FocusSpot, boolean]>([
-    ['none', true],
-    ['terminal', false],
-    ['other', false],
-    ['textField', false],
-    ['menu', false],
-  ])('after a picker or dialog closed, takes the focus from %s: %s', (spot, takes) => {
-    expect(choicesTakeFocus('modalClosed', spot, false)).toBe(takes);
-  });
-
-  it.each<ChoicesTrigger>(['shown', 'modalClosed'])('never takes the focus while a picker or dialog is open (%s)', (trigger) => {
-    for (const spot of spots) expect(choicesTakeFocus(trigger, spot, true)).toBe(false);
   });
 });
 

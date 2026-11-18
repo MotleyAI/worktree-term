@@ -92,7 +92,7 @@ test.describe('navigation and the keyboard focus', () => {
     hub.writeRepos([repo]);
     await openUi(hub, page);
     const [[mainTerm = 0] = [], [bTerm = 0] = []] = await createShells(await watcher(hub, repo), [repo, b]);
-    expect(await listedWorktrees(page)).toEqual([repo, b]);
+    await expect.poll(() => listedWorktrees(page)).toEqual([repo, b]);
     await selectWorktree(page, repo);
     await page.locator(terminalBox(LOCAL, mainTerm)).click();
     await expect.poll(() => focusedTerminal(page)).toBe(mainTerm);

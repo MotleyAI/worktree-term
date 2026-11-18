@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { FakeSsh } from '../support/fake-ssh.js';
 import type { HubHost } from '../support/hub-host.js';
 import { byTestId, repoTab, terminalBox, termTab, TID, worktreeEntry } from './contract.js';
 import {
@@ -71,6 +72,18 @@ const oneShell = async (hub: HubHost, page: Page): Promise<{ repo: string; term:
   return { repo, term };
 };
 
+/** A shell with the key echo running, on a page that shows the Hubs menu; returns the terminal. */
+const hubsShell = async (hub: HubHost, page: Page, ssh: FakeSsh): Promise<number> => {
+  ssh.failHost('box', 'ssh: Could not resolve hostname box: Name or service not known');
+  const { repo } = makeRepoWith(hub, 'app', []);
+  writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box' }] });
+  await openUi(hub, page);
+  const term = await newTerminal(page);
+  await ready(page, term);
+  await startKeyEcho(hub, page, term);
+  return term;
+};
+
 /** Lets the page see the window lose the focus and regain it. */
 const switchWindowAway = (page: Page): Promise<void> =>
   page.evaluate(() => {
@@ -123,6 +136,13 @@ test.describe('typing after a click reaches the current terminal', () => {
     await page.locator(termTab(term)).click();
     await expect.poll(() => focusedTerminal(page)).toBe(term);
     await echoReaches(page, term, 'TAB-SAME');
+  });
+
+  test('clicking a worktree’s star, which keeps its click to itself', async ({ hub, page }) => {
+    const { repo, term } = await oneShell(hub, page);
+    await page.locator(`${worktreeEntry(repo)} input[type="checkbox"]`).click();
+    await expect.poll(() => focusedTerminal(page)).toBe(term);
+    await echoReaches(page, term, 'STAR-OK');
   });
 
   test('clicking an empty part of the tab bar', async ({ hub, page }) => {
@@ -192,16 +212,19 @@ test.describe('keys pressed while nothing holds the keyboard', () => {
     await startKeyEcho(hub, page, term);
 
     let expected = '';
-    for (const [key, hex] of [
-      ['KeyA', '61'],
-      ['Shift+KeyA', '41'],
-      ['ArrowUp', '1b5b41'],
-      ['Backspace', '7f'],
-      ['Enter', '0d'],
-      ['Control+KeyC', '03'],
+    for (const [modifier, key, hex] of [
+      [null, 'KeyA', '61'],
+      ['Shift', 'KeyA', '41'],
+      [null, 'ArrowUp', '1b5b41'],
+      [null, 'Backspace', '7f'],
+      [null, 'Enter', '0d'],
+      ['Control', 'KeyC', '03'],
     ] as const) {
+      // The modifier's own keydown already claims, so the body takes the focus back before the key.
+      if (modifier !== null) await page.keyboard.down(modifier);
       await focusBody(page);
       await page.keyboard.press(key);
+      if (modifier !== null) await page.keyboard.up(modifier);
       expected += `[${hex}]`;
       await expect.poll(() => received(page, term), { message: key }).toBe(expected);
       expect(await focusedTerminal(page)).toBe(term);
@@ -298,20 +321,28 @@ test.describe('fields, menus and focused controls keep their keys', () => {
   });
 
   test('the open Hubs menu', async ({ hub, page, ssh }) => {
-    ssh.failHost('box', 'ssh: Could not resolve hostname box: Name or service not known');
-    const { repo } = makeRepoWith(hub, 'app', []);
-    writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box' }] });
-    await openUi(hub, page);
-    const term = await newTerminal(page);
-    await ready(page, term);
-    await startKeyEcho(hub, page, term);
-
+    const term = await hubsShell(hub, page, ssh);
     await page.locator(byTestId(TID.hubsMenu)).click();
     const list = page.locator(byTestId(TID.hubsList));
     await expect(list).toBeVisible();
     await page.keyboard.press('KeyQ');
     await receivedNothing(page, term);
     await expect(list).toBeVisible();
+  });
+
+  test('Escape from a clicked Hubs menu leaves the keyboard on the Hubs button', async ({ hub, page, ssh }) => {
+    const term = await hubsShell(hub, page, ssh);
+    const button = page.locator(byTestId(TID.hubsMenu));
+    await button.click();
+    const list = page.locator(byTestId(TID.hubsList));
+    await expect(list).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(list).toHaveCount(0);
+    expect(await button.evaluate((el) => el === document.activeElement)).toBe(true);
+
+    await page.keyboard.press('Space');
+    await expect(list).toBeVisible();
+    await receivedNothing(page, term);
   });
 
   test('a terminal tab focused from the keyboard takes Enter', async ({ hub, page }) => {
@@ -351,6 +382,28 @@ test.describe('fields, menus and focused controls keep their keys', () => {
     await receivedNothing(page, term);
     await page.keyboard.press('KeyX');
     await expect.poll(() => received(page, term)).toBe('[78]');
+  });
+
+  test('a word selected by a double click: Ctrl+C copies it', async ({ hub, page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: hub.origin });
+    const { repo, term } = await oneShell(hub, page);
+    await startKeyEcho(hub, page, term);
+
+    const tab = await page.locator(repoTab(repo)).boundingBox();
+    if (tab === null) throw new Error('the repo tab is not shown');
+    // A person's double click: the first click's own task runs before the second press.
+    await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
+    await page.mouse.down({ clickCount: 1 });
+    await page.mouse.up({ clickCount: 1 });
+    await page.waitForTimeout(120); // NOSONAR(S2925) — the gap between a person's two clicks
+    await page.mouse.down({ clickCount: 2 });
+    await page.mouse.up({ clickCount: 2 });
+    const selected = await page.evaluate(() => getSelection()?.toString() ?? '');
+    expect(selected).not.toBe('');
+
+    await page.keyboard.press('Control+KeyC');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
+    await receivedNothing(page, term);
   });
 
   test('without a current terminal, a click in the terminal area focuses no terminal', async ({ hub, page }) => {

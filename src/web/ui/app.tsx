@@ -174,8 +174,11 @@ const Hubs = ({ client }: { client: HubClient }) => {
     if (event.key !== 'Escape') return;
     event.stopPropagation();
     setOpen(false);
-    // The focused entry goes with the menu: keep the keyboard on the Hubs button.
-    menuButton.current?.focus();
+    // The focused entry goes with the menu: keep the keyboard on the Hubs button. Re-focusing an already focused
+    // button fires no focusin, so blur it first: the focus is then the page's, not a click's.
+    const button = menuButton.current;
+    if (button !== null && button === document.activeElement) button.blur();
+    button?.focus();
   };
   const install = (): void => {
     const pending = stateRef.current.line;

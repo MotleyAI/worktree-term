@@ -22,17 +22,26 @@ document.addEventListener('keydown', (event) => {
 });
 
 // A click claims once its own handlers and renders have run; a double click leaves the focus to them.
+// Captured, so controls that stop a click's propagation are seen too.
 let clickClaim: ReturnType<typeof setTimeout> | undefined;
-document.addEventListener('click', (event) => {
-  if (event.detail === 0) return;
-  clearTimeout(clickClaim);
-  clickClaim = setTimeout(() => {
-    view.claimFocus('click', readPageFocus(manager, origin));
-  });
-});
-document.addEventListener('dblclick', () => {
-  clearTimeout(clickClaim);
-});
+document.addEventListener(
+  'click',
+  (event) => {
+    if (event.detail === 0) return;
+    clearTimeout(clickClaim);
+    clickClaim = setTimeout(() => {
+      view.claimFocus('click', readPageFocus(manager, origin));
+    });
+  },
+  true,
+);
+document.addEventListener(
+  'dblclick',
+  () => {
+    clearTimeout(clickClaim);
+  },
+  true,
+);
 window.addEventListener('focus', () => {
   view.claimFocus('windowFocus', readPageFocus(manager, origin));
 });

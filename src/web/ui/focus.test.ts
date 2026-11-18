@@ -317,6 +317,45 @@ describe('FocusOrigin', () => {
     expect(origin.clicked(b)).toBe(true);
   });
 
+  it('does not mark an element a key focuses during a pointer interaction', () => {
+    const origin = new FocusOrigin<object>();
+    origin.pointerDown();
+    origin.focused(a);
+    origin.keyDown();
+    origin.focused(b);
+    origin.pointerSettled();
+    expect(origin.clicked(b)).toBe(false);
+  });
+
+  it('marks the focused element an interaction settles on without moving the focus, even after a key', () => {
+    const origin = new FocusOrigin<object>();
+    origin.focused(a);
+    const id = origin.pointerDown();
+    origin.keyDown();
+    origin.pointerSettled(id, a);
+    expect(origin.clicked(a)).toBe(true);
+  });
+
+  it('keeps a focus the page moved after the press when the interaction settles late', () => {
+    const origin = new FocusOrigin<object>();
+    const id = origin.pointerDown();
+    origin.focused(a);
+    origin.keyDown();
+    origin.focused(a);
+    origin.pointerSettled(id, a);
+    expect(origin.clicked(a)).toBe(false);
+  });
+
+  it('ignores the settling of an earlier interaction once a later one started', () => {
+    const origin = new FocusOrigin<object>();
+    const first = origin.pointerDown();
+    origin.pointerDown();
+    origin.pointerSettled(first, a);
+    expect(origin.clicked(a)).toBe(false);
+    origin.focused(b);
+    expect(origin.clicked(b)).toBe(true);
+  });
+
   it('reports nothing focused as not clicked', () => {
     const origin = new FocusOrigin<object>();
     origin.pointerDown();

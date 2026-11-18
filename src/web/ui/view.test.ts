@@ -324,7 +324,28 @@ describe('View', () => {
     });
 
     it('chooses terminal tabs with Ctrl+Shift+arrows instead', () => {
+      client.store.apply(0, {
+        t: 'repoState',
+        repo: '/r/a',
+        worktrees: [worktree('/r/a', true)],
+        terminals: [terminal(1, '/r/a'), terminal(4, '/r/a')],
+        checked: [],
+        layouts: [
+          {
+            worktree: '/r/a',
+            layout: {
+              tabs: [
+                { id: 't1', root: { term: 1 } },
+                { id: 't2', root: { term: 4 } },
+              ],
+              active: 0,
+            },
+          },
+        ],
+      });
+      expect(view.termTabs.value.active).toBe(1);
       expect(view.handleKey(new TestKey('ArrowRight', 'ArrowRight', { ctrlKey: true, shiftKey: true }), false)).toBe(true);
+      expect(view.termTabs.value.active).toBe(4);
       expect(shown()).toBe('/r/a');
     });
   });

@@ -80,20 +80,37 @@ export const terminalTakesFocus = (trigger: ClaimTrigger, world: FocusWorld): bo
 /** Remembers whether the focused element got the focus during a pointer interaction. */
 export class FocusOrigin<T> {
   private pointing = false;
+  private interaction = 0;
+  /** The focus moved since the latest interaction started. */
+  private moved = false;
   private clickedElement: T | null = null;
 
-  /** A pointer interaction starts. */
-  pointerDown(): void {
+  /** A pointer interaction starts; returns its id. */
+  pointerDown(): number {
     this.pointing = true;
+    this.moved = false;
+    this.interaction += 1;
+    return this.interaction;
   }
 
-  /** The pointer interaction, its click included, is over. */
-  pointerSettled(): void {
+  /** A key is pressed: later focus changes are not the pointer's. */
+  keyDown(): void {
+    this.pointing = false;
+  }
+
+  /**
+   * Interaction `id` (default: the latest), its click included, is over; `stayed` is the focused element it pressed,
+   * which counts as clicked unless the focus moved since the press. An earlier interaction's id changes nothing.
+   */
+  pointerSettled(id = this.interaction, stayed: T | null = null): void {
+    if (id !== this.interaction) return;
+    if (stayed !== null && !this.moved) this.clickedElement = stayed;
     this.pointing = false;
   }
 
   /** `element` received the focus. */
   focused(element: T): void {
+    this.moved = true;
     this.clickedElement = this.pointing ? element : null;
   }
 
@@ -155,25 +172,31 @@ export const readPageFocus = (manager: Owner, origin: FocusOrigin<Element>): Pag
 
 /** Feeds `origin` the page's pointer interactions and focus changes. */
 export const trackFocusOrigin = (origin: FocusOrigin<Element>): void => {
-  let target: Node | null = null;
+  let pressed: { id: number; target: Node | null } = { id: 0, target: null };
   const settleLater = (): void => {
+    const { id, target } = pressed;
     // After the click this interaction dispatches and the renders it causes.
     setTimeout(() => {
       // A click on the already focused control does not move the focus, but still makes it clicked.
       const active = document.activeElement;
-      if (active !== null && target !== null && active.contains(target)) origin.focused(active);
-      origin.pointerSettled();
+      origin.pointerSettled(id, active !== null && target !== null && active.contains(target) ? active : null);
     });
   };
   window.addEventListener(
     'pointerdown',
     (event) => {
-      target = event.target instanceof Node ? event.target : null;
-      origin.pointerDown();
+      pressed = { id: origin.pointerDown(), target: event.target instanceof Node ? event.target : null };
     },
     true,
   );
   for (const type of ['pointerup', 'pointercancel', 'contextmenu'] as const) window.addEventListener(type, settleLater, true);
+  window.addEventListener(
+    'keydown',
+    () => {
+      origin.keyDown();
+    },
+    true,
+  );
   window.addEventListener('blur', () => {
     origin.pointerSettled();
   });

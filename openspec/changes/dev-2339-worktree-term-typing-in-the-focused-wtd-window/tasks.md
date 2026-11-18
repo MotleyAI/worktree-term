@@ -31,5 +31,5 @@
 
 ## 6. Gates
 
-- [ ] 6.1 Run the local test scope (`la-affected-tests --base main` plus the e2e specs above, `keyboard.spec.ts`, `splits.spec.ts`, `picker.spec.ts`, `sidebar.spec.ts`, `tab-names.spec.ts`, `terminals.spec.ts`); all green
+- [x] 6.1 Run the local test scope (`la-affected-tests --base main` plus the e2e specs above, `keyboard.spec.ts`, `splits.spec.ts`, `picker.spec.ts`, `sidebar.spec.ts`, `tab-names.spec.ts`, `terminals.spec.ts`); all green
 - [x] 6.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `tsc -b`, `pnpm lint`; all green

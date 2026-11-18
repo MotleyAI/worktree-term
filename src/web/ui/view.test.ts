@@ -165,6 +165,14 @@ const report = (client: HubClient, hostIdx: number, repo: string, terms: readonl
   });
 };
 
+/** Opens the remove-repo confirmation for the shown repo tab. */
+const openDialog = (view: View): void => {
+  const tab = view.tab.value;
+  if (tab === null) throw new Error('no repo tab is shown');
+  view.requestRemoveRepo(tab);
+  expect(view.modal.value).toBe(true);
+};
+
 const NOTHING_HOLDS: PageFocus = { spot: 'none', clicked: false, menuOpen: false, pageSelection: false };
 
 describe('View', () => {
@@ -219,7 +227,7 @@ describe('View', () => {
     });
 
     it('leaves the focus while a picker or dialog is open', () => {
-      view.openWorktreeMenu('/r/app', 10, 10);
+      openDialog(view);
       manager.clear();
       view.claimFocus('click', NOTHING_HOLDS);
       view.claimFocus('windowFocus', NOTHING_HOLDS);
@@ -310,7 +318,7 @@ describe('View', () => {
     });
 
     it('does nothing while a picker or dialog is open', () => {
-      view.openWorktreeMenu('/r/a', 10, 10);
+      openDialog(view);
       press('ArrowRight');
       expect(shown()).toBe('/r/a');
     });

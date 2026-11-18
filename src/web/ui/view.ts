@@ -26,6 +26,7 @@ import {
 import type { Box, TerminalManager } from '../terminals/index.js';
 import { closeTargets, needsConfirm } from './closing.js';
 import type { EditorFailure } from './editor.js';
+import { terminalTakesFocus, type ClaimTrigger, type PageFocus } from './focus.js';
 import { hostAction, Latest, offeredRepos, type HostAction } from './hosts.js';
 import { keymap, type Action } from './keymap.js';
 import { pickerValid, type PickerContext, type PickerOp, type PickerWorld } from './picker.js';
@@ -193,6 +194,12 @@ export interface AddRepoDialog {
   path: string;
   error: string | null;
 }
+
+/** The terminal manager calls the view makes. */
+export type ViewTerminals = Pick<
+  TerminalManager,
+  'has' | 'open' | 'focus' | 'forwardKey' | 'show' | 'sizeFor' | 'selection' | 'paste' | 'onFocus'
+>;
 
 /** The page's selection, stored per browser, and what it shows; keeps the terminal manager in step. */
 export class View {
@@ -371,7 +378,7 @@ export class View {
 
   constructor(
     private readonly client: HubClient,
-    private readonly manager: TerminalManager,
+    private readonly manager: ViewTerminals,
   ) {
     effect(() => {
       this.sync();
@@ -798,10 +805,36 @@ export class View {
     return true;
   }
 
+  /** Gives the current terminal the keyboard focus after a pointer click or the window regaining the focus, if the rule allows. */
+  claimFocus(trigger: 'click' | 'windowFocus', page: PageFocus): void {
+    const target = this.claimTarget({ t: trigger }, page);
+    if (target !== null) this.manager.focus(target.host, target.termId);
+  }
+
+  /** Delivers a key pressed outside the terminals to the current terminal, if the rule allows; run after `handleKey`. */
+  claimKey(event: KeyboardEvent, page: PageFocus): void {
+    if (event.defaultPrevented) return;
+    const target = this.claimTarget({ t: 'key', key: event }, page);
+    if (target !== null) this.manager.forwardKey(target.host, target.termId, event);
+  }
+
+  /** The current terminal, when `trigger` gives it the keyboard focus. */
+  private claimTarget(trigger: ClaimTrigger, page: PageFocus): { host: number; termId: number } | null {
+    const host = this.tab.peek()?.host;
+    const termId = this.focused.peek();
+    const current = host !== undefined && termId !== null && this.manager.has(host, termId);
+    const modal = this.modal.peek();
+    if (!terminalTakesFocus(trigger, { ...page, modal, currentTerminal: current }) || host === undefined || termId === null) return null;
+    return { host, termId };
+  }
+
   private act(action: Action): void {
     switch (action.t) {
       case 'worktree':
         this.stepWorktree(action.dir);
+        return;
+      case 'repo':
+        this.stepRepo(action.dir);
         return;
       case 'tab':
         this.stepTab(action.dir);
@@ -835,6 +868,14 @@ export class View {
     const listed = this.listed.value;
     const next = listed[listed.findIndex((e) => e.path === this.worktree.value) + dir];
     if (next !== undefined && next.path !== this.worktree.value) this.selectWorktree(next.path);
+  }
+
+  private stepRepo(dir: -1 | 1): void {
+    const tabs = this.tabs.value;
+    const current = this.tab.value;
+    const index = current === null ? -1 : tabs.findIndex((t) => t.host === current.host && t.repo === current.repo);
+    const next = index < 0 ? undefined : tabs[index + dir];
+    if (next !== undefined) this.selectRepo(next);
   }
 
   private stepTab(dir: -1 | 1): void {

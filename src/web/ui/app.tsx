@@ -8,7 +8,8 @@ import { hasBanner, hostAction, statusText } from './hosts.js';
 import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
 import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, type EditorFailure } from './editor.js';
 import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
-import { choicesTakeFocus, dropPosition, focusSpot, pickerKey, presetFromForm, type FocusSpot } from './picker.js';
+import { activeSpot, choicesTakeFocus } from './focus.js';
+import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import {
@@ -1296,22 +1297,6 @@ const PresetPicker = ({ view, presets }: { view: View; presets: readonly Preset[
         }}
       />
     </dialog>
-  );
-};
-
-/** Where the page's keyboard focus is. */
-const activeSpot = (manager: TerminalManager): FocusSpot => {
-  const active = document.activeElement;
-  return focusSpot(
-    active === null
-      ? null
-      : {
-          tag: active.tagName.toLowerCase(),
-          type: active instanceof HTMLInputElement ? active.type : '',
-          editable: active instanceof HTMLElement && active.isContentEditable,
-          terminal: manager.owns(active),
-          menu: active.getAttribute('aria-expanded') === 'true' || active.closest('[role="menu"]') !== null,
-        },
   );
 };
 

@@ -154,15 +154,16 @@ This machine's hub then listens on the host's `port` on `127.0.0.1` and relays e
 
 ## Keyboard
 
-| Keys                        | Action                                                    |
-| --------------------------- | --------------------------------------------------------- |
-| Alt+Up / Alt+Down           | Previous / next worktree in the sidebar, under its filter |
-| Alt+Left / Alt+Right        | Previous / next terminal tab                              |
-| Alt+Shift+arrows            | Focus the pane in that direction                          |
-| Ctrl+Shift+T                | New tab                                                   |
-| Ctrl+Shift+D / Ctrl+Shift+E | Split the focused pane right / down                       |
-| Ctrl+Shift+W                | Close the focused pane                                    |
-| Ctrl+Shift+C / Ctrl+Shift+V | Copy the selection / paste                                |
+| Keys                               | Action                                                    |
+| ---------------------------------- | --------------------------------------------------------- |
+| Alt+Up / Alt+Down                  | Previous / next worktree in the sidebar, under its filter |
+| Alt+Left / Alt+Right               | Previous / next repo tab                                  |
+| Ctrl+Shift+Left / Ctrl+Shift+Right | Previous / next terminal tab                              |
+| Alt+Shift+arrows                   | Focus the pane in that direction                          |
+| Ctrl+Shift+T                       | New tab                                                   |
+| Ctrl+Shift+D / Ctrl+Shift+E        | Split the focused pane right / down                       |
+| Ctrl+Shift+W                       | Close the focused pane                                    |
+| Ctrl+Shift+C / Ctrl+Shift+V        | Copy the selection / paste                                |
 
 The preset picker takes 1–9, the arrow keys and Enter, and Escape cancels it.
 

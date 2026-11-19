@@ -10,19 +10,19 @@
 
 ## 2. Sidebar model (`src/web/ui/sidebar.ts`)
 
-- [ ] 2.1 `SidebarEntry.hasTerminals` from one `Set` of terminal worktree paths in `sidebarEntries`; `WorktreeFilter = { checked: boolean; open: boolean }` with one shared predicate for `visibleWorktrees` and `defaultWorktree`; record helpers for both stored keys; verify 1.1–1.2 pass
+- [x] 2.1 `SidebarEntry.hasTerminals` from one `Set` of terminal worktree paths in `sidebarEntries`; `WorktreeFilter = { checked: boolean; open: boolean }` with one shared predicate for `visibleWorktrees` and `defaultWorktree`; record helpers for both stored keys; verify 1.1–1.2 pass
 
 ## 3. View state (`src/web/ui/view.ts`)
 
-- [ ] 3.1 `openFilters` signal loaded from `wtd.openFilters`; `filter` computed as `{ checked, open }`; `setFilter(which, on)` stores the matching key and clears that repo's held default; verify the storage cases of 1.3 pass
-- [ ] 3.2 Held default selection per repo, a signal replaced immutably: `worktree` resolves stored → held → derived; a freshly derived non-null default is held; verify the held-default cases of 1.3 pass
+- [x] 3.1 `openFilters` signal loaded from `wtd.openFilters`; `filter` computed as `{ checked, open }`; `setFilter(which, on)` stores the matching key and clears that repo's held default; verify the storage cases of 1.3 pass
+- [x] 3.2 Held default selection per repo, a signal replaced immutably: `worktree` resolves stored → held → derived; a freshly derived non-null default is held; verify the held-default cases of 1.3 pass
 
 ## 4. Header UI (`src/web/ui/app.tsx`, `src/web/main/styles.css`)
 
-- [ ] 4.1 Shared switch component used by Starred and Open inside a `.sidebar-filters` wrapping group; each `<input>` keyed by repo itself; Open: label "Open", title/aria-label "Show only worktrees with open terminals", `data-testid="filter-open"`; verify the e2e animation and label checks pass
-- [ ] 4.2 `.filter-switch` shared styles with star and open modifiers; tokens `--open: #b392f0`, track `#4a3870`, border `#7d5bc4`; no shrinking of labels or switches; reduced-motion applies to both; verify the colour and 160 px e2e tests pass
+- [x] 4.1 Shared switch component used by Starred and Open inside a `.sidebar-filters` wrapping group; each `<input>` keyed by repo itself; Open: label "Open", title/aria-label "Show only worktrees with open terminals", `data-testid="filter-open"`; verify the e2e animation and label checks pass
+- [x] 4.2 `.filter-switch` shared styles with star and open modifiers; tokens `--open: #b392f0`, track `#4a3870`, border `#7d5bc4`; no shrinking of labels or switches; reduced-motion applies to both; verify the colour and 160 px e2e tests pass
 
 ## 5. Gates
 
-- [ ] 5.1 Run the local test scope (`la-affected-tests --base main` plus `test/e2e/sidebar.spec.ts`, `test/e2e/keyboard.spec.ts`, `test/e2e/attention.spec.ts`, `test/e2e/terminals.spec.ts`); all green
-- [ ] 5.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `la-typecheck`, `pnpm lint`; all green
+- [x] 5.1 Run the local test scope (`la-affected-tests --base main` plus `test/e2e/sidebar.spec.ts`, `test/e2e/keyboard.spec.ts`, `test/e2e/attention.spec.ts`, `test/e2e/terminals.spec.ts`); all green
+- [x] 5.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `la-typecheck`, `pnpm lint`; all green

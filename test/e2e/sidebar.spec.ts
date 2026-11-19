@@ -369,10 +369,11 @@ test.describe('"Open" filter', () => {
     hub.writeRepos([repo]);
     await openUi(hub, page);
     await selectWorktree(page, repo);
+    // Opened first: pages share storage, and a page reads "Open" only when it loads.
+    const other = await openPage(hub, context);
     await openSwitch(page).check();
     await expect.poll(() => listedWorktrees(page)).toEqual([repo]);
 
-    const other = await openPage(hub, context);
     await selectWorktree(other.page, b);
     await ready(other.page, await newTerminal(other.page));
     await expect.poll(() => sortedListed(page)).toEqual([repo, b].sort());

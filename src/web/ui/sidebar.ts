@@ -11,11 +11,19 @@ export interface SidebarEntry {
   /** No longer listed by git, kept while it has terminals. */
   gone: boolean;
   checked: boolean;
+  /** Has at least one terminal, in any state. */
+  hasTerminals: boolean;
 }
 
-export type WorktreeFilter = 'all' | 'checked';
+/** The sidebar's filter switches: "Starred" shows checked worktrees, "Open" worktrees with terminals. */
+export interface WorktreeFilter {
+  checked: boolean;
+  open: boolean;
+}
 
-/** Each repo's filter by repo key; a repo without an entry shows all. */
+export type FilterSwitch = keyof WorktreeFilter;
+
+/** One switch's setting per repo key, stored as the switch's name; a repo without an entry has it off. */
 export type RepoFilters = Readonly<Record<string, string>>;
 
 /** Each repo's name search by repo key; a repo without an entry searches nothing. */
@@ -27,12 +35,12 @@ const withEntry = (record: Readonly<Record<string, string>>, key: string, value:
   return value === null ? rest : { ...rest, [key]: value };
 };
 
-/** The filter of the repo `key`. */
-export const filterOf = (filters: RepoFilters, key: string): WorktreeFilter => (filters[key] === 'checked' ? 'checked' : 'all');
+/** Whether the switch `which` is on in the repo `key`, given that switch's settings. */
+export const isFilterOn = (filters: RepoFilters, key: string, which: FilterSwitch): boolean => filters[key] === which;
 
-/** `filters` with the repo `key` set to `filter`; showing all drops its entry. */
-export const withFilter = (filters: RepoFilters, key: string, filter: WorktreeFilter): RepoFilters =>
-  withEntry(filters, key, filter === 'all' ? null : filter);
+/** `filters` of the switch `which` with the repo `key` set to `on`; off drops its entry. */
+export const withFilter = (filters: RepoFilters, key: string, which: FilterSwitch, on: boolean): RepoFilters =>
+  withEntry(filters, key, on ? which : null);
 
 /** The name search of the repo `key`. */
 export const searchOf = (searches: RepoSearches, key: string): string => searches[key] ?? '';
@@ -63,27 +71,38 @@ export const sidebarEntries = (state: {
   checked: readonly string[];
 }): SidebarEntry[] => {
   const checked = new Set(state.checked);
+  const withTerminals = new Set(state.terminals.map((t) => t.worktree));
   const entries: SidebarEntry[] = state.worktrees
     .filter((w) => !w.bare)
-    .map((w) => ({ path: w.path, label: worktreeLabel(w), prunable: w.prunable, gone: false, checked: checked.has(w.path) }));
+    .map((w) => ({
+      path: w.path,
+      label: worktreeLabel(w),
+      prunable: w.prunable,
+      gone: false,
+      checked: checked.has(w.path),
+      hasTerminals: withTerminals.has(w.path),
+    }));
   const listed = new Set(state.worktrees.map((w) => w.path));
-  for (const terminal of state.terminals) {
-    if (listed.has(terminal.worktree)) continue;
-    listed.add(terminal.worktree);
-    entries.push({ path: terminal.worktree, label: directoryName(terminal.worktree), prunable: false, gone: true, checked: false });
+  for (const path of withTerminals) {
+    if (listed.has(path)) continue;
+    entries.push({ path, label: directoryName(path), prunable: false, gone: true, checked: false, hasTerminals: true });
   }
   return entries;
 };
 
-/** The entries the filter and the name search show; the selected entry is always shown. */
+/** Whether every switch that is on shows `entry`. */
+const passesFilter = (entry: SidebarEntry, filter: WorktreeFilter): boolean =>
+  (!filter.checked || entry.checked) && (!filter.open || entry.hasTerminals);
+
+/** The entries the switches and the name search show; the selected entry is always shown. */
 export const visibleWorktrees = (
   entries: readonly SidebarEntry[],
   filter: WorktreeFilter,
   search: string,
   selected: string | null,
-): SidebarEntry[] => entries.filter((e) => e.path === selected || ((filter === 'all' || e.checked) && matchesSearch(e.label, search)));
+): SidebarEntry[] => entries.filter((e) => e.path === selected || (passesFilter(e, filter) && matchesSearch(e.label, search)));
 
-/** The worktree selected without a stored selection: the first the filter shows, else the first entry; the search plays no part. */
+/** The worktree selected without a stored selection: the first the switches show, else the first entry; the search plays no part. */
 export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
   (visibleWorktrees(entries, filter, '', null)[0] ?? entries[0])?.path ?? null;
 

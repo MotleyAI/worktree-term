@@ -34,7 +34,7 @@ import { repoTabs, type RepoTab } from './repo-tabs.js';
 import {
   clampSidebarWidth,
   defaultWorktree,
-  filterOf,
+  isFilterOn,
   keptNote,
   parseSidebarWidth,
   removalReasons,
@@ -43,6 +43,7 @@ import {
   visibleWorktrees,
   withFilter,
   withSearch,
+  type FilterSwitch,
   type RepoFilters,
   type RepoSearches,
   type SidebarEntry,
@@ -61,7 +62,7 @@ export const PANE_HEADER = 20;
 
 const REPO_KEY = 'wtd.repo';
 const WORKTREES_KEY = 'wtd.worktrees';
-const FILTERS_KEY = 'wtd.filters';
+const FILTER_KEYS: Readonly<Record<FilterSwitch, string>> = { checked: 'wtd.filters', open: 'wtd.openFilters' };
 const SEARCHES_KEY = 'wtd.searches';
 const SIDEBAR_WIDTH_KEY = 'wtd.sidebarWidth';
 
@@ -205,7 +206,8 @@ export type ViewTerminals = Pick<
 export class View {
   readonly selectedRepo = signal<string | null>(load(REPO_KEY));
   readonly selections = signal<Readonly<Record<string, string>>>(loadRecord(WORKTREES_KEY));
-  readonly filters = signal<RepoFilters>(loadRecord(FILTERS_KEY));
+  readonly filters = signal<RepoFilters>(loadRecord(FILTER_KEYS.checked));
+  readonly openFilters = signal<RepoFilters>(loadRecord(FILTER_KEYS.open));
   readonly searches = signal<RepoSearches>(loadRecord(SEARCHES_KEY));
   readonly sidebarWidth = signal<number>(parseSidebarWidth(load(SIDEBAR_WIDTH_KEY)));
   /** The terminal area in client coordinates. */
@@ -224,6 +226,8 @@ export class View {
   private readonly focusRecords = signal(new Map<string, { termId: number; root: Pane }>());
   /** Per host and worktree, a terminal its full layout misses that the page shows anyway. */
   private readonly outside = signal(new Map<string, number>());
+  /** Per repo key, the default selection derived in this page, kept until a switch toggles or it is no longer an entry. */
+  private readonly heldDefaults = signal<Readonly<Record<string, string>>>({});
 
   readonly tabs = computed<RepoTab[]>(() => {
     const kept = this.client.store.kept.value;
@@ -253,10 +257,14 @@ export class View {
     const tab = this.tab.value;
     return tab === null ? null : (this.client.store.repos.value.get(repoKey(tab.host, tab.repo)) ?? null);
   });
-  /** The selected repo's filter. */
+  /** The selected repo's filter switches. */
   readonly filter = computed<WorktreeFilter>(() => {
     const tab = this.tab.value;
-    return tab === null ? 'all' : filterOf(this.filters.value, repoKey(tab.host, tab.repo));
+    const key = tab === null ? null : repoKey(tab.host, tab.repo);
+    return {
+      checked: key !== null && isFilterOn(this.filters.value, key, 'checked'),
+      open: key !== null && isFilterOn(this.openFilters.value, key, 'open'),
+    };
   });
   /** The selected repo's name search. */
   readonly search = computed<string>(() => {
@@ -267,14 +275,20 @@ export class View {
     const repo = this.repo.value;
     return repo === null ? [] : sidebarEntries(repo);
   });
-  readonly worktree = computed<string | null>(() => {
+  /** The selected worktree: the stored one, else the held default, else a freshly derived one, which `derived` flags. */
+  private readonly selection = computed<{ key: string; path: string | null; derived: boolean } | null>(() => {
     const tab = this.tab.value;
     if (tab === null) return null;
-    const stored = this.selections.value[repoKey(tab.host, tab.repo)];
+    const key = repoKey(tab.host, tab.repo);
     const entries = this.entries.value;
-    if (stored !== undefined && entries.some((e) => e.path === stored)) return stored;
-    return defaultWorktree(entries, this.filter.value);
+    const isEntry = (path: string | undefined): path is string => path !== undefined && entries.some((e) => e.path === path);
+    const stored = this.selections.value[key];
+    if (isEntry(stored)) return { key, path: stored, derived: false };
+    const held = this.heldDefaults.value[key];
+    if (isEntry(held)) return { key, path: held, derived: false };
+    return { key, path: defaultWorktree(entries, this.filter.value), derived: true };
   });
+  readonly worktree = computed<string | null>(() => this.selection.value?.path ?? null);
   readonly listed = computed<SidebarEntry[]>(() =>
     visibleWorktrees(this.entries.value, this.filter.value, this.search.value, this.worktree.value),
   );
@@ -381,6 +395,9 @@ export class View {
     private readonly manager: ViewTerminals,
   ) {
     effect(() => {
+      this.holdDefault();
+    });
+    effect(() => {
       this.sync();
     });
     effect(() => {
@@ -417,13 +434,25 @@ export class View {
     markAfterPaint(SWITCH_END);
   }
 
-  /** Sets the selected repo's filter. */
-  setFilter(filter: WorktreeFilter): void {
+  /** Sets the selected repo's switch `which`, deriving its default selection afresh. */
+  setFilter(which: FilterSwitch, on: boolean): void {
     const tab = this.tab.value;
     if (tab === null) return;
-    const filters = withFilter(this.filters.value, repoKey(tab.host, tab.repo), filter);
-    this.filters.value = filters;
-    this.store(FILTERS_KEY, JSON.stringify(filters));
+    const key = repoKey(tab.host, tab.repo);
+    const target = which === 'checked' ? this.filters : this.openFilters;
+    const filters = withFilter(target.value, key, which, on);
+    batch(() => {
+      target.value = filters;
+      this.heldDefaults.value = Object.fromEntries(Object.entries(this.heldDefaults.value).filter(([k]) => k !== key));
+    });
+    this.store(FILTER_KEYS[which], JSON.stringify(filters));
+  }
+
+  /** Holds a freshly derived default selection, so data changes do not move it. */
+  private holdDefault(): void {
+    const selection = this.selection.value;
+    if (selection?.derived !== true || selection.path === null) return;
+    this.heldDefaults.value = { ...this.heldDefaults.peek(), [selection.key]: selection.path };
   }
 
   /** Sets the selected repo's name search; empty shows every worktree. */

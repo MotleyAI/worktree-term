@@ -576,6 +576,18 @@ describe('View', () => {
         expect(view.worktree.value).toBe(D);
         expect(listed()).toEqual([D]);
       });
+
+      it('is derived afresh, not restored, once a selection the user made leaves', () => {
+        vi.stubGlobal('requestAnimationFrame', () => 0);
+        state([terminal(1, B), terminal(2, GONE), terminal(3, D)]);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(B);
+        view.selectWorktree(GONE);
+        closed(1);
+        closed(2);
+        expect(view.worktree.value).toBe(D);
+        expect(listed()).toEqual([D]);
+      });
     });
   });
 });

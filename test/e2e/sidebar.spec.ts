@@ -554,6 +554,7 @@ test.describe('default selection', () => {
     await openUi(hub, page);
     const client = await watcher(hub, repo);
     const term = await runIn(client, b, COMMANDS.quiet);
+    await expect(page.locator(worktreeEntry(b)).locator(byTestId(TID.ring))).toHaveCount(1);
     await openSwitch(page).check();
     await selectedEntry(page, b);
 

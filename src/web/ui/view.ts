@@ -428,8 +428,12 @@ export class View {
     performance.mark(SWITCH_START);
     const tab = this.tab.value;
     if (tab === null) return;
-    const selections = { ...this.selections.value, [repoKey(tab.host, tab.repo)]: path };
-    this.selections.value = selections;
+    const key = repoKey(tab.host, tab.repo);
+    const selections = { ...this.selections.value, [key]: path };
+    batch(() => {
+      this.selections.value = selections;
+      this.releaseDefault(key);
+    });
     this.store(WORKTREES_KEY, JSON.stringify(selections));
     markAfterPaint(SWITCH_END);
   }
@@ -443,9 +447,14 @@ export class View {
     const filters = withFilter(target.value, key, which, on);
     batch(() => {
       target.value = filters;
-      this.heldDefaults.value = Object.fromEntries(Object.entries(this.heldDefaults.value).filter(([k]) => k !== key));
+      this.releaseDefault(key);
     });
     this.store(FILTER_KEYS[which], JSON.stringify(filters));
+  }
+
+  /** Drops repo `key`'s held default, so the next default is derived afresh. */
+  private releaseDefault(key: string): void {
+    this.heldDefaults.value = Object.fromEntries(Object.entries(this.heldDefaults.peek()).filter(([k]) => k !== key));
   }
 
   /** Holds a freshly derived default selection, so data changes do not move it. */

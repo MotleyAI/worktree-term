@@ -66,6 +66,25 @@ test.describe('worktree navigation', () => {
     await pressStays(page, 'Alt+ArrowUp', a);
   });
 
+  test('Alt+Down and Alt+Up move through the worktrees listed under "Open", skipping those without terminals', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b', 'c']);
+    const [a = '', b = '', c = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await createShells(await watcher(hub, repo), [a, c]);
+    await selectWorktree(page, a);
+    await page.locator(byTestId(TID.filterOpen)).check();
+    await expect.poll(() => listedWorktrees(page)).toEqual([a, c]);
+    await expect(page.locator(worktreeEntry(b))).toHaveCount(0);
+
+    await page.keyboard.press('Alt+ArrowDown');
+    await selected(page, c);
+    await pressStays(page, 'Alt+ArrowDown', c);
+    await page.keyboard.press('Alt+ArrowUp');
+    await selected(page, a);
+    await pressStays(page, 'Alt+ArrowUp', a);
+  });
+
   test('Alt+Down at the last listed worktree and Alt+Up at the first change nothing', async ({ hub, page }) => {
     const { repo } = makeRepoWith(hub, 'app', ['a', 'b']);
     hub.writeRepos([repo]);

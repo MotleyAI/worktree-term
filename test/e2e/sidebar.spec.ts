@@ -13,6 +13,7 @@ import {
   listedWorktrees,
   LOCAL,
   makeRepoWith,
+  markOf,
   newTerminal,
   openPage,
   openUi,
@@ -212,39 +213,44 @@ test.describe('checked filter', () => {
     expect(await listedWorktrees(page)).toEqual([a]);
   });
 
-  test('switching to a repo with another filter shows its switch without animating it; a click animates', async ({ hub, page }) => {
-    const { repo } = makeRepoWith(hub, 'app', []);
-    const second = makeRepoWith(hub, 'second', []);
-    hub.writeRepos([repo, second.repo]);
-    await openUi(hub, page);
-    // Long transitions, so a running one is still running when checked.
-    await page.addStyleTag({ content: '* , *::before, *::after { transition-duration: 10s !important; }' });
-    const toggle = page.locator(byTestId(TID.filterChecked));
-    const animating = (): Promise<boolean> =>
-      toggle.evaluate((input) => input.getAnimations({ subtree: true }).some((a) => a.playState === 'running'));
+  for (const [name, tid] of [
+    ['"Starred"', TID.filterChecked],
+    ['"Open"', TID.filterOpen],
+  ] as const) {
+    test(`switching to a repo with another setting shows ${name} without animating it; a click animates`, async ({ hub, page }) => {
+      const { repo } = makeRepoWith(hub, 'app', []);
+      const second = makeRepoWith(hub, 'second', []);
+      hub.writeRepos([repo, second.repo]);
+      await openUi(hub, page);
+      // Long transitions, so a running one is still running when checked.
+      await page.addStyleTag({ content: '* , *::before, *::after { transition-duration: 10s !important; }' });
+      const toggle = page.locator(byTestId(tid));
+      const animating = (): Promise<boolean> =>
+        toggle.evaluate((input) => input.getAnimations({ subtree: true }).some((a) => a.playState === 'running'));
 
-    await toggle.check();
-    expect(await animating()).toBe(true);
+      await toggle.check();
+      expect(await animating()).toBe(true);
 
-    await selectRepo(page, second.repo);
-    await expect(toggle).not.toBeChecked();
-    expect(await animating()).toBe(false);
-    await selectRepo(page, repo);
-    await expect(toggle).toBeChecked();
-    expect(await animating()).toBe(false);
-  });
+      await selectRepo(page, second.repo);
+      await expect(toggle).not.toBeChecked();
+      expect(await animating()).toBe(false);
+      await selectRepo(page, repo);
+      await expect(toggle).toBeChecked();
+      expect(await animating()).toBe(false);
+    });
 
-  test('a click does not animate the switch when reduced motion is preferred', async ({ hub, page }) => {
-    const { repo } = makeRepoWith(hub, 'app', []);
-    hub.writeRepos([repo]);
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await openUi(hub, page);
-    await page.addStyleTag({ content: '* , *::before, *::after { transition-duration: 10s !important; }' });
-    const toggle = page.locator(byTestId(TID.filterChecked));
+    test(`a click does not animate ${name} when reduced motion is preferred`, async ({ hub, page }) => {
+      const { repo } = makeRepoWith(hub, 'app', []);
+      hub.writeRepos([repo]);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await openUi(hub, page);
+      await page.addStyleTag({ content: '* , *::before, *::after { transition-duration: 10s !important; }' });
+      const toggle = page.locator(byTestId(tid));
 
-    await toggle.check();
-    expect(await toggle.evaluate((input) => input.getAnimations({ subtree: true }).length)).toBe(0);
-  });
+      await toggle.check();
+      expect(await toggle.evaluate((input) => input.getAnimations({ subtree: true }).length)).toBe(0);
+    });
+  }
 
   test('the selected worktree stays listed and selected when unchecked under "checked only"', async ({ hub, page, wire }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
@@ -268,6 +274,314 @@ test.describe('checked filter', () => {
     await expect(page.locator(worktreeEntry(b))).toHaveAttribute('aria-selected', 'true');
     expect((await listedWorktrees(page)).sort()).toEqual([a, b].sort());
     await expect(page.locator(checkbox(b))).not.toBeChecked();
+  });
+
+  test('a worktree checked and unchecked elsewhere joins and leaves the list without user action', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['b']);
+    const [b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, repo);
+    await page.locator(byTestId(TID.filterChecked)).check();
+    await expect.poll(() => listedWorktrees(page)).toEqual([repo]);
+
+    const client = await watcher(hub, repo);
+    await client.ok({ t: 'setChecked', worktree: b, checked: true });
+    await expect.poll(async () => (await listedWorktrees(page)).sort()).toEqual([repo, b].sort());
+    await client.ok({ t: 'setChecked', worktree: b, checked: false });
+    await expect(page.locator(worktreeEntry(b))).toHaveCount(0);
+  });
+});
+
+test.describe('"Open" filter', () => {
+  const openSwitch = (page: Page): Locator => page.locator(byTestId(TID.filterOpen));
+  const starredSwitch = (page: Page): Locator => page.locator(byTestId(TID.filterChecked));
+  const sortedListed = async (page: Page): Promise<string[]> => (await listedWorktrees(page)).sort();
+  const selectedEntry = (page: Page, path: string): Promise<void> =>
+    expect(page.locator(worktreeEntry(path))).toHaveAttribute('aria-selected', 'true');
+  /** Closes the terminal tab `term` of `page`, confirming the dialog. */
+  const closeTab = async (page: Page, term: number): Promise<void> => {
+    await page.locator(termTab(term)).locator(byTestId(TID.termTabClose)).click();
+    await confirmClose(page);
+  };
+  const storedRecord = (page: Page, key: string): Promise<unknown> =>
+    page.evaluate((k): unknown => JSON.parse(localStorage.getItem(k) ?? 'null'), key);
+
+  test('lists the worktrees with terminals in any state, gone ones included, and the selected one', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b', 'c', 'd', 'e']);
+    const [a = '', b = '', c = '', d = '', e = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const openLabel = page.locator('label', { has: openSwitch(page) });
+    await expect(openSwitch(page)).toHaveAttribute('aria-label', 'Show only worktrees with open terminals');
+    await expect(openLabel).toHaveAttribute('title', 'Show only worktrees with open terminals');
+    await expect(openLabel).toHaveText('Open');
+    // Directly after "Starred".
+    expect(
+      await starredSwitch(page).evaluate(
+        (input, open) => input.closest('label')?.nextElementSibling === open.closest('label'),
+        await openSwitch(page).elementHandle(),
+      ),
+    ).toBe(true);
+    const client = await watcher(hub, repo);
+    await runIn(client, a, COMMANDS.ticker);
+    await runIn(client, b, COMMANDS.ring);
+    const failing = await runIn(client, c, COMMANDS.fail);
+    await runIn(client, e, COMMANDS.ticker);
+    await client.waitFor('termExited', (m) => m.termId === failing, { timeout: 10_000 });
+    git(repo, 'worktree', 'remove', '--force', e);
+    await expect(page.locator(worktreeEntry(e))).toHaveAttribute('data-gone', 'true');
+    await expect.poll(() => markOf(page, worktreeEntry(b)), { timeout: 10_000 }).toBe('input');
+
+    // Viewed, the failed exit shows the ring instead of a mark.
+    await selectWorktree(page, c);
+    await expect(page.locator(worktreeEntry(c)).locator(byTestId(TID.ring))).toHaveCount(1);
+    await expect(page.locator(worktreeEntry(c)).locator(byTestId(TID.mark))).toHaveCount(0);
+
+    await selectWorktree(page, a);
+    await openSwitch(page).check();
+    await expect.poll(() => sortedListed(page)).toEqual([a, b, c, e].sort());
+    for (const hidden of [repo, d]) await expect(page.locator(worktreeEntry(hidden))).toHaveCount(0);
+  });
+
+  test('with "Starred" on too, lists only checked worktrees with terminals, and the selected one', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b', 'c', 'd']);
+    const [a = '', b = '', c = '', d = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    await runIn(client, a, COMMANDS.quiet);
+    await runIn(client, c, COMMANDS.quiet);
+    await client.ok({ t: 'setChecked', worktree: a, checked: true });
+    await client.ok({ t: 'setChecked', worktree: b, checked: true });
+    await expect(page.locator(checkbox(b))).toBeChecked();
+    await expect(page.locator(checkbox(a))).toBeChecked();
+    await selectWorktree(page, d);
+
+    await starredSwitch(page).check();
+    await openSwitch(page).check();
+    await expect.poll(() => sortedListed(page)).toEqual([a, d].sort());
+  });
+
+  test('a terminal created from another page lists its hidden worktree', async ({ hub, page, context }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['b']);
+    const [b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, repo);
+    await openSwitch(page).check();
+    await expect.poll(() => listedWorktrees(page)).toEqual([repo]);
+
+    const other = await openPage(hub, context);
+    await selectWorktree(other.page, b);
+    await ready(other.page, await newTerminal(other.page));
+    await expect.poll(() => sortedListed(page)).toEqual([repo, b].sort());
+  });
+
+  test('the last terminal closed from another page removes a worktree that is not selected', async ({ hub, page, context }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['b']);
+    const [b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, repo);
+    const other = await openPage(hub, context);
+    await selectWorktree(other.page, b);
+    const term = await newTerminal(other.page);
+    await ready(other.page, term);
+    await openSwitch(page).check();
+    await expect.poll(() => sortedListed(page)).toEqual([repo, b].sort());
+
+    await closeTab(other.page, term);
+    await expect(page.locator(worktreeEntry(b))).toHaveCount(0);
+    expect(await listedWorktrees(page)).toEqual([repo]);
+  });
+
+  test('the selected worktree keeps its place when its last terminal closes, until another is selected', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [a = '', b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await runIn(await watcher(hub, repo), a, COMMANDS.quiet);
+    await selectWorktree(page, b);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    await openSwitch(page).check();
+    await expect.poll(() => sortedListed(page)).toEqual([a, b].sort());
+
+    await closeTab(page, term);
+    await expect(page.locator(byTestId(TID.presetChoices))).toBeVisible();
+    await selectedEntry(page, b);
+    expect(await sortedListed(page)).toEqual([a, b].sort());
+
+    await selectWorktree(page, a);
+    await expect(page.locator(worktreeEntry(b))).toHaveCount(0);
+    expect(await listedWorktrees(page)).toEqual([a]);
+  });
+
+  test('a selected gone worktree leaves with its last terminal, and the first worktree "Open" shows is selected', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['b', 'g']);
+    const [b = '', g = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await runIn(await watcher(hub, repo), b, COMMANDS.quiet);
+    await selectWorktree(page, g);
+    const term = await newTerminal(page);
+    await ready(page, term);
+    git(repo, 'worktree', 'remove', '--force', g);
+    await expect(page.locator(worktreeEntry(g))).toHaveAttribute('data-gone', 'true');
+    await openSwitch(page).check();
+    await expect.poll(() => sortedListed(page)).toEqual([b, g].sort());
+
+    await closeTab(page, term);
+    await expect(page.locator(worktreeEntry(g))).toHaveCount(0);
+    await selectedEntry(page, b);
+    expect(await listedWorktrees(page)).toEqual([b]);
+  });
+
+  test('persists per repo across reloads and keeps a "Starred" setting stored before it', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [a = '', b = ''] = worktrees;
+    const second = makeRepoWith(hub, 'second', ['s']);
+    hub.writeRepos([repo, second.repo]);
+    await openUi(hub, page);
+    const key = `${String(LOCAL)}:${repo}`;
+    await page.evaluate((k) => {
+      localStorage.setItem('wtd.filters', JSON.stringify({ [k]: 'checked' }));
+    }, key);
+    await page.reload();
+    await expect(starredSwitch(page)).toBeChecked();
+    await expect(openSwitch(page)).not.toBeChecked();
+
+    const client = await watcher(hub, repo);
+    await runIn(client, a, COMMANDS.quiet);
+    await runIn(client, b, COMMANDS.quiet);
+    await client.ok({ t: 'setChecked', worktree: a, checked: true });
+    await expect(page.locator(checkbox(a))).toBeChecked();
+    await selectWorktree(page, a);
+    await openSwitch(page).check();
+    await expect.poll(() => listedWorktrees(page)).toEqual([a]);
+    expect(await storedRecord(page, 'wtd.filters')).toEqual({ [key]: 'checked' });
+
+    await page.reload();
+    await expect(starredSwitch(page)).toBeChecked();
+    await expect(openSwitch(page)).toBeChecked();
+    await expect.poll(() => listedWorktrees(page)).toEqual([a]);
+
+    await selectRepo(page, second.repo);
+    await expect(starredSwitch(page)).not.toBeChecked();
+    await expect(openSwitch(page)).not.toBeChecked();
+
+    await selectRepo(page, repo);
+    await openSwitch(page).uncheck();
+    await expect(starredSwitch(page)).toBeChecked();
+    await page.reload();
+    await expect(starredSwitch(page)).toBeChecked();
+    await expect(openSwitch(page)).not.toBeChecked();
+    await expect.poll(() => listedWorktrees(page)).toEqual([a]);
+  });
+
+  test('its on colour differs from the star and from every attention mark', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openUi(hub, page);
+    const knob = (toggle: Locator): Promise<string> => toggle.evaluate((input) => getComputedStyle(input, '::after').backgroundColor);
+    const off = await knob(openSwitch(page));
+    await starredSwitch(page).check();
+    const star = await knob(starredSwitch(page));
+    await openSwitch(page).check();
+    const on = await knob(openSwitch(page));
+
+    expect(on).not.toBe(off);
+    // The star, then the needs-input, failed-exit, done and new-output marks.
+    for (const taken of [star, 'rgb(245, 196, 81)', 'rgb(229, 192, 123)', DANGER, 'rgb(35, 209, 139)', 'rgb(59, 142, 234)'])
+      expect(on).not.toBe(taken);
+  });
+
+  test('at the minimum sidebar width both switches lie wholly inside the sidebar and toggle on click', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await page.evaluate(() => {
+      localStorage.setItem('wtd.sidebarWidth', '160');
+    });
+    await page.reload();
+    await expect(page.locator(byTestId(TID.sidebarResizer))).toHaveAttribute('aria-valuenow', '160');
+    const sidebar = await boxOf(page.getByRole('navigation'));
+
+    for (const toggle of [starredSwitch(page), openSwitch(page)]) {
+      const box = await boxOf(toggle);
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.height).toBeGreaterThan(0);
+      expect(box.x).toBeGreaterThanOrEqual(sidebar.x);
+      expect(box.y).toBeGreaterThanOrEqual(sidebar.y);
+      expect(box.x + box.width).toBeLessThanOrEqual(sidebar.x + sidebar.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(sidebar.y + sidebar.height);
+    }
+    await starredSwitch(page).click();
+    await expect(starredSwitch(page)).toBeChecked();
+    await expect(openSwitch(page)).not.toBeChecked();
+    await openSwitch(page).click();
+    await expect(openSwitch(page)).toBeChecked();
+    await expect(starredSwitch(page)).toBeChecked();
+  });
+});
+
+test.describe('default selection', () => {
+  const openSwitch = (page: Page): Locator => page.locator(byTestId(TID.filterOpen));
+  const selectedEntry = (page: Page, path: string): Promise<void> =>
+    expect(page.locator(worktreeEntry(path))).toHaveAttribute('aria-selected', 'true');
+
+  test('follows the switches: turning "Open" on selects the first worktree with a terminal', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [, b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    await selectedEntry(page, repo);
+    await runIn(await watcher(hub, repo), b, COMMANDS.quiet);
+    await expect(page.locator(worktreeEntry(b)).locator(byTestId(TID.ring))).toHaveCount(1);
+    await selectedEntry(page, repo);
+
+    await openSwitch(page).check();
+    await selectedEntry(page, b);
+  });
+
+  test('stays selected and listed when its last terminal closes', async ({ hub, page }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
+    const [, b = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    const term = await runIn(client, b, COMMANDS.quiet);
+    await openSwitch(page).check();
+    await selectedEntry(page, b);
+
+    await client.ok({ t: 'closeTerm', termId: term });
+    await expect(page.locator(worktreeEntry(b)).locator(byTestId(TID.ring))).toHaveCount(0);
+    await selectedEntry(page, b);
+    expect(await listedWorktrees(page)).toEqual([b]);
+  });
+
+  test('stays selected and listed when it is unchecked under "Starred"', async ({ hub, page, wire }) => {
+    const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b', 'c']);
+    const [, b = '', c = ''] = worktrees;
+    hub.writeRepos([repo]);
+    await openUi(hub, page);
+    const client = await watcher(hub, repo);
+    await client.ok({ t: 'setChecked', worktree: b, checked: true });
+    await client.ok({ t: 'setChecked', worktree: c, checked: true });
+    await expect(page.locator(checkbox(c))).toBeChecked();
+    await page.locator(byTestId(TID.filterChecked)).check();
+    await selectedEntry(page, b);
+
+    const from = wire.markReceived();
+    await client.ok({ t: 'setChecked', worktree: b, checked: false });
+    await expect
+      .poll(() => wire.receivedFromHost(LOCAL, from).some((m) => m.t === 'checkedChanged' && m.worktree === b && !m.checked))
+      .toBe(true);
+    await selectedEntry(page, b);
+    await expect(page.locator(checkbox(b))).not.toBeChecked();
+    expect((await listedWorktrees(page)).sort()).toEqual([b, c].sort());
   });
 });
 

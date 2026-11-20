@@ -10,7 +10,7 @@ import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, ty
 import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { activeSpot, choicesTakeFocus } from './focus.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
-import { SIDEBAR_WIDTH, type SidebarEntry } from './sidebar.js';
+import { SIDEBAR_WIDTH, type FilterSwitch, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
 import {
   hasPaneHeaders,
@@ -1520,6 +1520,40 @@ const WorktreeSearch = ({ view }: { view: View }) => {
   );
 };
 
+/** One sidebar filter switch of the selected repo. */
+const FilterToggle = ({
+  view,
+  which,
+  label,
+  title,
+  testId,
+}: {
+  view: View;
+  which: FilterSwitch;
+  label: string;
+  title: string;
+  testId: string;
+}) => {
+  const tab = view.tab.value;
+  return (
+    <label class={`filter-switch filter-${which}`} title={title}>
+      <span>{label}</span>
+      {/* Keyed by repo: switching repos mounts it in place, so only a click animates it. */}
+      <input
+        key={tab === null ? '' : repoKey(tab.host, tab.repo)}
+        type="checkbox"
+        role="switch"
+        aria-label={title}
+        data-testid={testId}
+        checked={view.filter.value[which]}
+        onChange={(event) => {
+          view.setFilter(which, event.currentTarget.checked);
+        }}
+      />
+    </label>
+  );
+};
+
 const Workspace = ({ client, manager, view }: AppProps) => {
   const tab = view.tab.value;
   const repo = view.repo.value;
@@ -1532,21 +1566,10 @@ const Workspace = ({ client, manager, view }: AppProps) => {
         <div class="sidebar-header">
           <span class="sidebar-title">Worktrees</span>
           <WorktreeSearch view={view} />
-          <label class="star-filter" title="Show starred worktrees only">
-            <span>Starred</span>
-            {/* Keyed by repo: switching repos mounts it in place, so only a click animates it. */}
-            <input
-              key={tab === null ? '' : repoKey(tab.host, tab.repo)}
-              type="checkbox"
-              role="switch"
-              aria-label="Show starred worktrees only"
-              data-testid="filter-checked"
-              checked={view.filter.value === 'checked'}
-              onChange={(event) => {
-                view.setFilter(event.currentTarget.checked ? 'checked' : 'all');
-              }}
-            />
-          </label>
+          <span class="sidebar-filters">
+            <FilterToggle view={view} which="checked" label="Starred" title="Show starred worktrees only" testId="filter-checked" />
+            <FilterToggle view={view} which="open" label="Open" title="Show only worktrees with open terminals" testId="filter-open" />
+          </span>
         </div>
         <div class="worktree-list">
           {view.listed.value.map((e) => (

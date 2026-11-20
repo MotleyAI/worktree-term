@@ -64,6 +64,8 @@ export const TID = {
   worktreeLabel: 'worktree-label',
   /** Checkbox input: checked = show checked worktrees only, in the selected repo; each repo keeps its own, across reloads. */
   filterChecked: 'filter-checked',
+  /** Checkbox input in a label directly after `filterChecked`'s, the label's text "Open" and its `title` and the input's `aria-label` "Show only worktrees with open terminals": checked = show only worktrees with at least one terminal, in the selected repo; each repo keeps its own, across reloads. */
+  filterOpen: 'filter-open',
   /** Text input between the sidebar title and `filterChecked`: lists only worktrees whose label contains its trimmed text, ignoring case, plus the selected one; each repo keeps its own, across reloads. */
   worktreeSearch: 'worktree-search',
   /** Button beside `worktreeSearch`, present only while it holds text; empties it. */

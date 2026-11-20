@@ -349,4 +349,260 @@ describe('View', () => {
       expect(shown()).toBe('/r/a');
     });
   });
+
+  describe('worktree filters and the default selection', () => {
+    const APP = '/r/app';
+    const B = '/r/app.w/b';
+    const C = '/r/app.w/c';
+    const D = '/r/app.w/d';
+    const GONE = '/r/app.w/gone';
+    const OTHER = '/r/other';
+    const KEY = `0:${APP}`;
+    const OTHER_KEY = `0:${OTHER}`;
+    const OPEN_KEY = 'wtd.openFilters';
+    const FILTERS_KEY = 'wtd.filters';
+
+    /** Reports `repo` with worktrees `<repo>`, then `<repo>.w/b`, `c` and `d`. */
+    const state = (terminals: readonly Terminal[], checked: readonly string[] = [], repo = APP): void => {
+      client.store.apply(0, {
+        t: 'repoState',
+        repo,
+        worktrees: [worktree(repo, true), ...['b', 'c', 'd'].map((w) => worktree(`${repo}.w/${w}`, false))],
+        terminals: [...terminals],
+        checked: [...checked],
+        layouts: [],
+      });
+    };
+    const closed = (termId: number): void => {
+      client.store.apply(0, { t: 'termClosed', termId });
+    };
+    const created = (termId: number, path: string): void => {
+      client.store.apply(0, { t: 'termCreated', req: null, term: terminal(termId, path) });
+    };
+    const unchecked = (path: string): void => {
+      client.store.apply(0, { t: 'checkedChanged', worktree: path, checked: false });
+    };
+    const stored = (key: string): unknown => JSON.parse(localStorage.getItem(key) ?? 'null');
+    const listed = (): string[] => view.listed.value.map((e) => e.path);
+    const tabOf = (repo: string): { host: number; repo: string; label: string } => ({ host: 0, repo, label: repo });
+    /** A fresh page's view, reading what storage holds now. */
+    const reopen = (): void => {
+      view = new View(client, manager);
+    };
+
+    beforeEach(() => {
+      client.store.hosts.value = [host(0, [APP, OTHER])];
+    });
+
+    describe('storing the switches', () => {
+      beforeEach(() => {
+        state([terminal(1, C)], [D]);
+        state([], [], OTHER);
+      });
+
+      it('stores "Open" per repo under its own key, apart from "Starred"', () => {
+        view.setFilter('open', true);
+        expect(view.filter.value).toEqual({ checked: false, open: true });
+        expect(stored(OPEN_KEY)).toEqual({ [KEY]: 'open' });
+        expect(stored(FILTERS_KEY)).toBeNull();
+
+        view.setFilter('checked', true);
+        expect(view.filter.value).toEqual({ checked: true, open: true });
+        expect(stored(FILTERS_KEY)).toEqual({ [KEY]: 'checked' });
+        expect(stored(OPEN_KEY)).toEqual({ [KEY]: 'open' });
+
+        view.setFilter('open', false);
+        expect(view.filter.value).toEqual({ checked: true, open: false });
+        expect(stored(OPEN_KEY)).toEqual({});
+        expect(stored(FILTERS_KEY)).toEqual({ [KEY]: 'checked' });
+      });
+
+      it('keeps each repo’s switches apart', () => {
+        view.setFilter('open', true);
+        view.selectRepo(tabOf(OTHER));
+        expect(view.filter.value).toEqual({ checked: false, open: false });
+        view.setFilter('open', true);
+        view.setFilter('open', false);
+        view.selectRepo(tabOf(APP));
+        expect(view.filter.value).toEqual({ checked: false, open: true });
+        expect(stored(OPEN_KEY)).toEqual({ [KEY]: 'open' });
+      });
+
+      it('restores both switches of each repo on a new page', () => {
+        localStorage.setItem(FILTERS_KEY, JSON.stringify({ [KEY]: 'checked' }));
+        localStorage.setItem(OPEN_KEY, JSON.stringify({ [KEY]: 'open', [OTHER_KEY]: 'open' }));
+        reopen();
+        expect(view.filter.value).toEqual({ checked: true, open: true });
+        view.selectRepo(tabOf(OTHER));
+        expect(view.filter.value).toEqual({ checked: false, open: true });
+      });
+
+      it('keeps a "Starred" setting stored before "Open" existed, with "Open" off', () => {
+        localStorage.setItem(FILTERS_KEY, JSON.stringify({ [KEY]: 'checked' }));
+        reopen();
+        expect(view.filter.value).toEqual({ checked: true, open: false });
+        expect(view.worktree.value).toBe(D);
+        expect(listed()).toEqual([D]);
+      });
+
+      it.each(['not json', '["open"]', 'null', '"open"', `{"${KEY}":"on"}`, `{"${KEY}":true}`, `{"${KEY}":"checked"}`])(
+        'reads "Open" as off from a stored %s, leaving "Starred" alone',
+        (value) => {
+          localStorage.setItem(FILTERS_KEY, JSON.stringify({ [KEY]: 'checked' }));
+          localStorage.setItem(OPEN_KEY, value);
+          reopen();
+          expect(view.filter.value).toEqual({ checked: true, open: false });
+        },
+      );
+
+      it('applies "Open" and reports the failure when the browser refuses to store it', () => {
+        const memory = new MemoryStorage();
+        vi.stubGlobal('localStorage', {
+          getItem: (key: string) => memory.getItem(key),
+          removeItem: (key: string) => {
+            memory.removeItem(key);
+          },
+          setItem: (key: string, value: string) => {
+            if (key === OPEN_KEY) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            memory.setItem(key, value);
+          },
+        });
+        reopen();
+        view.setFilter('open', true);
+        expect(view.filter.value).toEqual({ checked: false, open: true });
+        expect(listed()).toEqual([C]);
+        expect(view.notice.value).toBe("Saving the page's settings failed: The quota has been exceeded.");
+      });
+    });
+
+    describe('the default selection', () => {
+      it('is the first worktree the switches show when the repo is first shown', () => {
+        localStorage.setItem(OPEN_KEY, JSON.stringify({ [KEY]: 'open' }));
+        reopen();
+        expect(view.worktree.value).toBeNull();
+        state([terminal(1, C), terminal(2, D)]);
+        expect(view.worktree.value).toBe(C);
+        expect(listed()).toEqual([C, D]);
+      });
+
+      it('stays when its last terminal closes or a worktree before it gains one', () => {
+        state([terminal(1, C)]);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(C);
+        closed(1);
+        expect(view.worktree.value).toBe(C);
+        expect(listed()).toEqual([C]);
+        expect(view.terminals.value).toEqual([]);
+        created(2, B);
+        expect(view.worktree.value).toBe(C);
+        expect(listed()).toEqual([B, C]);
+      });
+
+      it('stays when it is unchecked', () => {
+        state([], [B, C]);
+        view.setFilter('checked', true);
+        expect(view.worktree.value).toBe(B);
+        unchecked(B);
+        expect(view.worktree.value).toBe(B);
+        expect(listed()).toEqual([B, C]);
+      });
+
+      it('is derived again whenever the user toggles a switch', () => {
+        state([terminal(1, C)], [D]);
+        expect(view.worktree.value).toBe(APP);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(C);
+        view.setFilter('checked', true);
+        expect(view.worktree.value).toBe(APP);
+        view.setFilter('open', false);
+        expect(view.worktree.value).toBe(D);
+        view.setFilter('checked', false);
+        expect(view.worktree.value).toBe(APP);
+      });
+
+      it('is derived again on a toggle after it was kept', () => {
+        state([terminal(1, C)]);
+        view.setFilter('open', true);
+        closed(1);
+        expect(view.worktree.value).toBe(C);
+        view.setFilter('checked', true);
+        view.setFilter('checked', false);
+        expect(view.worktree.value).toBe(APP);
+        expect(listed()).toEqual([APP]);
+      });
+
+      it('is derived again once it is no longer a worktree of the repo', () => {
+        state([terminal(1, GONE)]);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(GONE);
+        created(2, B);
+        expect(view.worktree.value).toBe(GONE);
+        closed(1);
+        expect(view.worktree.value).toBe(B);
+        expect(listed()).toEqual([B]);
+      });
+
+      it('falls back to the first worktree once a gone default leaves and the switches show none', () => {
+        state([terminal(1, GONE)]);
+        view.setFilter('open', true);
+        closed(1);
+        expect(view.worktree.value).toBe(APP);
+        expect(listed()).toEqual([APP]);
+      });
+
+      it('is kept per repo while another repo is shown and its switches change', () => {
+        state([terminal(1, C)]);
+        state([], [], OTHER);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(C);
+        view.selectRepo(tabOf(OTHER));
+        closed(1);
+        view.setFilter('open', true);
+        view.setFilter('checked', true);
+        view.selectRepo(tabOf(APP));
+        expect(view.worktree.value).toBe(C);
+        expect(listed()).toEqual([C]);
+      });
+
+      it('never replaces a selection the user made', () => {
+        vi.stubGlobal('requestAnimationFrame', () => 0);
+        state([terminal(1, C)], [B]);
+        view.selectWorktree(D);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(D);
+        expect(listed()).toEqual([C, D]);
+        view.setFilter('checked', true);
+        closed(1);
+        expect(view.worktree.value).toBe(D);
+        expect(listed()).toEqual([D]);
+      });
+
+      it('is derived afresh, not restored, once a selection the user made leaves', () => {
+        vi.stubGlobal('requestAnimationFrame', () => 0);
+        state([terminal(1, B), terminal(2, GONE), terminal(3, D)]);
+        view.setFilter('open', true);
+        expect(view.worktree.value).toBe(B);
+        view.selectWorktree(GONE);
+        closed(1);
+        closed(2);
+        expect(view.worktree.value).toBe(D);
+        expect(listed()).toEqual([D]);
+      });
+
+      it('stays when a selection the user made leaves and comes back, which a new page restores', () => {
+        vi.stubGlobal('requestAnimationFrame', () => 0);
+        const worktreesChanged = (paths: readonly string[]): void => {
+          client.store.apply(0, { t: 'worktreesChanged', repo: APP, worktrees: [worktree(APP, true), ...paths.map((p) => worktree(p, false))] });
+        };
+        state([]);
+        view.selectWorktree(B);
+        worktreesChanged([C, D]);
+        expect(view.worktree.value).toBe(APP);
+        worktreesChanged([B, C, D]);
+        expect(view.worktree.value).toBe(APP);
+        reopen();
+        expect(view.worktree.value).toBe(B);
+      });
+    });
+  });
 });

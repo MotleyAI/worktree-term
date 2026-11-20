@@ -10,6 +10,7 @@
   --accent: #4c8dff;
   --accent-soft: #233b61;
   --star: #f5c451;
+  --open: #b392f0;
   --danger: #f14c4c;
   font-family:
     Inter,
@@ -279,23 +280,34 @@ input:focus-visible,
   overflow: auto;
 }
 
-.star-filter {
+/* Labels and switches never shrink: when narrow, the group wraps instead. */
+.sidebar-filters {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.filter-switch {
+  display: flex;
+  flex: none;
   align-items: center;
   gap: 7px;
   color: var(--muted);
   font-size: 11px;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
 }
 
-.star-filter:has(input:checked) {
+.filter-switch:has(input:checked) {
   color: var(--text);
 }
 
-.star-filter input {
+.filter-switch input {
   appearance: none;
   position: relative;
+  flex: none;
   width: 27px;
   height: 15px;
   margin: 0;
@@ -308,7 +320,7 @@ input:focus-visible,
     border-color 120ms ease;
 }
 
-.star-filter input::after {
+.filter-switch input::after {
   content: '';
   position: absolute;
   top: 2px;
@@ -322,19 +334,31 @@ input:focus-visible,
     background-color 120ms ease;
 }
 
-.star-filter input:checked {
+.filter-switch input:checked::after {
+  transform: translateX(12px);
+}
+
+.filter-checked input:checked {
   border-color: #a87c1f;
   background: #6b501b;
 }
 
-.star-filter input:checked::after {
+.filter-checked input:checked::after {
   background: var(--star);
-  transform: translateX(12px);
+}
+
+.filter-open input:checked {
+  border-color: #7d5bc4;
+  background: #4a3870;
+}
+
+.filter-open input:checked::after {
+  background: var(--open);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .star-filter input,
-  .star-filter input::after {
+  .filter-switch input,
+  .filter-switch input::after {
     transition: none;
   }
 }

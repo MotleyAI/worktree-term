@@ -3,7 +3,7 @@ import type { Terminal, Worktree } from '../../protocol/index.js';
 import {
   clampSidebarWidth,
   defaultWorktree,
-  filterOf,
+  isFilterOn,
   keptNote,
   matchesSearch,
   parseSidebarWidth,
@@ -16,6 +16,7 @@ import {
   withSearch,
   worktreeLabel,
   type SidebarEntry,
+  type WorktreeFilter,
 } from './sidebar.js';
 
 const REPO = '/home/u/repo';
@@ -33,7 +34,7 @@ const worktree = (path: string, fields: Partial<Worktree> = {}): Worktree => ({
   ...fields,
 });
 
-const terminal = (termId: number, path: string, exit: Terminal['exit'] = null): Terminal => ({
+const terminal = (termId: number, path: string, exit: Terminal['exit'] = null, fields: Partial<Terminal> = {}): Terminal => ({
   termId,
   worktree: path,
   preset: 'shell',
@@ -42,7 +43,13 @@ const terminal = (termId: number, path: string, exit: Terminal['exit'] = null): 
   exit,
   unseen: false,
   state: 'idle',
+  ...fields,
 });
+
+const NONE: WorktreeFilter = { checked: false, open: false };
+const STARRED: WorktreeFilter = { checked: true, open: false };
+const OPEN: WorktreeFilter = { checked: false, open: true };
+const STARRED_OPEN: WorktreeFilter = { checked: true, open: true };
 
 const main = worktree(REPO, { branch: 'main', main: true });
 const feature = worktree(`${REPO}.worktrees/x`, { branch: 'feature/x' });
@@ -67,6 +74,7 @@ describe('sidebarEntries', () => {
     prunable: w.prunable,
     gone: false,
     checked: false,
+    hasTerminals: false,
     ...fields,
   });
 
@@ -94,17 +102,52 @@ describe('sidebarEntries', () => {
       checked: [vanished],
     });
     expect(entries.map((e) => e.path)).toEqual([main.path, feature.path, vanished]);
-    expect(entries[2]).toEqual({ path: vanished, label: 'vanished', prunable: false, gone: true, checked: false });
+    expect(entries[2]).toEqual({ path: vanished, label: 'vanished', prunable: false, gone: true, checked: false, hasTerminals: true });
   });
 
   it('keeps a vanished worktree while only an exited terminal remains', () => {
     const vanished = '/x/old';
-    const entries = sidebarEntries({ worktrees: [main], terminals: [terminal(3, vanished, { code: 1, signal: null, oom: false })], checked: [] });
+    const entries = sidebarEntries({
+      worktrees: [main],
+      terminals: [terminal(3, vanished, { code: 1, signal: null, oom: false })],
+      checked: [],
+    });
     expect(entries.map((e) => e.path)).toEqual([main.path, vanished]);
   });
 
   it('drops a vanished worktree once its last terminal is closed', () => {
     expect(sidebarEntries({ worktrees: [main], terminals: [], checked: ['/x/old'] }).map((e) => e.path)).toEqual([main.path]);
+  });
+
+  const FAILED_EXIT = { code: 1, signal: null, oom: false };
+
+  it.each<[string, Terminal]>([
+    ['waiting for input', terminal(1, feature.path, null, { state: 'input' })],
+    ['working', terminal(1, feature.path, null, { state: 'working' })],
+    ['idle with unseen output', terminal(1, feature.path, null, { unseen: true })],
+    ['idle and seen', terminal(1, feature.path)],
+    ['exited with an error and unseen', terminal(1, feature.path, FAILED_EXIT, { unseen: true })],
+    ['exited with an error and seen', terminal(1, feature.path, FAILED_EXIT)],
+  ])('has terminals for a worktree whose only terminal is %s', (_name, term) => {
+    const entries = sidebarEntries({ worktrees: [main, feature], terminals: [term], checked: [] });
+    expect(entries.map((e) => [e.path, e.hasTerminals])).toEqual([
+      [main.path, false],
+      [feature.path, true],
+    ]);
+  });
+
+  it('has terminals for every worktree with some, gone ones included, and none for the others', () => {
+    const entries = sidebarEntries({
+      worktrees: [main, feature, detached],
+      terminals: [terminal(1, detached.path), terminal(2, '/x/gone'), terminal(3, detached.path)],
+      checked: [],
+    });
+    expect(entries.map((e) => [e.path, e.hasTerminals])).toEqual([
+      [main.path, false],
+      [feature.path, false],
+      [detached.path, true],
+      ['/x/gone', true],
+    ]);
   });
 
   it('lists each vanished worktree once', () => {
@@ -119,82 +162,125 @@ describe('sidebarEntries', () => {
 
 describe('visibleWorktrees', () => {
   const entries: SidebarEntry[] = [
-    { path: '/a', label: 'a', prunable: false, gone: false, checked: true },
-    { path: '/b', label: 'b', prunable: false, gone: false, checked: false },
-    { path: '/c', label: 'c', prunable: true, gone: false, checked: true },
-    { path: '/d', label: 'd', prunable: false, gone: true, checked: false },
+    { path: '/a', label: 'a', prunable: false, gone: false, checked: true, hasTerminals: true },
+    { path: '/b', label: 'b', prunable: false, gone: false, checked: false, hasTerminals: false },
+    { path: '/c', label: 'c', prunable: true, gone: false, checked: true, hasTerminals: false },
+    { path: '/d', label: 'd', prunable: false, gone: true, checked: false, hasTerminals: true },
   ];
+  const listed = (filter: WorktreeFilter, selected: string | null = null): string[] =>
+    visibleWorktrees(entries, filter, '', selected).map((e) => e.path);
 
-  it('lists every entry with the all filter', () => {
-    expect(visibleWorktrees(entries, 'all', '', null)).toEqual(entries);
+  it('lists every entry with both switches off', () => {
+    expect(visibleWorktrees(entries, NONE, '', null)).toEqual(entries);
   });
 
-  it('lists only checked entries with the checked filter', () => {
-    expect(visibleWorktrees(entries, 'checked', '', null).map((e) => e.path)).toEqual(['/a', '/c']);
+  it('lists only checked entries with "Starred" on', () => {
+    expect(visibleWorktrees(entries, STARRED, '', null).map((e) => e.path)).toEqual(['/a', '/c']);
   });
 
-  it('keeps the selected entry listed with the checked filter', () => {
-    expect(visibleWorktrees(entries, 'checked', '', '/b').map((e) => e.path)).toEqual(['/a', '/b', '/c']);
-    expect(visibleWorktrees(entries, 'checked', '', '/d').map((e) => e.path)).toEqual(['/a', '/c', '/d']);
+  it('keeps the selected entry listed with "Starred" on', () => {
+    expect(visibleWorktrees(entries, STARRED, '', '/b').map((e) => e.path)).toEqual(['/a', '/b', '/c']);
+    expect(visibleWorktrees(entries, STARRED, '', '/d').map((e) => e.path)).toEqual(['/a', '/c', '/d']);
+  });
+
+  it('lists only entries with terminals, gone ones included, with "Open" on', () => {
+    expect(listed(OPEN)).toEqual(['/a', '/d']);
+  });
+
+  it('lists only checked entries with terminals with both switches on', () => {
+    expect(listed(STARRED_OPEN)).toEqual(['/a']);
+  });
+
+  it('keeps the selected entry listed with "Open" on, alone or with "Starred"', () => {
+    expect(listed(OPEN, '/b')).toEqual(['/a', '/b', '/d']);
+    expect(listed(STARRED_OPEN, '/c')).toEqual(['/a', '/c']);
+    expect(listed(STARRED_OPEN, '/b')).toEqual(['/a', '/b']);
   });
 
   describe('with a name search', () => {
     const named: SidebarEntry[] = [
-      { path: '/m', label: 'main', prunable: false, gone: false, checked: false },
-      { path: '/f', label: 'feature/Login', prunable: false, gone: false, checked: true },
-      { path: '/g', label: 'fix/logout', prunable: false, gone: false, checked: false },
-      { path: '/h', label: 'wt2 @ 0123456', prunable: false, gone: false, checked: true },
+      { path: '/m', label: 'main', prunable: false, gone: false, checked: false, hasTerminals: false },
+      { path: '/f', label: 'feature/Login', prunable: false, gone: false, checked: true, hasTerminals: false },
+      { path: '/g', label: 'fix/logout', prunable: false, gone: false, checked: false, hasTerminals: true },
+      { path: '/h', label: 'wt2 @ 0123456', prunable: false, gone: false, checked: true, hasTerminals: true },
     ];
-    const paths = (filter: 'all' | 'checked', search: string, selected: string | null = null): string[] =>
+    const paths = (filter: WorktreeFilter, search: string, selected: string | null = null): string[] =>
       visibleWorktrees(named, filter, search, selected).map((e) => e.path);
 
     it('lists the entries whose label contains the search, ignoring case', () => {
-      expect(paths('all', 'log')).toEqual(['/f', '/g']);
-      expect(paths('all', 'LOGIN')).toEqual(['/f']);
-      expect(paths('all', '@ 0123')).toEqual(['/h']);
+      expect(paths(NONE, 'log')).toEqual(['/f', '/g']);
+      expect(paths(NONE, 'LOGIN')).toEqual(['/f']);
+      expect(paths(NONE, '@ 0123')).toEqual(['/h']);
     });
 
     it('searches the directory labels of detached and gone worktrees', () => {
       const built = sidebarEntries({ worktrees: [main, detached], terminals: [terminal(1, '/gone/wt3')], checked: [] });
-      expect(visibleWorktrees(built, 'all', 'WT2 @', null).map((e) => e.path)).toEqual([detached.path]);
-      expect(visibleWorktrees(built, 'all', 'wt3', null).map((e) => e.path)).toEqual(['/gone/wt3']);
+      expect(visibleWorktrees(built, NONE, 'WT2 @', null).map((e) => e.path)).toEqual([detached.path]);
+      expect(visibleWorktrees(built, NONE, 'wt3', null).map((e) => e.path)).toEqual(['/gone/wt3']);
     });
 
     it('ignores surrounding whitespace, and a blank search lists every entry', () => {
-      expect(paths('all', '  fix ')).toEqual(['/g']);
-      expect(paths('all', '   ')).toEqual(['/m', '/f', '/g', '/h']);
+      expect(paths(NONE, '  fix ')).toEqual(['/g']);
+      expect(paths(NONE, '   ')).toEqual(['/m', '/f', '/g', '/h']);
     });
 
     it('lists nothing when no label matches', () => {
-      expect(paths('all', 'nope')).toEqual([]);
+      expect(paths(NONE, 'nope')).toEqual([]);
     });
 
     it('applies together with the checked filter', () => {
-      expect(paths('checked', 'log')).toEqual(['/f']);
+      expect(paths(STARRED, 'log')).toEqual(['/f']);
     });
 
     it('keeps the selected entry listed when it does not match', () => {
-      expect(paths('all', 'log', '/m')).toEqual(['/m', '/f', '/g']);
-      expect(paths('checked', 'log', '/g')).toEqual(['/f', '/g']);
+      expect(paths(NONE, 'log', '/m')).toEqual(['/m', '/f', '/g']);
+      expect(paths(STARRED, 'log', '/g')).toEqual(['/f', '/g']);
+    });
+
+    it('applies together with "Open", alone or with "Starred"', () => {
+      expect(paths(OPEN, 'o')).toEqual(['/g']);
+      expect(paths(OPEN, '0123')).toEqual(['/h']);
+      expect(paths(STARRED_OPEN, 'log')).toEqual([]);
+      expect(paths(STARRED_OPEN, 'log', '/f')).toEqual(['/f']);
+      expect(paths(STARRED_OPEN, '')).toEqual(['/h']);
     });
   });
 });
 
 describe('defaultWorktree', () => {
-  const entry = (path: string, checked: boolean): SidebarEntry => ({ path, label: path, prunable: false, gone: false, checked });
+  const entry = (path: string, checked: boolean, hasTerminals = false): SidebarEntry => ({
+    path,
+    label: path,
+    prunable: false,
+    gone: false,
+    checked,
+    hasTerminals,
+  });
 
   it('selects the first entry the filter shows', () => {
     const entries = [entry('/a', false), entry('/b', true)];
-    expect(defaultWorktree(entries, 'all')).toBe('/a');
-    expect(defaultWorktree(entries, 'checked')).toBe('/b');
+    expect(defaultWorktree(entries, NONE)).toBe('/a');
+    expect(defaultWorktree(entries, STARRED)).toBe('/b');
   });
 
   it('selects the first entry when the checked filter shows none', () => {
-    expect(defaultWorktree([entry('/a', false), entry('/b', false)], 'checked')).toBe('/a');
+    expect(defaultWorktree([entry('/a', false), entry('/b', false)], STARRED)).toBe('/a');
   });
 
   it('selects nothing without entries', () => {
-    expect(defaultWorktree([], 'checked')).toBeNull();
+    expect(defaultWorktree([], STARRED)).toBeNull();
+  });
+
+  it('selects the first entry with terminals with "Open" on', () => {
+    const entries = [entry('/a', true), entry('/b', false, true), entry('/c', true, true)];
+    expect(defaultWorktree(entries, OPEN)).toBe('/b');
+    expect(defaultWorktree(entries, STARRED_OPEN)).toBe('/c');
+  });
+
+  it('selects the first entry when "Open" shows none, alone or with "Starred"', () => {
+    const entries = [entry('/a', false), entry('/b', true), entry('/c', false, true)];
+    expect(defaultWorktree(entries.slice(0, 2), OPEN)).toBe('/a');
+    expect(defaultWorktree(entries, STARRED_OPEN)).toBe('/a');
   });
 });
 
@@ -227,19 +313,38 @@ describe('parseSidebarWidth', () => {
 
 describe('repo filters', () => {
   it('shows all in a repo without an entry or with an unknown value', () => {
-    expect(filterOf({}, '0:/a')).toBe('all');
-    expect(filterOf({ '0:/a': 'odd' }, '0:/a')).toBe('all');
+    expect(isFilterOn({}, '0:/a', 'checked')).toBe(false);
+    expect(isFilterOn({ '0:/a': 'odd' }, '0:/a', 'checked')).toBe(false);
   });
 
   it('sets one repo to checked without touching the others', () => {
-    const filters = withFilter({ '0:/b': 'checked' }, '0:/a', 'checked');
+    const filters = withFilter({ '0:/b': 'checked' }, '0:/a', 'checked', true);
     expect(filters).toEqual({ '0:/a': 'checked', '0:/b': 'checked' });
-    expect(filterOf(filters, '0:/a')).toBe('checked');
-    expect(filterOf(filters, '1:/a')).toBe('all');
+    expect(isFilterOn(filters, '0:/a', 'checked')).toBe(true);
+    expect(isFilterOn(filters, '1:/a', 'checked')).toBe(false);
   });
 
   it('drops the entry of a repo set back to all', () => {
-    expect(withFilter({ '0:/a': 'checked', '0:/b': 'checked' }, '0:/a', 'all')).toEqual({ '0:/b': 'checked' });
+    expect(withFilter({ '0:/a': 'checked', '0:/b': 'checked' }, '0:/a', 'checked', false)).toEqual({ '0:/b': 'checked' });
+  });
+
+  describe('"Open"', () => {
+    it('reads on only for the stored value "open"', () => {
+      expect(isFilterOn({ '0:/a': 'open' }, '0:/a', 'open')).toBe(true);
+      for (const value of ['checked', 'on', 'true', 'Open', '']) expect(isFilterOn({ '0:/a': value }, '0:/a', 'open')).toBe(false);
+      expect(isFilterOn({}, '0:/a', 'open')).toBe(false);
+    });
+
+    it('never reads a stored "Starred" value as on', () => {
+      expect(isFilterOn({ '0:/a': 'open' }, '0:/a', 'checked')).toBe(false);
+    });
+
+    it('sets one repo on without touching the others, and off drops its entry', () => {
+      const filters = withFilter({ '0:/b': 'open' }, '0:/a', 'open', true);
+      expect(filters).toEqual({ '0:/a': 'open', '0:/b': 'open' });
+      expect(withFilter(filters, '0:/a', 'open', false)).toEqual({ '0:/b': 'open' });
+      expect(withFilter({}, '0:/a', 'open', false)).toEqual({});
+    });
   });
 });
 

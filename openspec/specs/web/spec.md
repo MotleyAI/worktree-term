@@ -855,7 +855,7 @@ The sidebar header SHALL hold, between its title and the filter switches, a text
 - **WHEN** the user activates the clear control
 - **THEN** the box is empty and focused, the clear control is gone, and every worktree the filter switches list is listed, with the selected one, also after a reload
 
-#### Scenario: Search with "checked only"
+#### Scenario: Search with "Starred" on
 - **WHEN** the search is `feat` and "Starred" is on
 - **THEN** only checked worktrees whose label contains `feat`, and the selected worktree, are listed
 

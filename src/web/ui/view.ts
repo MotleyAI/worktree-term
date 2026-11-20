@@ -275,17 +275,18 @@ export class View {
     const repo = this.repo.value;
     return repo === null ? [] : sidebarEntries(repo);
   });
-  /** The selected worktree: the stored one, else the held default, else a freshly derived one, which `derived` flags. */
+  /** The selected worktree: the held default, else the stored one, else a freshly derived one, which `derived` flags. */
   private readonly selection = computed<{ key: string; path: string | null; derived: boolean } | null>(() => {
     const tab = this.tab.value;
     if (tab === null) return null;
     const key = repoKey(tab.host, tab.repo);
     const entries = this.entries.value;
     const isEntry = (path: string | undefined): path is string => path !== undefined && entries.some((e) => e.path === path);
-    const stored = this.selections.value[key];
-    if (isEntry(stored)) return { key, path: stored, derived: false };
+    // A held default is newer than the stored selection: selecting a worktree releases it.
     const held = this.heldDefaults.value[key];
     if (isEntry(held)) return { key, path: held, derived: false };
+    const stored = this.selections.value[key];
+    if (isEntry(stored)) return { key, path: stored, derived: false };
     return { key, path: defaultWorktree(entries, this.filter.value), derived: true };
   });
   readonly worktree = computed<string | null>(() => this.selection.value?.path ?? null);

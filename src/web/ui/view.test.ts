@@ -588,6 +588,21 @@ describe('View', () => {
         expect(view.worktree.value).toBe(D);
         expect(listed()).toEqual([D]);
       });
+
+      it('stays when a selection the user made leaves and comes back, which a new page restores', () => {
+        vi.stubGlobal('requestAnimationFrame', () => 0);
+        const worktreesChanged = (paths: readonly string[]): void => {
+          client.store.apply(0, { t: 'worktreesChanged', repo: APP, worktrees: [worktree(APP, true), ...paths.map((p) => worktree(p, false))] });
+        };
+        state([]);
+        view.selectWorktree(B);
+        worktreesChanged([C, D]);
+        expect(view.worktree.value).toBe(APP);
+        worktreesChanged([B, C, D]);
+        expect(view.worktree.value).toBe(APP);
+        reopen();
+        expect(view.worktree.value).toBe(B);
+      });
     });
   });
 });

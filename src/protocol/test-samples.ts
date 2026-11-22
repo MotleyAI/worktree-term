@@ -1,6 +1,6 @@
-import type { Direction, Layout, MessageOf, Terminal, Worktree } from './index.js';
+import type { Direction, Layout, MessageOf, PrStatus, Terminal, Worktree } from './index.js';
 
-export type { Layout, Terminal, Worktree };
+export type { Layout, PrStatus, Terminal, Worktree };
 export type Pane = Layout['tabs'][number]['root'];
 export type HostEntry = Extract<MessageOf<'hubToBrowser'>, { t: 'hosts' }>['hosts'][number];
 
@@ -53,6 +53,26 @@ export const exitedTerminal: Terminal = {
   exit: { code: 1, signal: 'SIGTERM', oom: false },
   unseen: true,
   state: 'input',
+};
+
+export const openPr: PrStatus = {
+  branch: 'feature/x',
+  number: 123,
+  url: 'https://github.com/acme/app/pull/123',
+  state: 'open',
+  checks: 'failing',
+  conflicts: false,
+  review: 'changes-requested',
+};
+
+export const mergedPr: PrStatus = {
+  branch: 'fix/y',
+  number: 7,
+  url: 'https://github.example.com/acme/app/pull/7',
+  state: 'merged',
+  checks: 'none',
+  conflicts: false,
+  review: null,
 };
 
 export const layout: Layout = {
@@ -247,6 +267,8 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
     changes: 0,
     running: [],
   },
+  { t: 'prStatus', repo: REPO, prs: [openPr, mergedPr] },
+  { t: 'prStatus', repo: REPO, prs: [] },
 ];
 
 type DaemonRequest = Exclude<MessageOf<'clientToDaemon'>, { t: 'hello' | 'shutdown' }>;
@@ -347,6 +369,7 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'layoutChanged',
     'reposDiscovered',
     'worktreeAtRisk',
+    'prStatus',
   ],
   browserToHub: [
     'hello',

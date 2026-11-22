@@ -1,7 +1,8 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { join } from 'node:path';
 import type { DaemonClient } from '../support/daemon-client.js';
-import { addWorktree, git, makeRepo } from '../support/daemon-host.js';
+import { addWorktree, git, makeRepo, waitUntil } from '../support/daemon-host.js';
+import { FakeGh } from '../support/fake-gh.js';
 import { HubHost } from '../support/hub-host.js';
 import { byTestId, DRAG_MOVE, DRAG_PAINT, SWITCH_END, SWITCH_START, terminalBox, TID, worktreeEntry } from './contract.js';
 import { createShells, LOCAL, openUi, selectWorktree } from './fixture.js';
@@ -14,6 +15,8 @@ const PANES = 8;
 /** Worktrees no other test views, turned into one tab of 8 panes by `eightPanes`. */
 const EIGHT_PANE_WORKTREES = [56, 57] as const;
 const DRAG_MOVES = 60;
+/** The daemon's pull request refresh interval here: a hanging request starts again within a second of being killed. */
+const PR_INTERVAL_MS = '1000';
 
 interface PerfRepo {
   hub: HubHost;
@@ -21,6 +24,8 @@ interface PerfRepo {
   worktrees: string[];
   /** Terminal ids per worktree; the first is the active tab. */
   terms: number[][];
+  /** The daemon's `gh`, which never returns; it runs only while the repo has an origin. */
+  gh: FakeGh;
 }
 
 declare global {
@@ -40,6 +45,9 @@ const test = base.extend<{ page: Page }, { perf: PerfRepo }>({
       const hub = await HubHost.createHub();
       let client: DaemonClient | null = null;
       try {
+        const gh = new FakeGh(join(hub.dir, 'gh'));
+        gh.behave({ kind: 'hang' });
+        hub.extraEnv = { ...hub.extraEnv, PATH: gh.path, WTD_PR_INTERVAL_MS: PR_INTERVAL_MS };
         const repo = makeRepo(join(hub.dir, 'repos', 'big'));
         const worktrees = Array.from({ length: WORKTREES }, (_, i) =>
           addWorktree(repo, join(hub.dir, 'repos', 'big.worktrees', `w${String(i).padStart(2, '0')}`), `w${String(i).padStart(2, '0')}`),
@@ -49,7 +57,7 @@ const test = base.extend<{ page: Page }, { perf: PerfRepo }>({
         client = await hub.client();
         await client.watch(repo);
         const terms = await createShells(client, worktrees, 2);
-        await use({ hub, repo, worktrees, terms });
+        await use({ hub, repo, worktrees, terms, gh });
       } finally {
         client?.close();
         await hub.cleanup();
@@ -148,8 +156,8 @@ test('WebGL runs on a hardware renderer', async ({ perf, page }) => {
   expect(renderer).not.toMatch(/swiftshader|llvmpipe|software|no webgl2/i);
 });
 
-test('switching between recently viewed worktrees takes at most 16 ms (median of 20)', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
+/** Measures 20 switches between recently viewed worktrees; their median is at most 16 ms. */
+const recentSwitches = async (page: Page, perf: PerfRepo): Promise<void> => {
   const recent = [0, 1, 2, 3];
   for (const index of recent) await view(page, perf, index);
   const durations: number[] = [];
@@ -161,10 +169,15 @@ test('switching between recently viewed worktrees takes at most 16 ms (median of
   report('recently viewed switch', durations);
   expect(durations.every(Number.isFinite)).toBe(true);
   expect(median(durations)).toBeLessThanOrEqual(16);
+};
+
+test('switching between recently viewed worktrees takes at most 16 ms (median of 20)', async ({ perf, page }) => {
+  await openUi(perf.hub, page);
+  await recentSwitches(page, perf);
 });
 
-test('switching to worktrees rendered via DOM takes at most 50 ms (median of 20)', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
+/** Measures 20 switches to worktrees rendered via DOM; their median is at most 50 ms. */
+const reattachSwitches = async (page: Page, perf: PerfRepo): Promise<void> => {
   const first = 4;
   const viewed = SWITCHES + 8 + 1;
   for (let index = first; index < first + viewed; index++) await view(page, perf, index);
@@ -178,12 +191,17 @@ test('switching to worktrees rendered via DOM takes at most 50 ms (median of 20)
   report('WebGL reattach switch', durations);
   expect(durations.every(Number.isFinite)).toBe(true);
   expect(median(durations)).toBeLessThanOrEqual(50);
+};
+
+test('switching to worktrees rendered via DOM takes at most 50 ms (median of 20)', async ({ perf, page }) => {
+  await openUi(perf.hub, page);
+  await reattachSwitches(page, perf);
 });
 
-test('worktrees added or removed with git show in the sidebar within 250 ms', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
+/** Adds and removes a worktree on branch `branch` with git; the sidebar reflects each within 250 ms. */
+const sidebarFollowsGit = async (page: Page, perf: PerfRepo, branch: string): Promise<void> => {
   await expect(page.locator(worktreeEntry(perf.repo))).toBeVisible();
-  const path = `${perf.repo}.worktrees/sidebar-probe`;
+  const path = `${perf.repo}.worktrees/${branch}`;
   await page.evaluate((selector) => {
     const state: { appeared: number | null; gone: number | null } = { appeared: null, gone: null };
     window.__wtdSidebar = state;
@@ -194,7 +212,7 @@ test('worktrees added or removed with git show in the sidebar within 250 ms', as
     }).observe(document, { subtree: true, childList: true, attributes: true });
   }, worktreeEntry(path));
 
-  git(perf.repo, 'worktree', 'add', '-q', '-b', 'sidebar-probe', path);
+  git(perf.repo, 'worktree', 'add', '-q', '-b', branch, path);
   const added = Date.now();
   await expect.poll(() => page.evaluate(() => window.__wtdSidebar?.appeared ?? null), { timeout: 5000 }).not.toBeNull();
   const appeared = (await page.evaluate(() => window.__wtdSidebar?.appeared)) ?? Number.NaN;
@@ -207,12 +225,15 @@ test('worktrees added or removed with git show in the sidebar within 250 ms', as
   console.log(`sidebar: add ${String(appeared - added)} ms, remove ${String(gone - removed)} ms`);
   expect(appeared - added).toBeLessThanOrEqual(250);
   expect(gone - removed).toBeLessThanOrEqual(250);
+};
+
+test('worktrees added or removed with git show in the sidebar within 250 ms', async ({ perf, page }) => {
+  await openUi(perf.hub, page);
+  await sidebarFollowsGit(page, perf, 'sidebar-probe');
 });
 
-test('switching to an 8-pane tab rendered via DOM takes at most 100 ms (median of 20)', async ({ perf, page }) => {
-  test.setTimeout(180_000);
-  const targets = await eightPanes(perf);
-  await openUi(perf.hub, page);
+/** Measures 20 switches to an 8-pane tab rendered via DOM; their median is at most 100 ms. */
+const eightPaneSwitches = async (page: Page, targets: readonly EightPanes[]): Promise<void> => {
   // Each view takes all 8 WebGL contexts, so the other 8-pane tab falls back to DOM.
   for (const target of targets) await viewPanes(page, target);
   const durations: number[] = [];
@@ -226,13 +247,17 @@ test('switching to an 8-pane tab rendered via DOM takes at most 100 ms (median o
   report('eight-pane switch', durations);
   expect(durations.every(Number.isFinite)).toBe(true);
   expect(median(durations)).toBeLessThanOrEqual(100);
+};
+
+test('switching to an 8-pane tab rendered via DOM takes at most 100 ms (median of 20)', async ({ perf, page }) => {
+  test.setTimeout(180_000);
+  const targets = await eightPanes(perf);
+  await openUi(perf.hub, page);
+  await eightPaneSwitches(page, targets);
 });
 
-test('dragging a divider of an 8-pane tab paints each pointer move within 16 ms (median of 60)', async ({ perf, page }) => {
-  test.setTimeout(180_000);
-  const [target] = await eightPanes(perf);
-  if (target === undefined) throw new Error('no 8-pane worktree');
-  await openUi(perf.hub, page);
+/** Drags a divider of an 8-pane tab across 60 pointer moves; the median from move to painted frame is at most 16 ms. */
+const dividerDrag = async (page: Page, target: EightPanes): Promise<void> => {
   await viewPanes(page, target);
   // The root split of the balanced tab runs right, so its divider moves along x.
   const box = await boxOf(divider(page, ''));
@@ -262,4 +287,31 @@ test('dragging a divider of an 8-pane tab paints each pointer move within 16 ms 
   report('divider drag', durations);
   expect(durations.every(Number.isFinite)).toBe(true);
   expect(median(durations)).toBeLessThanOrEqual(16);
+};
+
+test('dragging a divider of an 8-pane tab paints each pointer move within 16 ms (median of 60)', async ({ perf, page }) => {
+  test.setTimeout(180_000);
+  const [target] = await eightPanes(perf);
+  if (target === undefined) throw new Error('no 8-pane worktree');
+  await openUi(perf.hub, page);
+  await dividerDrag(page, target);
+});
+
+test('every budget holds while the status request never returns', async ({ perf, page }) => {
+  test.setTimeout(300_000);
+  const targets = await eightPanes(perf);
+  git(perf.repo, 'remote', 'add', 'origin', 'https://github.com/acme/app.git');
+  try {
+    await waitUntil(() => perf.gh.running().length > 0, 'gh to hang', 10_000);
+    await openUi(perf.hub, page);
+    await recentSwitches(page, perf);
+    await reattachSwitches(page, perf);
+    await sidebarFollowsGit(page, perf, 'sidebar-probe-hanging');
+    await eightPaneSwitches(page, targets);
+    const [target] = targets;
+    if (target === undefined) throw new Error('no 8-pane worktree');
+    await dividerDrag(page, target);
+  } finally {
+    git(perf.repo, 'remote', 'remove', 'origin');
+  }
 });

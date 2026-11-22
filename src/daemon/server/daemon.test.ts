@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../../../test/support/daemon-client.js';
 import { sleep } from '../../../test/support/daemon-host.js';
 import { writeFileAtomic } from '../../platform/files/index.js';
-import type { Layout, Worktree } from '../../protocol/index.js';
+import type { Layout, PrStatus, Worktree } from '../../protocol/index.js';
+import type { Prs } from '../prs/index.js';
 import { StateStore } from '../state/index.js';
 import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalLauncher, type TerminalSpec } from '../terminals/index.js';
 import type { WorktreeHandlers, WorktreeRisks, WorktreeWatch } from '../worktrees/index.js';
@@ -21,6 +22,14 @@ const worktrees: Worktree[] = [
 ];
 const ANY_REQ: unknown = expect.any(Number);
 const NO_RISK: WorktreeRisks = { bases: ['main', 'origin/main'], ahead: 0, fetchFailed: [], changes: 0 };
+
+interface FakePrWatch {
+  repo: string;
+  worktrees: readonly Worktree[];
+  changed: (prs: PrStatus[]) => void;
+  updates: (readonly Worktree[])[];
+  closed: boolean;
+}
 
 interface PendingSpawn {
   spec: TerminalSpec;
@@ -47,6 +56,12 @@ let risks: Promise<WorktreeRisks>;
 let riskChecks: number;
 let removed: string[];
 let reported: unknown[];
+let prWatches: FakePrWatch[];
+/** Pull request statuses the fake keeps per repo. */
+let prCache: Map<string, PrStatus[]>;
+/** What closing pull requests waits for. */
+let prsClosed: Promise<void>;
+let prsCloses: number;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'wtd-daemon-'));
@@ -60,7 +75,31 @@ beforeEach(async () => {
   riskChecks = 0;
   removed = [];
   reported = [];
+  prWatches = [];
+  prCache = new Map();
+  prsClosed = Promise.resolve();
+  prsCloses = 0;
+  const prs: Prs = {
+    watch: (repo, list, changed) => {
+      const watch: FakePrWatch = { repo, worktrees: list, changed, updates: [], closed: false };
+      prWatches.push(watch);
+      return {
+        update: (next) => {
+          watch.updates.push(next);
+        },
+        close: () => {
+          watch.closed = true;
+        },
+      };
+    },
+    cached: (repo) => prCache.get(repo) ?? null,
+    close: () => {
+      prsCloses++;
+      return prsClosed;
+    },
+  };
   const services: DaemonServices = {
+    prs,
     watchWorktrees: async (_repo, handlers) => {
       watchHandlers.push(handlers);
       if (heldWatches !== null) {
@@ -640,5 +679,98 @@ describe('memory limits and out-of-memory exits', () => {
     client.sendInput(term, '\r');
     expect(await client.waitFor('termExited', (m) => m.termId === term, { from })).toMatchObject(exit);
     expect((await (await connected()).watch(REPO)).terminals.find((t) => t.termId === term)?.exit).toMatchObject(exit);
+  });
+});
+
+describe('pull request status', () => {
+  const PR: PrStatus = {
+    branch: 'feat',
+    number: 12,
+    url: 'https://github.com/acme/app/pull/12',
+    state: 'open',
+    checks: 'failing',
+    conflicts: false,
+    review: null,
+  };
+
+  it('starts one pull request watch with the repo watch, with its worktrees', async () => {
+    await (await connected()).watch(REPO);
+    await (await connected()).watch(REPO);
+    expect(prWatches.map((w) => [w.repo, w.worktrees])).toEqual([[REPO, worktrees]]);
+  });
+
+  it('sends kept statuses after repoState and before done', async () => {
+    prCache.set(REPO, [PR]);
+    const client = await connected();
+    const from = client.mark();
+    await client.watch(REPO);
+    expect(client.messages.slice(from).map((m) => m.t)).toEqual(['repoState', 'prStatus', 'done']);
+    expect(await client.waitFor('prStatus', () => true, { from })).toEqual({ t: 'prStatus', repo: REPO, prs: [PR] });
+  });
+
+  it('sends kept empty statuses too, and none when nothing is kept', async () => {
+    const client = await connected();
+    let from = client.mark();
+    await client.watch(REPO);
+    expect(client.messages.slice(from).map((m) => m.t)).toEqual(['repoState', 'done']);
+    prCache.set(REPO, []);
+    from = client.mark();
+    await client.watch(REPO);
+    expect(client.messages.slice(from).map((m) => m.t)).toEqual(['repoState', 'prStatus', 'done']);
+  });
+
+  it('sends changed statuses to every watcher of the repo', async () => {
+    const a = await connected();
+    const b = await connected();
+    await a.watch(REPO);
+    await b.watch(REPO);
+    const [fromA, fromB] = [a.mark(), b.mark()];
+    prWatches[0]?.changed([PR]);
+    for (const [client, from] of [
+      [a, fromA],
+      [b, fromB],
+    ] as const) {
+      expect(await client.waitFor('prStatus', () => true, { from })).toEqual({ t: 'prStatus', repo: REPO, prs: [PR] });
+    }
+  });
+
+  it('feeds every worktree change to the pull request watch', async () => {
+    await (await connected()).watch(REPO);
+    const next = worktrees.slice(0, 1);
+    watchHandlers[0]?.changed(next);
+    expect(prWatches[0]?.updates).toEqual([next]);
+  });
+
+  it('closes the pull request watch with the repo watch', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    await client.ok({ t: 'unwatchRepo', repo: REPO });
+    expect(prWatches[0]?.closed).toBe(true);
+  });
+
+  it('closes the pull request watch when watching the repo fails', async () => {
+    const client = await connected();
+    await client.watch(REPO);
+    const from = client.mark();
+    watchHandlers[0]?.failed(new Error('gone'));
+    await client.waitFor('error', () => true, { from });
+    expect(prWatches[0]?.closed).toBe(true);
+  });
+
+  it('waits on shutdown until pull requests closed', async () => {
+    let release = (): void => undefined;
+    prsClosed = new Promise((resolve) => {
+      release = resolve;
+    });
+    let stopped = false;
+    const stopping = daemon.shutdown().then(() => (stopped = true));
+    await vi.waitFor(() => {
+      expect(prsCloses).toBe(1);
+    });
+    await sleep(50);
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect(stopped).toBe(true);
   });
 });

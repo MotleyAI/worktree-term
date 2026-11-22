@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DaemonClient } from '../support/daemon-client.js';
 import { addWorktree, alive, git, makeRepo, waitUntil } from '../support/daemon-host.js';
+import { FakeGh } from '../support/fake-gh.js';
 import { currentNodeDir, FakeSsh, type FakeRemote } from '../support/fake-ssh.js';
 import { HubHost } from '../support/hub-host.js';
 import { byTestId, hostBanner, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
@@ -32,7 +33,12 @@ export interface Fixtures {
   wire: WireRecorder;
   /** A fake `ssh` the hub uses as `WTD_SSH`; requesting it is what makes a test's hub use it. */
   ssh: FakeSsh;
+  /** A fake `gh` first on the PATH of the hub and its local daemon, which refreshes pull requests every `PR_INTERVAL_MS`; requesting it is what makes a test's hub use it. */
+  gh: FakeGh;
 }
+
+/** The pull request refresh interval of a hub that uses the fake `gh`. */
+export const PR_INTERVAL_MS = 1000;
 
 export const test = base.extend<Fixtures>({
   page: async ({ page }, use) => {
@@ -57,6 +63,11 @@ export const test = base.extend<Fixtures>({
     for (const pid of hub.hubPids()) process.kill(pid, 'SIGKILL');
     await waitUntil(() => hub.hubPids().every((pid) => !alive(pid)), 'hubs to exit').catch(() => undefined);
     await ssh.cleanup();
+  },
+  gh: async ({ hub }, use) => {
+    const gh = new FakeGh(join(hub.dir, 'gh'));
+    hub.extraEnv = { ...hub.extraEnv, PATH: gh.path, WTD_PR_INTERVAL_MS: String(PR_INTERVAL_MS) };
+    await use(gh);
   },
 });
 

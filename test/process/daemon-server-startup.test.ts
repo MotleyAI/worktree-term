@@ -5,8 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { encodeStreamData, DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import type { DaemonClient } from '../support/daemon-client.js';
 import { REPO_ROOT } from '../support/exec.js';
-import { alive, canConnect, makeRepo, sleep, waitUntil } from '../support/daemon-host.js';
+import { alive, canConnect, git, makeRepo, sleep, waitUntil } from '../support/daemon-host.js';
 import { fx, useDaemonServerHost } from '../support/daemon-server.js';
+import { FakeGh } from '../support/fake-gh.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 useDaemonServerHost();
@@ -217,5 +218,23 @@ describe('malformed traffic', () => {
     await good.attach(term.termId);
     const state = await good.watch(repo);
     expect(state.terminals.find((t) => t.termId === term.termId)?.exit).toBeNull();
+  });
+});
+
+describe('shutdown', () => {
+  it('ends a hanging pull request refresh and exits 0 without waiting for its timeout', async () => {
+    const gh = new FakeGh(join(fx.host.dir, 'gh'));
+    gh.behave({ kind: 'hang' });
+    const repo = makeRepo(join(fx.host.dir, 'repo'));
+    git(repo, 'remote', 'add', 'origin', 'https://github.com/acme/app.git');
+    const daemon = await fx.host.start({ PATH: gh.path });
+    const client = await fx.host.client();
+    await client.watch(repo);
+    const [hanging] = await waitUntil(() => gh.running().length === 1 && gh.running(), 'gh to run');
+    const asked = Date.now();
+    client.send({ t: 'shutdown' });
+    expect((await daemon.exited).code).toBe(0);
+    expect(Date.now() - asked).toBeLessThan(5000);
+    expect(hanging !== undefined && alive(hanging)).toBe(false);
   });
 });

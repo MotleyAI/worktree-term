@@ -24,6 +24,7 @@ flowchart TD
     daemon__worktrees["Worktrees"]
     daemon__terminals["Terminals"]
     daemon__state["State"]
+    daemon__prs["PRs"]
     daemon__server["Server"]
     daemon__main["Main"]
   end
@@ -57,6 +58,7 @@ flowchart TD
   daemon__server --> daemon__worktrees
   daemon__server --> daemon__terminals
   daemon__server --> daemon__state
+  daemon__main --> daemon__prs
   hub --> protocol
   hub__server --> platform__files
   hub__config --> platform__files
@@ -86,7 +88,7 @@ flowchart TD
   web__ui --> web__layout
   web__terminals --> web__client
   classDef leaf fill:none;
-  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,hub__server,hub__links,hub__config,hub__router,hub__main,cli,web__client,web__terminals,web__layout,web__ui,web__main leaf;
+  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,daemon__worktrees,daemon__terminals,daemon__state,daemon__prs,daemon__server,daemon__main,hub__server,hub__links,hub__config,hub__router,hub__main,cli,web__client,web__terminals,web__layout,web__ui,web__main leaf;
 ```
 <!-- /likec4:system -->
 

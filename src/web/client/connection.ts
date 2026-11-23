@@ -505,6 +505,7 @@ export class HubClient {
         this.terminalsChanged(host);
         break;
       case 'worktreesChanged':
+      case 'prStatus':
       case 'detached':
       case 'activity':
       case 'checkedChanged':

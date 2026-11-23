@@ -35,6 +35,7 @@ model {
       worktrees = component 'Worktrees'
       terminals = component 'Terminals'
       state = component 'State'
+      prs = component 'PRs'
       server = component 'Server'
       main = component 'Main'
     }
@@ -86,6 +87,7 @@ model {
     daemon.server -> daemon.worktrees
     daemon.server -> daemon.terminals
     daemon.server -> daemon.state
+    daemon.main -> daemon.prs
 
     hub -> protocol
     hub.server -> platform.files

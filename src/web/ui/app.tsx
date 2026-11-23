@@ -1,6 +1,6 @@
 import type { JSX, TargetedKeyboardEvent } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import type { HostEntry, Preset, Terminal } from '../../protocol/index.js';
+import type { HostEntry, PrStatus, Preset, Terminal } from '../../protocol/index.js';
 import { repoKey, RequestError, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
@@ -9,6 +9,7 @@ import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type H
 import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, type EditorFailure } from './editor.js';
 import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { activeSpot, choicesTakeFocus } from './focus.js';
+import { PR_GLYPHS, prHover, prIcon, prOf } from './prs.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
 import { SIDEBAR_WIDTH, type FilterSwitch, type SidebarEntry } from './sidebar.js';
 import type { RepoTab } from './repo-tabs.js';
@@ -469,15 +470,47 @@ const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; vie
 const Mark = ({ of }: { of: Aggregate }) =>
   of.mark === null ? null : <span class={`mark mark-${of.mark}`} data-testid="mark" data-mark={of.mark} title={markTitle(of.counts)} />;
 
+/** A pull request's state glyph with its attention badge; a click opens it in a new window without selecting the row. */
+const PrIcon = ({ pr }: { pr: PrStatus }) => {
+  const { glyph, badge } = prIcon(pr);
+  const hover = prHover(pr);
+  return (
+    <a
+      class={`pr-icon pr-${glyph}`}
+      data-testid="pr-icon"
+      data-state={glyph}
+      href={pr.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={hover}
+      aria-label={hover}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+        <path d={PR_GLYPHS[glyph]} />
+      </svg>
+      {badge !== null && (
+        <span class={`pr-badge pr-badge-${badge}`} data-testid="pr-badge" data-badge={badge}>
+          {badge === 'alert' ? '✕' : ''}
+        </span>
+      )}
+    </a>
+  );
+};
+
 const WorktreeEntry = ({
   entry,
   selected,
   terminals,
+  pr,
   view,
 }: {
   entry: SidebarEntry;
   selected: boolean;
   terminals: Terminal[];
+  pr: PrStatus | null;
   view: View;
 }) => (
   <div // NOSONAR(S6848) — a pointer shortcut; the label button is the keyboard control
@@ -515,6 +548,7 @@ const WorktreeEntry = ({
       {entry.label}
       {entry.gone ? ' (gone)' : ''}
     </button>
+    {pr !== null && <PrIcon pr={pr} />}
     <Mark of={aggregate(terminals, 'group')} />
     <Ring terminals={terminals} />
   </div>
@@ -1578,6 +1612,14 @@ const Workspace = ({ client, manager, view }: AppProps) => {
               entry={e}
               selected={e.path === worktree}
               terminals={(repo?.terminals ?? []).filter((t) => t.worktree === e.path)}
+              pr={
+                e.gone
+                  ? null
+                  : prOf(
+                      repo?.prs ?? [],
+                      repo?.worktrees.find((w) => w.path === e.path),
+                    )
+              }
               view={view}
             />
           ))}

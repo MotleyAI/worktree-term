@@ -1,5 +1,5 @@
 import type { Socket } from 'node:net';
-import { FLOW_HIGH, DAEMON_PROTOCOL_VERSION, type Layout, type Terminal, type Worktree } from '../../protocol/index.js';
+import { FLOW_HIGH, DAEMON_PROTOCOL_VERSION, type Layout, type PrStatus, type Terminal, type Worktree } from '../../protocol/index.js';
 import { pruneLayout, type StateStore } from '../state/index.js';
 import {
   SpawnError,
@@ -43,6 +43,7 @@ class RequestError extends Error {
 
 interface RepoEntry {
   watch: WorktreeWatch;
+  prs: PrWatch;
   watchers: Set<Peer>;
 }
 
@@ -78,8 +79,23 @@ export interface MemoryView {
   closed: ClosedTerminalView[];
 }
 
-/** What the daemon composes: worktree watching and listing, discovery, and terminals. */
+/** One repo's pull request refreshes. */
+export interface PrWatch {
+  update: (worktrees: readonly Worktree[]) => void;
+  close: () => void;
+}
+
+/** Pull request statuses per repo, refreshed while watched. */
+export interface PrStatuses {
+  watch: (repo: string, worktrees: readonly Worktree[], changed: (prs: PrStatus[]) => void) => PrWatch;
+  /** The last successful statuses, or null before one. */
+  cached: (repo: string) => PrStatus[] | null;
+  close: () => Promise<void>;
+}
+
+/** What the daemon composes: worktree watching and listing, discovery, pull request statuses, and terminals. */
 export interface DaemonServices {
+  prs: PrStatuses;
   watchWorktrees: typeof watchWorktrees;
   listWorktrees: typeof listWorktrees;
   discoverRepos: typeof discoverRepos;
@@ -142,17 +158,19 @@ export class Daemon {
   }
 
   /**
-   * Refuses further requests, lets terminal and watch starts in flight finish, closes every
-   * terminal and watch, waits until each terminal is reaped and state is written, then ends every
-   * connection.
+   * Refuses further requests, stops pull request refreshes, lets terminal and watch starts in flight
+   * finish, closes every terminal and watch, waits until each terminal is reaped, every refresh ended and
+   * state is written, then ends every connection.
    */
   async shutdown(): Promise<void> {
     this.stopping = true;
+    const prsClosed = this.options.services.prs.close();
     await Promise.allSettled([...this.starting.values(), ...this.spawns]);
     for (const term of this.terminals.values()) this.closeTerminal(term);
-    for (const entry of this.repos.values()) entry.watch.close();
+    for (const entry of this.repos.values()) this.closeEntry(entry);
     this.repos.clear();
     while (this.reaping.size > 0) await Promise.all(this.reaping); // NOSONAR(S9382) — re-checks for closes started meanwhile
+    await prsClosed;
     await this.options.store.flush();
     for (const peer of this.peers) peer.end();
   }
@@ -315,6 +333,8 @@ export class Daemon {
       checked: this.options.store.checked(repo),
       layouts: this.options.store.layouts(repo),
     });
+    const prs = this.options.services.prs.cached(repo);
+    if (prs !== null) peer.send({ t: 'prStatus', repo, prs });
   }
 
   /** The repo's shared watch, started once however many connections ask at the same time. */
@@ -333,6 +353,7 @@ export class Daemon {
       watch = await this.options.services.watchWorktrees(repo, {
         changed: (worktrees) => {
           this.broadcast(repo, { t: 'worktreesChanged', repo, worktrees });
+          this.repos.get(repo)?.prs.update(worktrees);
           void this.prune(repo);
         },
         failed: (error) => {
@@ -343,15 +364,24 @@ export class Daemon {
       if (error instanceof NotARepoError) throw new RequestError('not-a-repo', error.message);
       throw error;
     }
-    const entry: RepoEntry = { watch, watchers: new Set() };
+    const prs = this.options.services.prs.watch(repo, watch.worktrees, (statuses) => {
+      this.broadcast(repo, { t: 'prStatus', repo, prs: statuses });
+    });
+    const entry: RepoEntry = { watch, prs, watchers: new Set() };
     this.repos.set(repo, entry);
     void this.prune(repo);
     return entry;
   }
 
   private stopWatch(repo: string): void {
-    this.repos.get(repo)?.watch.close();
+    const entry = this.repos.get(repo);
+    if (entry !== undefined) this.closeEntry(entry);
     this.repos.delete(repo);
+  }
+
+  private closeEntry(entry: RepoEntry): void {
+    entry.watch.close();
+    entry.prs.close();
   }
 
   private watchFailed(repo: string, error: Error): void {
@@ -361,6 +391,7 @@ export class Daemon {
       peer.sendError('internal', `watching ${repo} failed: ${error.message}`);
       this.unsubscribe(peer, repo);
     }
+    this.repos.get(repo)?.prs.close();
     this.repos.delete(repo);
   }
 

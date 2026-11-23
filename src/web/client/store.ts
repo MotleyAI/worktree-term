@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import type { HostEntry, Layout, MessageOf, Preset, Terminal, Worktree } from '../../protocol/index.js';
+import type { HostEntry, Layout, MessageOf, PrStatus, Preset, Terminal, Worktree } from '../../protocol/index.js';
 
 type DaemonEvent = Extract<MessageOf<'hubToBrowser'>, { t: 'host' }>['m'];
 
@@ -12,6 +12,8 @@ export interface RepoState {
   terminals: readonly Terminal[];
   checked: readonly string[];
   layouts: ReadonlyMap<string, Layout>;
+  /** The pull request statuses the daemon last sent, by branch. */
+  prs: readonly PrStatus[];
   /** Why the repo's watch failed, if it did. */
   error: { code: string; message: string } | null;
 }
@@ -27,7 +29,7 @@ export const worktreeLabel = (worktree: Worktree): string => {
   return worktree.detached && worktree.head !== null ? `${dir} @ ${worktree.head.slice(0, SHORT_HEAD)}` : dir;
 };
 
-const EMPTY: RepoState = { worktrees: [], terminals: [], checked: [], layouts: new Map(), error: null };
+const EMPTY: RepoState = { worktrees: [], terminals: [], checked: [], layouts: new Map(), prs: [], error: null };
 
 export const repoKey = (host: number, repo: string): string => `${String(host)}:${repo}`;
 
@@ -139,11 +141,15 @@ export class HubStore {
           terminals: m.terminals,
           checked: m.checked,
           layouts: new Map(m.layouts.map((l) => [l.worktree, l.layout])),
+          prs: [],
           error: null,
         }));
         return;
       case 'worktreesChanged':
         this.update(host, m.repo, (state) => ({ ...state, worktrees: m.worktrees }));
+        return;
+      case 'prStatus':
+        if (this.repo(host, m.repo) !== null) this.update(host, m.repo, (state) => ({ ...state, prs: m.prs }));
         return;
       case 'termCreated':
         this.inRepoOf(host, m.term.worktree, (state) =>

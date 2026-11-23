@@ -798,6 +798,55 @@ dialog.add-repo-dialog {
   background: #3b8eea;
 }
 
+.pr-icon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  margin: 0 2px;
+  text-decoration: none;
+}
+
+.pr-open {
+  color: #3fb950;
+}
+
+.pr-draft {
+  color: #8b949e;
+}
+
+.pr-merged {
+  color: #a371f7;
+}
+
+.pr-closed {
+  color: #f85149;
+}
+
+.pr-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  font-size: 6px;
+  font-weight: bold;
+  line-height: 7px;
+  text-align: center;
+}
+
+.pr-badge-alert {
+  color: #f85149;
+  background: var(--bg);
+}
+
+.pr-badge-pending {
+  color: #d29922;
+  background: currentColor;
+  border: 1px solid var(--bg);
+}
+
 .wtd-probe {
   visibility: hidden;
   pointer-events: none;

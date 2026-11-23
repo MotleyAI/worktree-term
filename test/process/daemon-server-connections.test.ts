@@ -31,7 +31,7 @@ describe('multiple clients', () => {
     const from = b.mark();
     expect((await a.request({ t: 'detach', termId: 1 })).t).toBe('error');
     await sleep(200);
-    expect(b.messages.slice(from)).toEqual([]);
+    expect(b.messages.slice(from).filter((m) => m.t !== 'prStatus')).toEqual([]);
   });
 });
 

@@ -24,6 +24,6 @@ The sidebar shows what each worktree's terminals are doing, but not where its br
 ## Impact
 
 - Code: new `src/daemon/prs/`; `src/daemon/server/daemon.ts` and `src/daemon/main/index.ts` compose it; `src/protocol/messages.ts`, `constants.ts`, wire goldens; `src/web/client/store.ts`, `src/web/ui/app.tsx`, `src/web/main/styles.css`.
-- Architecture: `architecture/model.c4` (component `daemon.prs`, arrows from `daemon.server` and `daemon.main`), regenerated view diagrams, `architecture/typescript.daemon.arc42.md`, `test/architecture/dependencies.ts` allowlist.
+- Architecture: `architecture/model.c4` (component `daemon.prs`, arrow from `daemon.main`), regenerated view diagrams, `architecture/typescript.daemon.arc42.md`, `test/architecture/dependencies.ts` allowlist.
 - Runtime dependency: the `gh` CLI on each host, optional; without it, or without a login, no icons are shown.
 - Every hub and daemon must be updated together (protocol version bump).

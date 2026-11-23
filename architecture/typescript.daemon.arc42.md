@@ -22,6 +22,7 @@ flowchart TD
     daemon__worktrees["Worktrees"]
     daemon__terminals["Terminals"]
     daemon__state["State"]
+    daemon__prs["PRs"]
     daemon__server["Server"]
     daemon__main["Main"]
   end
@@ -37,19 +38,19 @@ flowchart TD
   daemon__server --> daemon__worktrees
   daemon__server --> daemon__terminals
   daemon__server --> daemon__state
+  daemon__main --> daemon__prs
   cli --> daemon__main
   classDef leaf fill:none;
-  class protocol,platform__files,platform__memory,platform__scopes,daemon__worktrees,daemon__terminals,daemon__state,daemon__server,daemon__main,cli leaf;
+  class protocol,platform__files,platform__memory,platform__scopes,daemon__worktrees,daemon__terminals,daemon__state,daemon__prs,daemon__server,daemon__main,cli leaf;
 ```
 <!-- /likec4:daemon -->
 
 ## Principles
 
-1. `worktrees`, `terminals` and `state` never import each other; only `server` and `main` compose them. [enforced: arch_check:model-truth]
-2. Its only listener is its owner-only unix socket. [enforced: test:test/process/daemon-server-startup.test.ts]
-3. A PTY ends only by `closeTerm`, `removeWorktree` of its worktree, process exit or `shutdown`, never by a client leaving. [enforced: test:test/process/daemon-terminals-lifecycle.test.ts] [enforced: test:test/process/daemon-worktrees.test.ts]
-4. PTY output is never dropped; backpressure pauses the PTY. [enforced: test:src/daemon/terminals/flow.test.ts] [enforced: test:test/process/daemon-terminals-output.test.ts]
-5. An attach yields a snapshot and then live output with no gap and no duplicate byte. [enforced: test:test/process/daemon-terminals-output.test.ts]
-6. Worktree changes are observed by events, never by polling. [review]
-7. Persisted state references no worktree that is gone and has no terminals. [enforced: test:src/daemon/state/store.test.ts]
-8. Each terminal runs in a scope of its own when a lasting user manager (≡ one the daemon runs under, or lingering) is reachable. [enforced: test:test/process/daemon-terminals-scopes.test.ts]
+1. Its only listener is its owner-only unix socket. [enforced: test:test/process/daemon-server-startup.test.ts]
+2. A PTY ends only by `closeTerm`, `removeWorktree` of its worktree, process exit or `shutdown`, never by a client leaving. [enforced: test:test/process/daemon-terminals-lifecycle.test.ts] [enforced: test:test/process/daemon-worktrees.test.ts]
+3. PTY output is never dropped; backpressure pauses the PTY. [enforced: test:src/daemon/terminals/flow.test.ts] [enforced: test:test/process/daemon-terminals-output.test.ts]
+4. An attach yields a snapshot and then live output with no gap and no duplicate byte. [enforced: test:test/process/daemon-terminals-output.test.ts]
+5. Worktree changes are observed by events, never by polling; only forge state (≡ pull requests on the repo's git server) is polled, and only while its repo is watched. [review]
+6. Persisted state references no worktree that is gone and has no terminals. [enforced: test:src/daemon/state/store.test.ts]
+7. Each terminal runs in a scope of its own when a lasting user manager (≡ one the daemon runs under, or lingering) is reachable. [enforced: test:test/process/daemon-terminals-scopes.test.ts]

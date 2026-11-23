@@ -7,7 +7,6 @@ import { DaemonClient } from '../../../test/support/daemon-client.js';
 import { sleep } from '../../../test/support/daemon-host.js';
 import { writeFileAtomic } from '../../platform/files/index.js';
 import type { Layout, PrStatus, Worktree } from '../../protocol/index.js';
-import type { Prs } from '../prs/index.js';
 import { StateStore } from '../state/index.js';
 import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalLauncher, type TerminalSpec } from '../terminals/index.js';
 import type { WorktreeHandlers, WorktreeRisks, WorktreeWatch } from '../worktrees/index.js';
@@ -79,7 +78,7 @@ beforeEach(async () => {
   prCache = new Map();
   prsClosed = Promise.resolve();
   prsCloses = 0;
-  const prs: Prs = {
+  const prs: DaemonServices['prs'] = {
     watch: (repo, list, changed) => {
       const watch: FakePrWatch = { repo, worktrees: list, changed, updates: [], closed: false };
       prWatches.push(watch);

@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -250,7 +250,8 @@ describe('githubFetcher: the request', () => {
     }
     ghReply = answer({ 'feature/x': { ref: [pr(12)] } });
     const outcome = await fetchOnce([worktree('a'), worktree('b')]);
-    expect(outcome.ok && sorted(outcome.prs)).toEqual([status('a', 12), status('b', 12)]);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok ? sorted(outcome.prs) : []).toEqual([status('a', 12), status('b', 12)]);
     expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
   });
 
@@ -461,6 +462,39 @@ describe('githubFetcher: mapping', () => {
     expect(await mapped({ number: 4294967295, url: 'https://github.com/acme/app/pull/4294967295' })).toMatchObject({
       number: 4294967295,
       url: 'https://github.com/acme/app/pull/4294967295',
+    });
+  });
+});
+
+describe('githubFetcher: a response captured from GitHub', () => {
+  it('parses it into each branch status', async () => {
+    const captured = readFileSync(join(import.meta.dirname, 'github-capture.json'), 'utf8');
+    git(repo, 'remote', 'set-url', 'origin', 'git@github.com:MotleyAI/worktree-term.git');
+    sshReply = exit(0, 'hostname github.com\n');
+    ghReply = exit(0, captured);
+    const branches = ['egor/dev-2359-worktree-term-sidebar-toggle-to-show-only', 'egor/empty-worktree-choices-focus', 'wtd-no-such-branch'];
+    expect(await fetchOnce(branches.map((b) => worktree(b)))).toEqual({
+      ok: true,
+      prs: [
+        {
+          branch: branches[0],
+          number: 27,
+          url: 'https://github.com/MotleyAI/worktree-term/pull/27',
+          state: 'merged',
+          checks: 'passing',
+          conflicts: false,
+          review: null,
+        },
+        {
+          branch: branches[1],
+          number: 19,
+          url: 'https://github.com/MotleyAI/worktree-term/pull/19',
+          state: 'closed',
+          checks: 'failing',
+          conflicts: true,
+          review: null,
+        },
+      ],
     });
   });
 });

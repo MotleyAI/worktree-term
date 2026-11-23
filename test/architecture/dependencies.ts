@@ -30,6 +30,7 @@ export const ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   'daemon.worktrees': ['fs', 'child_process'],
   'daemon.terminals': ['@homebridge/node-pty-prebuilt-multiarch', '@xterm/headless', '@xterm/addon-serialize', 'fs'],
   'daemon.state': ['zod'],
+  'daemon.prs': ['child_process', 'zod'],
   'daemon.server': ['net'],
   'hub.server': ['http', 'net', 'ws'],
   'hub.links': ['net', 'child_process'],

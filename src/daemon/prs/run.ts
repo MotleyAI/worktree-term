@@ -24,7 +24,10 @@ export type RunOutcome =
 
 export type Runner = (command: string, args: readonly string[], options: RunOptions) => Promise<RunOutcome>;
 
-/** Runs `command`, killing it on timeout, abort or too much output; settles only once the child ended. */
+/**
+ * Runs `command`, killing it on timeout, abort or too much output; settles only once the child ended.
+ * A killed child settles on its exit, not on its pipes closing, which a descendant may hold open.
+ */
 export const runBounded: Runner = (command, args, { cwd, timeoutMs, input, signal, env }) =>
   new Promise((resolve) => {
     if (signal?.aborted === true) {
@@ -35,10 +38,18 @@ export const runBounded: Runner = (command, args, { cwd, timeoutMs, input, signa
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let size = 0;
+    let exited = false;
     let killedFor: 'timeout' | 'aborted' | 'overflow' | null = null;
+    const release = (reason: NonNullable<typeof killedFor>): void => {
+      child.stdout.destroy();
+      child.stderr.destroy();
+      settle({ kind: reason });
+    };
     const kill = (reason: NonNullable<typeof killedFor>): void => {
-      killedFor ??= reason;
-      child.kill('SIGKILL');
+      if (killedFor !== null) return;
+      killedFor = reason;
+      if (exited) release(reason);
+      else child.kill('SIGKILL');
     };
     const collect =
       (into: Buffer[]) =>
@@ -68,11 +79,13 @@ export const runBounded: Runner = (command, args, { cwd, timeoutMs, input, signa
       if (child.pid !== undefined) return;
       settle(error.code === 'ENOENT' ? { kind: 'missing' } : { kind: 'error', message: error.message });
     });
+    child.on('exit', () => {
+      exited = true;
+      if (killedFor !== null) release(killedFor);
+    });
     child.on('close', (code) => {
-      if (child.pid === undefined) return;
-      if (killedFor !== null) settle({ kind: killedFor });
-      else
-        settle({
+      if (child.pid === undefined || killedFor !== null) return;
+      settle({
           kind: 'exit',
           code: code ?? -1,
           stdout: Buffer.concat(stdout).toString('utf8'),

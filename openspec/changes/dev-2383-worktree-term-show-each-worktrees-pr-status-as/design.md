@@ -40,14 +40,18 @@ Architecture constraints that apply (see `architecture/`):
     repository(owner: $owner, name: $name) {
       nameWithOwner
       r0: ref(qualifiedName: $q0) {           # $q0 = "refs/heads/<branch>"
-        associatedPullRequests(first: 5, states: [OPEN, CLOSED, MERGED],
-                               orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }
+        all: associatedPullRequests(first: 5, states: [OPEN, CLOSED, MERGED],
+                                    orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }
+        open: associatedPullRequests(first: 5, states: [OPEN],
+                                     orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }
       }
       n0: pullRequests(headRefName: $b0, first: 5, states: [OPEN, CLOSED, MERGED],
                        orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }
+      o0: pullRequests(headRefName: $b0, first: 5, states: [OPEN],
+                       orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }
       parent {
-        n0: pullRequests(headRefName: $b0, first: 5, states: [OPEN, CLOSED, MERGED],
-                         orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }
+        n0: …same as n0 above…
+        o0: …same as o0 above…
       }
     }
   }
@@ -57,7 +61,7 @@ Architecture constraints that apply (see `architecture/`):
     commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   }
   ```
-  One alias triple per distinct branch. `rN` non-null → its `associatedPullRequests` are the candidates (exact head, any base, parent included). `rN` null (branch gone) → `nN` of origin and of `parent`, filtered to `headRepository.nameWithOwner` equal (case-insensitively) to `repository.nameWithOwner`; a null `headRepository` is dropped. Nullable everywhere: `parent`, `rN`, `headRepository`, `commits.nodes` (may be empty), `statusCheckRollup`, `reviewDecision`. Sent as a JSON body `{query, variables}` on stdin (`gh api graphql --hostname <host> --input -`) so no argument-length limit applies. Alternative: `gh pr list --state all` — rejected: capped, misses older PRs, fetches PRs of branches without worktrees, and cannot express the exact head. (default, codex)
+  One alias set per distinct branch. Each connection is asked for every state and for open ones only, so `first: 5` never hides an open PR behind more recently updated closed ones; the candidates are the union. `rN` non-null → its `all` and `open` connections are the candidates (exact head, any base, parent included). `rN` null (branch gone) → `nN` and `oN` of origin and of `parent`, filtered to `headRepository.nameWithOwner` equal (case-insensitively) to `repository.nameWithOwner`; a null `headRepository` is dropped. Nullable everywhere: `parent`, `rN`, `headRepository`, `commits.nodes` (may be empty), `statusCheckRollup`, `reviewDecision`. Sent as a JSON body `{query, variables}` on stdin (`gh api graphql --hostname <host> --input -`) so no argument-length limit applies. Alternative: `gh pr list --state all` — rejected: capped, misses older PRs, fetches PRs of branches without worktrees, and cannot express the exact head. (default, codex)
 - **D7. Choice and mapping** — open/draft wins (most recently updated), else most recently updated. `state`: `MERGED`→merged, `CLOSED`→closed, `OPEN`+`isDraft`→draft, `OPEN`→open. `checks`: `FAILURE`/`ERROR`→failing, `PENDING`/`EXPECTED`→pending, `SUCCESS`→passing, absent→none. `conflicts`: `mergeable == CONFLICTING` (`UNKNOWN` → false; the next refresh resolves it). `review`: `APPROVED`/`CHANGES_REQUESTED`/`REVIEW_REQUIRED`→approved/changes-requested/review-required, null→null. (default)
 - **D8. Hover shows all three review decisions** as GitHub reports them. (default)
 

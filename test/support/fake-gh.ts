@@ -33,7 +33,7 @@ export type GhCall = z.infer<typeof ghCall>;
 /** The pull request URL the fake `gh` reports for `number`. */
 export const fakePrUrl = (number: number): string => `https://github.com/acme/app/pull/${String(number)}`;
 
-const SCRIPT = (dir: string): string => `#!${process.execPath}
+const SCRIPT = (dir: string): string => String.raw`#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
 const dir = ${JSON.stringify(dir)};
@@ -45,7 +45,7 @@ process.stdin.on('end', () => {
   try {
     variables = JSON.parse(input).variables ?? {};
   } catch {}
-  const branches = Object.entries(variables).filter(([k]) => /^b\\d+$/.test(k)).map(([, v]) => v).sort();
+  const branches = Object.entries(variables).filter(([k]) => /^b\d+$/.test(k)).map(([, v]) => v).sort();
   const call = path.join(dir, 'calls', String(process.hrtime.bigint()).padStart(24, '0') + '-' + process.pid);
   fs.writeFileSync(call + '.tmp', JSON.stringify({ pid: process.pid, args: process.argv.slice(2), branches }));
   fs.renameSync(call + '.tmp', call + '.json');
@@ -60,7 +60,7 @@ process.stdin.on('end', () => {
   }
   const repository = { nameWithOwner: 'acme/app', parent: null };
   for (const [key, branch] of Object.entries(variables)) {
-    const i = /^b(\\d+)$/.exec(key)?.[1];
+    const i = /^b(\d+)$/.exec(key)?.[1];
     if (i === undefined) continue;
     const pr = behaviour.prs[branch];
     const nodes = pr === undefined ? [] : [{
@@ -74,8 +74,9 @@ process.stdin.on('end', () => {
       headRepository: { nameWithOwner: 'acme/app' },
       commits: { nodes: [{ commit: { statusCheckRollup: pr.checks === null ? null : { state: pr.checks ?? 'SUCCESS' } } }] },
     }];
-    repository['r' + i] = { associatedPullRequests: { nodes } };
+    repository['r' + i] = { all: { nodes }, open: { nodes: nodes.filter((node) => node.state === 'OPEN') } };
     repository['n' + i] = { nodes: [] };
+    repository['o' + i] = { nodes: [] };
   }
   process.stdout.write(JSON.stringify({ data: { repository } }));
 });

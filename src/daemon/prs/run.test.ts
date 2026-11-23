@@ -70,6 +70,24 @@ describe('runBounded', () => {
     expect(alive(pid)).toBe(false);
   });
 
+  it.each([
+    ['is killed', `echo $$ > '{pid}'; sleep 60 & echo $! > '{grand}'; wait`],
+    ['exited', `echo $$ > '{pid}'; sleep 60 & echo $! > '{grand}'; exit 0`],
+  ])('settles on timeout while a descendant holds its output open after the child %s', async (_name, script) => {
+    const [pidFile, grandFile] = [join(dir, 'pid'), join(dir, 'grand')];
+    const started = Date.now();
+    const outcome = runBounded('sh', ['-c', script.replace('{pid}', pidFile).replace('{grand}', grandFile)], { cwd: dir, timeoutMs: 300 });
+    const pid = await pidIn(pidFile);
+    const grandchild = await pidIn(grandFile);
+    try {
+      expect(await outcome).toEqual({ kind: 'timeout' });
+      expect(Date.now() - started).toBeLessThan(5000);
+      expect(alive(pid)).toBe(false);
+    } finally {
+      process.kill(grandchild, 'SIGKILL');
+    }
+  });
+
   it('kills a child whose output exceeds the cap', async () => {
     expect(await runBounded('yes', [], { cwd: dir, timeoutMs: 30_000 })).toEqual({ kind: 'overflow' });
   });

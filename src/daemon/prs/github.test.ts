@@ -36,7 +36,7 @@ describe('parseOrigin', () => {
 });
 
 describe('buildQuery', () => {
-  it('asks for one alias triple per distinct branch, with the repository in variables', () => {
+  it('asks for one alias set per distinct branch, with the repository in variables', () => {
     const { query, variables } = buildQuery('acme', 'app', ['feature/x', 'fix/y', 'feature/x']);
     expect(variables).toEqual({
       owner: 'acme',
@@ -48,8 +48,11 @@ describe('buildQuery', () => {
     });
     for (const i of ['0', '1']) {
       expect(query).toContain(`r${i}: ref(qualifiedName: $q${i})`);
-      expect(query.split(`n${i}: pullRequests(headRefName: $b${i}`)).toHaveLength(3);
+      expect(query.split(`n${i}: pullRequests(headRefName: $b${i}, first: 5, states: [OPEN, CLOSED, MERGED]`)).toHaveLength(3);
+      expect(query.split(`o${i}: pullRequests(headRefName: $b${i}, first: 5, states: [OPEN],`)).toHaveLength(3);
     }
+    expect(query.split('all: associatedPullRequests(first: 5, states: [OPEN, CLOSED, MERGED]')).toHaveLength(3);
+    expect(query.split('open: associatedPullRequests(first: 5, states: [OPEN],')).toHaveLength(3);
     expect(query).not.toContain('r2:');
     expect(query).toContain('parent {');
     expect(query).toContain('headRepository');
@@ -107,6 +110,14 @@ const withChecks = (state: string | null): Partial<PrNode> => ({
 
 const exit = (code: number, stdout = '', stderr = ''): RunOutcome => ({ kind: 'exit', code, stdout, stderr });
 
+/** One connection page as GitHub returns it: the 5 most recently updated, of every state or open ones only. */
+const page = (prs: readonly PrNode[], openOnly: boolean): { nodes: PrNode[] } => ({
+  nodes: prs
+    .filter((p) => !openOnly || p.state === 'OPEN')
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 5),
+});
+
 /** A gh reply answering each asked branch from `github`, as GitHub's GraphQL API does. */
 const answer =
   (github: Readonly<Record<string, BranchOnGitHub>>, { parent = true, nameWithOwner = 'acme/app' } = {}) =>
@@ -118,9 +129,11 @@ const answer =
       if (i === undefined) continue;
       expect(body.variables[`q${i}`]).toBe(`refs/heads/${branch}`);
       const known = github[branch] ?? { ref: [] };
-      repository[`r${i}`] = known.ref === null ? null : { associatedPullRequests: { nodes: known.ref } };
-      repository[`n${i}`] = { nodes: known.heads ?? [] };
-      parentRepo[`n${i}`] = { nodes: known.parentHeads ?? [] };
+      repository[`r${i}`] = known.ref === null ? null : { all: page(known.ref, false), open: page(known.ref, true) };
+      repository[`n${i}`] = page(known.heads ?? [], false);
+      repository[`o${i}`] = page(known.heads ?? [], true);
+      parentRepo[`n${i}`] = page(known.parentHeads ?? [], false);
+      parentRepo[`o${i}`] = page(known.parentHeads ?? [], true);
     }
     return exit(0, JSON.stringify({ data: { repository } }));
   };
@@ -384,6 +397,15 @@ describe('githubFetcher: which pull request', () => {
     const closed = pr(2, { state: 'CLOSED', updatedAt: '2026-11-21T10:00:00Z' });
     const open = pr(1, { updatedAt: '2026-11-14T10:00:00Z' });
     expect(await fetchFor({ ref: [closed, open] })).toMatchObject({ ok: true, prs: [{ number: 1, state: 'open' }] });
+  });
+
+  it.each([
+    ['of the exact head', (prs: PrNode[]): BranchOnGitHub => ({ ref: prs })],
+    ['by head name after the branch was deleted', (prs: PrNode[]): BranchOnGitHub => ({ ref: null, heads: prs })],
+  ])('finds an open pull request %s behind five more recently updated closed ones', async (_name, known) => {
+    const closed = [1, 2, 3, 4, 5].map((n) => pr(n + 1, { state: 'CLOSED', updatedAt: `2026-11-2${String(n)}T10:00:00Z` }));
+    const open = pr(1, { updatedAt: '2026-11-10T10:00:00Z' });
+    expect(await fetchFor(known([...closed, open]))).toMatchObject({ ok: true, prs: [{ number: 1, state: 'open' }] });
   });
 
   it('counts a draft as open', async () => {

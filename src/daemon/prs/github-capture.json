@@ -3,7 +3,7 @@
     "repository": {
       "nameWithOwner": "MotleyAI/worktree-term",
       "r0": {
-        "associatedPullRequests": {
+        "all": {
           "nodes": [
             {
               "number": 27,
@@ -29,6 +29,9 @@
               }
             }
           ]
+        },
+        "open": {
+          "nodes": []
         }
       },
       "n0": {
@@ -58,8 +61,11 @@
           }
         ]
       },
+      "o0": {
+        "nodes": []
+      },
       "r1": {
-        "associatedPullRequests": {
+        "all": {
           "nodes": [
             {
               "number": 19,
@@ -85,6 +91,9 @@
               }
             }
           ]
+        },
+        "open": {
+          "nodes": []
         }
       },
       "n1": {
@@ -114,8 +123,14 @@
           }
         ]
       },
+      "o1": {
+        "nodes": []
+      },
       "r2": null,
       "n2": {
+        "nodes": []
+      },
+      "o2": {
         "nodes": []
       },
       "parent": null

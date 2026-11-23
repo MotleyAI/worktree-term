@@ -200,7 +200,7 @@ describe('pull request status', () => {
     await prStatus(client, 0, (prs) => prs.length === 1);
     const from = client.mark();
     git(repo, 'remote', 'remove', 'origin');
-    await prStatus(client, from, (prs) => prs.length === 0, 3000);
+    expect((await prStatus(client, from, (prs) => prs.length === 0, 3000)).prs).toEqual([]);
   });
 
   it('keeps the status through failed refreshes, sending neither prStatus nor error, and gives it to a later watcher', async () => {

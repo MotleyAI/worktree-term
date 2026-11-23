@@ -25,7 +25,7 @@ const SEGMENT = String.raw`[\w.-]+`;
 const REPO_PATH = String.raw`(${SEGMENT})/(${SEGMENT}?)(?:\.git)?/?`;
 const HTTPS = new RegExp(String.raw`^https://(?:[^@/]+@)?([^@/:]+)(?::\d+)?/${REPO_PATH}$`);
 const SSH_URL = new RegExp(String.raw`^ssh://(?:[^@/]+@)?([^@/:]+)(?::\d+)?/${REPO_PATH}$`);
-const SCP = new RegExp(String.raw`^(?:[^@/:]+@)?([^@/:]+):${REPO_PATH}$`);
+const SCP = new RegExp(`^(?:[^@/:]+@)?([^@/:]+):${REPO_PATH}$`);
 
 /** The GitHub repository `url` names, or null when it has none of the supported forms. */
 export const parseOrigin = (url: string): Origin | null => {
@@ -46,10 +46,17 @@ const PR_FIELDS = `fragment P on PullRequest {
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }`;
 
-const byHead = (alias: string, variable: string): string =>
-  `${alias}: pullRequests(headRefName: $${variable}, first: 5, states: [OPEN, CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } }`;
+const ORDER = 'orderBy: {field: UPDATED_AT, direction: DESC}';
+/** Every state, and open ones apart, so the limit never hides an open pull request behind newer closed ones. */
+const ALL = `first: 5, states: [OPEN, CLOSED, MERGED], ${ORDER}`;
+const OPEN = `first: 5, states: [OPEN], ${ORDER}`;
 
-/** The GraphQL request for `branches` of `owner/name`: one alias triple per distinct branch. */
+const byHead = (i: string, variable: string): string[] => [
+  `n${i}: pullRequests(headRefName: $${variable}, ${ALL}) { nodes { ...P } }`,
+  `o${i}: pullRequests(headRefName: $${variable}, ${OPEN}) { nodes { ...P } }`,
+];
+
+/** The GraphQL request for `branches` of `owner/name`: one alias set per distinct branch. */
 export const buildQuery = (
   owner: string,
   name: string,
@@ -60,16 +67,17 @@ export const buildQuery = (
   const declared = ['$owner: String!', '$name: String!'];
   const own: string[] = [];
   const parent: string[] = [];
-  distinct.forEach((branch, i) => {
-    const [q, b] = [`q${String(i)}`, `b${String(i)}`];
+  distinct.forEach((branch, index) => {
+    const i = String(index);
+    const [q, b] = [`q${i}`, `b${i}`];
     variables[q] = `refs/heads/${branch}`;
     variables[b] = branch;
     declared.push(`$${q}: String!`, `$${b}: String!`);
     own.push(
-      `r${String(i)}: ref(qualifiedName: $${q}) { associatedPullRequests(first: 5, states: [OPEN, CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...P } } }`,
-      byHead(`n${String(i)}`, b),
+      `r${i}: ref(qualifiedName: $${q}) { all: associatedPullRequests(${ALL}) { nodes { ...P } } open: associatedPullRequests(${OPEN}) { nodes { ...P } } }`,
+      ...byHead(i, b),
     );
-    parent.push(byHead(`n${String(i)}`, b));
+    parent.push(...byHead(i, b));
   });
   const query = `query(${declared.join(', ')}) {
   repository(owner: $owner, name: $name) {
@@ -106,7 +114,7 @@ const prNode = z.object({
 type PrNode = z.infer<typeof prNode>;
 
 const nodes = z.object({ nodes: z.array(prNode) });
-const refNodes = z.object({ associatedPullRequests: nodes }).nullable();
+const refNodes = z.object({ all: nodes, open: nodes }).nullable();
 const response = z.object({
   data: z.object({
     repository: z.looseObject({ nameWithOwner: z.string(), parent: z.looseObject({}).nullable() }),
@@ -125,14 +133,17 @@ const choose = (candidates: readonly PrNode[]): PrNode | undefined => {
   return sorted.find((pr) => pr.state === 'OPEN') ?? sorted[0];
 };
 
+const checksOf = (pr: PrNode): PrStatus['checks'] => {
+  const rollup = pr.commits.nodes.at(-1)?.commit.statusCheckRollup;
+  return rollup === undefined || rollup === null ? 'none' : CHECKS[rollup.state];
+};
+
 const toStatus = (branch: string, pr: PrNode): PrStatus => ({
   branch,
   number: pr.number,
   url: pr.url,
   state: pr.state === 'OPEN' && pr.isDraft ? 'draft' : STATE[pr.state],
-  checks: ((rollup) => (rollup === undefined || rollup === null ? 'none' : CHECKS[rollup.state]))(
-    pr.commits.nodes.at(-1)?.commit.statusCheckRollup,
-  ),
+  checks: checksOf(pr),
   conflicts: pr.mergeable === 'CONFLICTING',
   review: pr.reviewDecision === null ? null : REVIEW[pr.reviewDecision],
 });
@@ -156,20 +167,28 @@ const failureOf = (outcome: Exclude<RunOutcome, { kind: 'exit'; code: 0 }>): Fai
   }
 };
 
+/** Branch `i`'s pull requests by head name in `repository` (none without one), or null when malformed. */
+const headsOf = (repository: Readonly<Record<string, unknown>> | null, i: string): PrNode[] | null => {
+  if (repository === null) return [];
+  const all = nodes.safeParse(repository[`n${i}`]);
+  const open = nodes.safeParse(repository[`o${i}`]);
+  return all.success && open.success ? [...all.data.nodes, ...open.data.nodes] : null;
+};
+
 /** Each asked branch's chosen pull request, or null when an alias is missing or malformed. */
 const pickPrs = (repository: z.infer<typeof response>['data']['repository'], branches: readonly string[]): Map<string, PrNode> | null => {
   const own = repository.nameWithOwner.toLowerCase();
   const chosen = new Map<string, PrNode>();
-  for (const [i, branch] of branches.entries()) {
-    const ref = refNodes.safeParse(repository[`r${String(i)}`]);
-    const heads = nodes.safeParse(repository[`n${String(i)}`]);
-    const parentHeads =
-      repository.parent === null ? { success: true as const, data: { nodes: [] } } : nodes.safeParse(repository.parent[`n${String(i)}`]);
-    if (!ref.success || !heads.success || !parentHeads.success) return null;
+  for (const [index, branch] of branches.entries()) {
+    const i = String(index);
+    const ref = refNodes.safeParse(repository[`r${i}`]);
+    const heads = headsOf(repository, i);
+    const parentHeads = headsOf(repository.parent, i);
+    if (!ref.success || heads === null || parentHeads === null) return null;
     const candidates =
       ref.data === null
-        ? [...heads.data.nodes, ...parentHeads.data.nodes].filter((pr) => pr.headRepository?.nameWithOwner.toLowerCase() === own)
-        : ref.data.associatedPullRequests.nodes;
+        ? [...heads, ...parentHeads].filter((pr) => pr.headRepository?.nameWithOwner.toLowerCase() === own)
+        : [...ref.data.all.nodes, ...ref.data.open.nodes];
     const pr = choose(candidates);
     if (pr !== undefined) chosen.set(branch, pr);
   }
@@ -205,6 +224,31 @@ const originBranch = (branch: string, config: { remote?: string; merges: string[
   if (config.merges.length > 1) return null;
   const [merge] = config.merges;
   return merge?.startsWith('refs/heads/') === true ? merge.slice('refs/heads/'.length) : branch;
+};
+
+/** The origin branch of each worktree's local branch, for those that have one. */
+const originBranches = (worktrees: readonly Worktree[], output: string): Map<string, string> => {
+  const config = parseBranchConfig(output);
+  const asked = new Map<string, string>();
+  for (const { branch, bare } of worktrees) {
+    if (branch === null || bare || asked.has(branch)) continue;
+    const remote = originBranch(branch, config.get(branch));
+    if (remote !== null) asked.set(branch, remote);
+  }
+  return asked;
+};
+
+/** The status of each local branch whose origin branch has a chosen pull request, or null when one is invalid. */
+const statusesOf = (asked: ReadonlyMap<string, string>, chosen: ReadonlyMap<string, PrNode>): PrStatus[] | null => {
+  const prs: PrStatus[] = [];
+  for (const [local, remote] of asked) {
+    const pr = chosen.get(remote);
+    if (pr === undefined) continue;
+    const status = prStatusSchema.safeParse(toStatus(local, pr));
+    if (!status.success) return null;
+    prs.push(status.data);
+  }
+  return prs;
 };
 
 /** A fetcher asking GitHub through `gh`, running every process with `run`. */
@@ -254,13 +298,7 @@ export const githubFetcher = (run: Runner): Fetch => {
     if (url.value === null || origin === null) return EMPTY;
     const config = await query(repo, ['config', '-z', '--get-regexp', String.raw`^branch\..*\.(remote|merge)$`], signal);
     if (!config.ok) return config.outcome;
-    const branchConfig = parseBranchConfig(config.value ?? '');
-    const asked = new Map<string, string>();
-    for (const { branch, bare } of worktrees) {
-      if (branch === null || bare || asked.has(branch)) continue;
-      const remote = originBranch(branch, branchConfig.get(branch));
-      if (remote !== null) asked.set(branch, remote);
-    }
+    const asked = originBranches(worktrees, config.value ?? '');
     const branches = [...new Set(asked.values())];
     if (branches.length === 0) return EMPTY;
     const host = await hostOf(url.value.trim(), origin, repo, signal);
@@ -270,15 +308,7 @@ export const githubFetcher = (run: Runner): Fetch => {
     const parsed = response.safeParse(answer.value);
     if (!parsed.success) return { ok: false, failure: 'invalid-response' };
     const chosen = pickPrs(parsed.data.data.repository, branches);
-    if (chosen === null) return { ok: false, failure: 'invalid-response' };
-    const prs: PrStatus[] = [];
-    for (const [local, remote] of asked) {
-      const pr = chosen.get(remote);
-      if (pr === undefined) continue;
-      const status = prStatusSchema.safeParse(toStatus(local, pr));
-      if (!status.success) return { ok: false, failure: 'invalid-response' };
-      prs.push(status.data);
-    }
-    return { ok: true, prs };
+    const prs = chosen === null ? null : statusesOf(asked, chosen);
+    return prs === null ? { ok: false, failure: 'invalid-response' } : { ok: true, prs };
   };
 };

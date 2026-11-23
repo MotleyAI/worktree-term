@@ -9,7 +9,7 @@ const MAX_RUNNING = 4;
 
 /** The refresh interval `WTD_PR_INTERVAL_MS` asks for when it is a positive integer, else 60 s. */
 export const prIntervalMs = (value: string | undefined): number => {
-  const ms = /^[1-9]\d*$/.test(value ?? '') ? Number(value) : NaN;
+  const ms = /^[1-9]\d*$/.test(value ?? '') ? Number(value) : Number.NaN;
   return Number.isSafeInteger(ms) && ms <= MAX_TIMER_MS ? ms : DEFAULT_INTERVAL_MS;
 };
 

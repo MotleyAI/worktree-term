@@ -7,10 +7,10 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
 /** Most refreshes running at a time. */
 const MAX_RUNNING = 4;
 
-/** The refresh interval `WTD_PR_INTERVAL_MS` asks for when it is a positive integer, else 60 s. */
-export const prIntervalMs = (value: string | undefined): number => {
-  const ms = /^[1-9]\d*$/.test(value ?? '') ? Number(value) : Number.NaN;
-  return Number.isSafeInteger(ms) && ms <= MAX_TIMER_MS ? ms : DEFAULT_INTERVAL_MS;
+/** The refresh interval `WTD_PR_INTERVAL_MS` asks for when it is a positive integer, capped at the longest timer, else 60 s. */
+export const prIntervalMs = (value = ''): number => {
+  const ms = /^\d+$/.test(value) ? Number(value) : 0;
+  return ms > 0 ? Math.min(ms, MAX_TIMER_MS) : DEFAULT_INTERVAL_MS;
 };
 
 export interface PrWatch {

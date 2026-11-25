@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PrStatus, Worktree } from '../../protocol/index.js';
-import { prHover, prIcon, prOf } from './prs.js';
+import { prHover, prIcon, prOf, rowPr } from './prs.js';
 
 const pr = (fields: Partial<PrStatus> = {}): PrStatus => ({
   branch: 'feature/x',
@@ -84,5 +84,26 @@ describe('prOf', () => {
   it('finds none for a detached worktree or a gone row', () => {
     expect(prOf(prs, worktree({ branch: null, detached: true }))).toBeNull();
     expect(prOf(prs, undefined)).toBeNull();
+  });
+});
+
+describe('rowPr', () => {
+  const SAME = '/srv/app.wt/x';
+  const members = [
+    { host: 0, state: { worktrees: [worktree({ path: SAME })], prs: [pr({ number: 1 })] } },
+    { host: 1, state: { worktrees: [worktree({ path: SAME })], prs: [pr({ number: 2 })] } },
+  ];
+
+  it('gives each of two rows at the same path its own host’s status', () => {
+    expect(rowPr(members, { host: 0, path: SAME })?.number).toBe(1);
+    expect(rowPr(members, { host: 1, path: SAME })?.number).toBe(2);
+  });
+
+  it('finds none for a row whose host has no status for its branch, whatever another host has', () => {
+    const [local] = members;
+    if (local === undefined) throw new Error('no member');
+    const without = [local, { host: 1, state: { worktrees: [worktree({ path: SAME })], prs: [] } }];
+    expect(rowPr(without, { host: 1, path: SAME })).toBeNull();
+    expect(rowPr(without, { host: 2, path: SAME })).toBeNull();
   });
 });

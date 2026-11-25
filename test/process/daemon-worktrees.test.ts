@@ -57,6 +57,7 @@ describe('watchRepo', () => {
     expect(state).toEqual({
       t: 'repoState',
       repo,
+      origin: null,
       worktrees: [
         { path: repo, head, branch: 'main', detached: false, locked: false, prunable: false, bare: false, main: true },
         { path: wt, head, branch: 'feature/x', detached: false, locked: false, prunable: false, bare: false, main: false },
@@ -171,6 +172,44 @@ describe('watchRepo', () => {
   it('accepts a repo with exactly 1024 worktrees', async () => {
     fakeWorktrees(repo, 1023);
     expect((await (await host.client()).watch(repo)).worktrees).toHaveLength(1024);
+  });
+
+  describe('origin', () => {
+    it('names the normalized origin in repoState', async () => {
+      git(repo, 'remote', 'add', 'origin', 'git@github.com:Acme/App.git');
+      expect(await (await host.client()).watch(repo)).toMatchObject({ t: 'repoState', repo, origin: 'github.com/Acme/App' });
+    });
+
+    it('gives a null origin for a repo without an origin remote', async () => {
+      expect(await (await host.client()).watch(repo)).toMatchObject({ t: 'repoState', repo, origin: null });
+    });
+
+    it('gives a null origin for a local origin', async () => {
+      git(repo, 'remote', 'add', 'origin', join(host.dir, 'elsewhere.git'));
+      expect(await (await host.client()).watch(repo)).toMatchObject({ origin: null });
+    });
+
+    it('names the origin of a bare repository', async () => {
+      const bare = join(host.dir, 'bare.git');
+      git(host.dir, 'init', '-q', '--bare', bare);
+      git(bare, 'remote', 'add', 'origin', 'ssh://git@host:2222/srv/bare.git');
+      expect(await (await host.client()).watch(bare)).toMatchObject({ repo: bare, origin: 'host:2222/srv/bare' });
+    });
+
+    it('carries a changed origin when the repo is watched again', async () => {
+      git(repo, 'remote', 'add', 'origin', 'https://github.com/acme/old.git');
+      const client = await host.client();
+      expect(await client.watch(repo)).toMatchObject({ origin: 'github.com/acme/old' });
+      git(repo, 'remote', 'set-url', 'origin', 'https://github.com/acme/new.git');
+      expect(await client.watch(repo)).toMatchObject({ origin: 'github.com/acme/new' });
+    });
+
+    it('reads the origin anew for a second connection while the repo stays watched', async () => {
+      git(repo, 'remote', 'add', 'origin', 'https://github.com/acme/old.git');
+      expect(await (await host.client()).watch(repo)).toMatchObject({ origin: 'github.com/acme/old' });
+      git(repo, 'remote', 'set-url', 'origin', 'https://github.com/acme/new.git');
+      expect(await (await host.client()).watch(repo)).toMatchObject({ origin: 'github.com/acme/new' });
+    });
   });
 });
 
@@ -386,14 +425,38 @@ describe('discoverRepos', () => {
     makeRepo(join(root, 'x', 'y', 'too-deep'));
     const client = await host.client();
     const reply = await client.request({ t: 'discoverRepos', roots: [root, join(host.dir, 'missing')], depth: 2 });
-    expect(reply).toEqual({ t: 'reposDiscovered', req: ANY_REQ, repos: [two, one] });
+    expect(reply).toEqual({
+      t: 'reposDiscovered',
+      req: ANY_REQ,
+      repos: [
+        { path: two, origin: null },
+        { path: one, origin: null },
+      ],
+    });
   });
 
   it('expands ~ and ~/… roots against the daemon home and reports each repo once', async () => {
     const app = makeRepo(join(host.home, 'GitHub', 'app'));
     const client = await host.client();
     const reply = await client.request({ t: 'discoverRepos', roots: ['~', '~/GitHub'], depth: 3 });
-    expect(reply).toEqual({ t: 'reposDiscovered', req: ANY_REQ, repos: [app] });
+    expect(reply).toEqual({ t: 'reposDiscovered', req: ANY_REQ, repos: [{ path: app, origin: null }] });
+  });
+
+  it('reports each repository with its origin, null without one', async () => {
+    const root = join(host.dir, 'roots');
+    const app = makeRepo(join(root, 'app'));
+    git(app, 'remote', 'add', 'origin', 'https://github.com/acme/app.git');
+    const plain = makeRepo(join(root, 'plain'));
+    const client = await host.client();
+    const reply = await client.request({ t: 'discoverRepos', roots: [root], depth: 1 });
+    expect(reply).toEqual({
+      t: 'reposDiscovered',
+      req: ANY_REQ,
+      repos: [
+        { path: app, origin: 'github.com/acme/app' },
+        { path: plain, origin: null },
+      ],
+    });
   });
 });
 

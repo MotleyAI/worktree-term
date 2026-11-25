@@ -3,20 +3,23 @@ import { join } from 'node:path';
 import { makeRepo } from '../support/daemon-host.js';
 import { freePort, type HubHost } from '../support/hub-host.js';
 import { remoteHub } from '../support/remote-hub.js';
-import { byTestId, hubsEntry, repoTab, TID } from './contract.js';
+import { byTestId, groupTab, hubsEntry, repoTab, TID, worktreeAt } from './contract.js';
 import {
   borderOf,
   expect,
   hubRequests,
+  LOCAL,
   makeRepoWith,
   nodeRemote,
   openUi,
+  REMOTE,
   runUi,
   test,
   writeHubConfig,
   type HostConfig,
 } from './fixture.js';
 import { holdFirstPresets } from './held-presets.js';
+import { cloneAt, installedRemote, localName, plainPath } from './origins.js';
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box: Name or service not known';
 
@@ -284,7 +287,11 @@ test.describe('hub opening status', () => {
     await reinstall.click();
     await expect(status).toHaveText('Installing on box…');
     await landedOn(page, originOf(port));
-    expect(hubRequests(wire, mark).map((m) => m.t)).toEqual(['installHub', 'openHub']);
+    expect(
+      hubRequests(wire, mark)
+        .map((m) => m.t)
+        .filter((t) => t !== 'discoverRepos'),
+    ).toEqual(['installHub', 'openHub']);
   });
 
   test('a failure shows its reason with a × that clears it, leaving the tab home', async ({ hub, page, ssh }) => {
@@ -333,5 +340,47 @@ test.describe('hub opening from the address', () => {
     await page.waitForTimeout(1000); // NOSONAR(S2925) — absence check: nothing to synchronise on
     expect(hubRequests(wire).filter((m) => m.t === 'openHub')).toEqual([]);
     await expect(page.locator(byTestId(TID.hubStatus))).toHaveCount(0);
+  });
+});
+
+test.describe('hub button and tabs per hub', () => {
+  test('the hub button names the page’s hub: this machine’s name at home, box on box’s page', async ({ hub, page, ssh, wire }) => {
+    test.setTimeout(120_000);
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    const port = await tunnelPort(hub, box);
+    await home(hub, page, [{ name: 'box', ssh: 'box', port }]);
+    await expect(page.locator(byTestId(TID.hubsMenu))).toHaveText(await localName(wire));
+
+    await pick(page, 'box');
+    await landedOn(page, originOf(port));
+    await expect(page.locator(repoTab(box.repo))).toBeVisible();
+    await expect(page.locator(byTestId(TID.hubsMenu))).toHaveText('box');
+  });
+
+  test('each hub keeps its own tabs: box’s page shows only its own repo, which the home page merges into its clone’s tab', async ({
+    hub,
+    page,
+    ssh,
+  }) => {
+    test.setTimeout(120_000);
+    plainPath(hub);
+    const remote = await installedRemote(hub, ssh, 'box');
+    const api = cloneAt(join(remote.home, 'srv', 'api'), 'app').repo;
+    const remotePort = await tunnelPort(hub);
+    remote.writeHubConfig({ port: remotePort, repos: [api] });
+    const port = await tunnelPort(hub, { port: remotePort });
+    const app = cloneAt(join(hub.dir, 'r', 'app'), 'app').repo;
+    const lib = cloneAt(join(hub.dir, 'r', 'lib'), 'lib').repo;
+    writeHubConfig(hub, { repos: [app, lib], hosts: [{ name: 'box', ssh: 'box', port, repos: [] }] });
+    await openUi(hub, page);
+    await expect(page.locator(worktreeAt(REMOTE, api))).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(byTestId(TID.repoTab))).toHaveText(['app', 'lib']);
+
+    await pick(page, 'box');
+    await landedOn(page, originOf(port));
+    await expect(page.locator(groupTab(api))).toBeVisible();
+    await expect(page.locator(byTestId(TID.repoTab))).toHaveText(['api']);
+    await expect(page.locator(worktreeAt(LOCAL, api))).toBeVisible();
+    await expect(page.locator(byTestId(TID.worktree))).toHaveCount(1);
   });
 });

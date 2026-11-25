@@ -281,6 +281,31 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'prStatus', repo: REPO, prs: [{ ...openPr, url: 'javascript:alert(1)' }] },
   { t: 'prStatus', repo: REPO, prs: [openPr, { ...openPr, number: 1 }] },
   { t: 'prStatus', repo: REPO, prs: [{ ...openPr, conflicts: undefined }] },
+  { t: 'repoState', repo: REPO, origin: '', worktrees: [], terminals: [], checked: [], layouts: [] },
+  { t: 'repoState', repo: REPO, origin: 'github.com/acme app', worktrees: [], terminals: [], checked: [], layouts: [] },
+  { t: 'repoState', repo: REPO, origin: 'o'.repeat(4097), worktrees: [], terminals: [], checked: [], layouts: [] },
+  { t: 'reposDiscovered', req: 1, repos: ['/r/a'] },
+  {
+    t: 'reposDiscovered',
+    req: 1,
+    repos: [
+      { path: '/r/a', origin: null },
+      { path: '/r/a', origin: 'github.com/acme/a' },
+    ],
+  },
+  { t: 'reposDiscovered', req: 1, host: 0, repos: ['/r/a'] },
+  { t: 'removeRepos', req: 1, members: [] },
+  {
+    t: 'removeRepos',
+    req: 1,
+    members: [
+      { host: 0, repo: '/r/app' },
+      { host: 0, repo: '/r/app' },
+    ],
+  },
+  { t: 'removeRepos', req: 1, members: [{ host: 0, repo: 'r/app' }] },
+  { t: 'openEditor', req: 1, worktree: WT },
+  { t: 'error', req: 1, code: 'not-a-worktree', message: 'x' },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -388,8 +413,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 12 and browser protocol 16', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 12, browser: 16 });
+  it('is blessed for daemon protocol 13 and browser protocol 17', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 13, browser: 17 });
   });
 
   it('records every sample as valid in its own direction', () => {

@@ -22,8 +22,8 @@ describe('shared constants', () => {
       ACK_EVERY,
       LAG_EVICT_MS,
     }).toEqual({
-      DAEMON_PROTOCOL_VERSION: 12,
-      BROWSER_PROTOCOL_VERSION: 16,
+      DAEMON_PROTOCOL_VERSION: 13,
+      BROWSER_PROTOCOL_VERSION: 17,
       MAX_FRAME: 16 * 1024 * 1024,
       MAX_INPUT: 64 * 1024,
       FLOW_HIGH: 512 * 1024,
@@ -31,5 +31,9 @@ describe('shared constants', () => {
       ACK_EVERY: 64 * 1024,
       LAG_EVICT_MS: 2000,
     });
+  });
+
+  it('raise the daemon link to 13 and the browser link to 17', () => {
+    expect({ DAEMON_PROTOCOL_VERSION, BROWSER_PROTOCOL_VERSION }).toEqual({ DAEMON_PROTOCOL_VERSION: 13, BROWSER_PROTOCOL_VERSION: 17 });
   });
 });

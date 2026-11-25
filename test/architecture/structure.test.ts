@@ -27,6 +27,7 @@ describe('model', () => {
       ['platform.install', 'src/platform/install', true],
       ['platform.memory', 'src/platform/memory', true],
       ['platform.scopes', 'src/platform/scopes', true],
+      ['platform.mounts', 'src/platform/mounts', true],
       ['daemon.worktrees', 'src/daemon/worktrees', true],
       ['daemon.terminals', 'src/daemon/terminals', true],
       ['daemon.state', 'src/daemon/state', true],

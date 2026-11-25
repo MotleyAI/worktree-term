@@ -25,6 +25,7 @@ import {
   waitScreen,
   watcher,
 } from './fixture.js';
+import { localName } from './origins.js';
 
 /** `--danger`, as computed. */
 const DANGER = 'rgb(241, 76, 76)';
@@ -439,13 +440,13 @@ test.describe('"Open" filter', () => {
     expect(await listedWorktrees(page)).toEqual([b]);
   });
 
-  test('persists per repo across reloads and keeps a "Starred" setting stored before it', async ({ hub, page }) => {
+  test('persists per repo across reloads and keeps a "Starred" setting stored before it', async ({ hub, page, wire }) => {
     const { repo, worktrees } = makeRepoWith(hub, 'app', ['a', 'b']);
     const [a = '', b = ''] = worktrees;
     const second = makeRepoWith(hub, 'second', ['s']);
     hub.writeRepos([repo, second.repo]);
     await openUi(hub, page);
-    const key = `${String(LOCAL)}:${repo}`;
+    const key = `${await localName(wire)}:${repo}`;
     await page.evaluate((k) => {
       localStorage.setItem('wtd.filters', JSON.stringify({ [k]: 'checked' }));
     }, key);

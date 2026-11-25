@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MessageOf } from '../../protocol/index.js';
-import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubEffect, type HubState } from './hubs.js';
+import { hubButtonLabel, hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubEffect, type HubState } from './hubs.js';
 
 type HubMessage = MessageOf<'hubToBrowser'>;
 
@@ -55,6 +55,20 @@ describe('hubsMenu', () => {
     const entries = hubsMenu({ host: 'gpu', home: 9000, hubs: ['gpu'] }, [local, box]);
     expect(entries?.map((e) => e.label)).toEqual(['This machine', 'gpu']);
     expect(entries?.[0]?.target).toEqual({ t: 'navigate', url: 'http://127.0.0.1:9000/' });
+  });
+});
+
+describe('hubButtonLabel', () => {
+  it('names the local host as the hub lists it on a home page', () => {
+    expect(hubButtonLabel(null, [local, box, gpu])).toBe('laptop');
+  });
+
+  it('names the local host wherever the hub lists it', () => {
+    expect(hubButtonLabel(null, [box, { ...local, idx: 3 }])).toBe('laptop');
+  });
+
+  it('names its own host on a remote page', () => {
+    expect(hubButtonLabel({ host: 'box', home: 7417, hubs: ['box', 'gpu'] }, [local])).toBe('box');
   });
 });
 

@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { Terminal, Worktree } from '../../protocol/index.js';
 import {
   clampSidebarWidth,
+  defaultRow,
   defaultWorktree,
+  groupRows,
   isFilterOn,
   keptNote,
   matchesSearch,
   parseSidebarWidth,
   removalReasons,
+  rowKey,
   searchOf,
   SIDEBAR_WIDTH,
   sidebarEntries,
+  visibleRows,
   visibleWorktrees,
   withFilter,
   withSearch,
@@ -281,6 +285,107 @@ describe('defaultWorktree', () => {
     const entries = [entry('/a', false), entry('/b', true), entry('/c', false, true)];
     expect(defaultWorktree(entries.slice(0, 2), OPEN)).toBe('/a');
     expect(defaultWorktree(entries, STARRED_OPEN)).toBe('/a');
+  });
+});
+
+describe('groupRows', () => {
+  const SRV = '/srv/app';
+  const boxMain = worktree(SRV, { branch: 'main', main: true });
+  const boxFix = worktree(`${SRV}.w/fix`, { branch: 'fix' });
+
+  it('lists every member’s worktrees in member order, each row with its host', () => {
+    const rows = groupRows([
+      { host: 0, state: { worktrees: [main, feature], terminals: [], checked: [] } },
+      { host: 1, state: { worktrees: [boxMain, boxFix], terminals: [], checked: [] } },
+    ]);
+    expect(rows.map((r) => [r.host, r.path, r.label])).toEqual([
+      [0, REPO, 'main'],
+      [0, feature.path, 'feature/x'],
+      [1, SRV, 'main'],
+      [1, boxFix.path, 'fix'],
+    ]);
+  });
+
+  it('keeps the same path on two hosts as two rows, each with its own checked state and terminals', () => {
+    const rows = groupRows([
+      { host: 0, state: { worktrees: [boxMain], terminals: [], checked: [] } },
+      { host: 1, state: { worktrees: [boxMain], terminals: [terminal(4, SRV)], checked: [SRV] } },
+    ]);
+    expect(rows.map((r) => [r.host, r.path, r.checked, r.hasTerminals])).toEqual([
+      [0, SRV, false, false],
+      [1, SRV, true, true],
+    ]);
+  });
+
+  it('lists a member’s gone worktrees after that member’s others', () => {
+    const rows = groupRows([
+      { host: 0, state: { worktrees: [main], terminals: [terminal(1, '/r/gone')], checked: [] } },
+      { host: 1, state: { worktrees: [boxMain], terminals: [], checked: [] } },
+    ]);
+    expect(rows.map((r) => [r.host, r.path, r.gone])).toEqual([
+      [0, REPO, false],
+      [0, '/r/gone', true],
+      [1, SRV, false],
+    ]);
+  });
+});
+
+describe('visibleRows', () => {
+  const row = (host: number, path: string, checked: boolean, label = 'main') => ({
+    host,
+    path,
+    label,
+    prunable: false,
+    gone: false,
+    checked,
+    hasTerminals: false,
+  });
+  const SAME = [row(0, '/srv/app', false), row(1, '/srv/app', false), row(1, '/srv/b', true)];
+  const shown = (rows: ReturnType<typeof visibleRows>): [number, string][] => rows.map((r) => [r.host, r.path]);
+
+  it('keeps only the selected host’s row listed when two hosts share its path', () => {
+    expect(shown(visibleRows(SAME, STARRED, '', { host: 1, path: '/srv/app' }))).toEqual([
+      [1, '/srv/app'],
+      [1, '/srv/b'],
+    ]);
+  });
+
+  it('matches the name search against labels only, never the host', () => {
+    expect(shown(visibleRows(SAME, NONE, '1', null))).toEqual([]);
+    expect(shown(visibleRows([row(1, '/srv/box', false, 'box')], NONE, 'box', null))).toEqual([[1, '/srv/box']]);
+  });
+});
+
+describe('rowKey', () => {
+  it('keys two rows at the same path on two hosts apart', () => {
+    expect(rowKey({ host: 0, path: '/srv/app' })).not.toBe(rowKey({ host: 1, path: '/srv/app' }));
+  });
+
+  it('keys a row the same every time', () => {
+    expect(rowKey({ host: 1, path: '/srv/app' })).toBe(rowKey({ host: 1, path: '/srv/app' }));
+  });
+});
+
+describe('defaultRow', () => {
+  const row = (host: number, path: string, checked: boolean) => ({
+    host,
+    path,
+    label: path,
+    prunable: false,
+    gone: false,
+    checked,
+    hasTerminals: false,
+  });
+
+  it('selects the host and path of the first row the switches show, else of the first row', () => {
+    const rows = [row(0, '/srv/app', false), row(1, '/srv/app', true)];
+    expect(defaultRow(rows, STARRED)).toEqual({ host: 1, path: '/srv/app' });
+    expect(defaultRow(rows, NONE)).toEqual({ host: 0, path: '/srv/app' });
+    expect(defaultRow([row(1, '/a', false)], STARRED)).toEqual({ host: 1, path: '/a' });
+  });
+
+  it('selects nothing without rows', () => {
+    expect(defaultRow([], NONE)).toBeNull();
   });
 });
 

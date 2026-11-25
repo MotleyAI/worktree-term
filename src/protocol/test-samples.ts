@@ -8,6 +8,8 @@ export const REPO = '/home/u/repo';
 export const WT = '/home/u/repo.worktrees/feat';
 export const SHA1 = 'a'.repeat(40);
 export const SHA256 = '0123456789abcdef'.repeat(4);
+/** A normalized origin. */
+export const ORIGIN = 'github.com/acme/app';
 
 export const hello = { t: 'hello', protocol: 1, version: '0.1.0', instance: 'a1B2_c3' } as const;
 
@@ -214,12 +216,13 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   {
     t: 'repoState',
     repo: REPO,
+    origin: ORIGIN,
     worktrees: [mainWorktree, featWorktree],
     terminals: [liveTerminal, exitedTerminal],
     checked: [WT],
     layouts: [{ worktree: WT, layout }],
   },
-  { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] },
+  { t: 'repoState', repo: REPO, origin: null, worktrees: [], terminals: [], checked: [], layouts: [] },
   { t: 'worktreesChanged', repo: REPO, worktrees: [mainWorktree] },
   { t: 'termCreated', req: 3, term: liveTerminal },
   { t: 'termCreated', req: null, term: exitedTerminal },
@@ -232,7 +235,14 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   { t: 'checkedChanged', worktree: WT, checked: false },
   { t: 'layoutChanged', worktree: WT, layout: { tabs: [], active: 0 } },
   { t: 'layoutChanged', worktree: WT, layout: fullTabLayout },
-  { t: 'reposDiscovered', req: 4, repos: [REPO, WT] },
+  {
+    t: 'reposDiscovered',
+    req: 4,
+    repos: [
+      { path: REPO, origin: ORIGIN },
+      { path: WT, origin: null },
+    ],
+  },
   {
     t: 'worktreeAtRisk',
     req: 11,
@@ -269,6 +279,26 @@ export const daemonToClientSamples: MessageOf<'daemonToClient'>[] = [
   },
   { t: 'prStatus', repo: REPO, prs: [openPr, mergedPr] },
   { t: 'prStatus', repo: REPO, prs: [] },
+  {
+    t: 'repoState',
+    repo: REPO,
+    origin: ORIGIN,
+    worktrees: [mainWorktree, featWorktree],
+    terminals: [liveTerminal],
+    checked: [],
+    layouts: [{ worktree: WT, layout }],
+  },
+  { t: 'repoState', repo: REPO, origin: null, worktrees: [], terminals: [], checked: [], layouts: [] },
+  {
+    t: 'reposDiscovered',
+    req: 5,
+    repos: [
+      { path: '/r/a', origin: 'github.com/acme/a' },
+      { path: '/r/b', origin: null },
+      { path: REPO, origin: '[2001:db8::1]:2222/Acme/App' },
+    ],
+  },
+  { t: 'reposDiscovered', req: 6, repos: [] },
 ];
 
 type DaemonRequest = Exclude<MessageOf<'clientToDaemon'>, { t: 'hello' | 'shutdown' }>;
@@ -292,9 +322,20 @@ export const browserToHubSamples: MessageOf<'browserToHub'>[] = [
   { t: 'movePreset', req: 9, name: 'codex', to: 0 },
   { t: 'openHub', req: 10, host: 1 },
   { t: 'installHub', req: 11, host: 65535 },
-  { t: 'openEditor', req: 13, worktree: '/home/u/a b/$x;y' },
+  { t: 'openEditor', req: 13, host: 0, worktree: '/home/u/a b/$x;y' },
   { t: 'setEditor', req: 14, command: 'code --new-window {path}' },
   { t: 'setEditor', req: 15, command: null },
+  {
+    t: 'removeRepos',
+    req: 16,
+    members: [
+      { host: 0, repo: '/r/app' },
+      { host: 1, repo: '/srv/app' },
+    ],
+  },
+  { t: 'removeRepos', req: 17, members: [{ host: 65535, repo: REPO }] },
+  { t: 'openEditor', req: 18, host: 1, worktree: '/srv/app' },
+  { t: 'openEditor', req: 19, host: 0, worktree: '/home/u/a b/$x;y' },
 ];
 
 export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
@@ -315,7 +356,7 @@ export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   { t: 'error', req: 2, host: 1, code: 'unknown-host', message: 'no such host' },
   { t: 'error', req: null, host: null, code: 'version-mismatch', message: 'outdated' },
   { t: 'error', req: 3, host: 0, code: 'host-unavailable', message: 'host 0 is reconnecting' },
-  { t: 'reposDiscovered', req: 3, host: 0, repos: [REPO] },
+  { t: 'reposDiscovered', req: 3, host: 0, repos: [{ path: REPO, origin: ORIGIN }] },
   { t: 'hubLogin', req: 4, login: 'https://login.tailscale.com/a/abc123' },
   { t: 'hubOpened', req: 5, url: OPENED_URL },
   { t: 'hubOpened', req: 6, url: `http://127.0.0.1:65535/#code=${CODE}&host=${'x'.repeat(64)}&home=1024&hubs=${'x'.repeat(64)}` },
@@ -325,6 +366,16 @@ export const hubToBrowserSamples: MessageOf<'hubToBrowser'>[] = [
   { t: 'editor', command: String.raw`my-ed --title 'a b' "c \"d\"" e\ f` },
   { t: 'error', req: 9, host: null, code: 'editor-missing', message: 'kate' },
   { t: 'error', req: 10, host: null, code: 'editor-failed', message: 'not a directory: /home/u/gone' },
+  {
+    t: 'reposDiscovered',
+    req: 11,
+    host: 1,
+    repos: [
+      { path: '/srv/app', origin: ORIGIN },
+      { path: '/srv/b', origin: null },
+    ],
+  },
+  { t: 'error', req: 12, host: 1, code: 'not-a-worktree', message: 'not a worktree of devbox: /srv/gone' },
 ];
 
 export const samples: { readonly [D in Direction]: readonly MessageOf<D>[] } = {
@@ -376,6 +427,7 @@ export const MESSAGE_TYPES: Readonly<Record<Direction, readonly string[]>> = {
     'host',
     'addRepo',
     'removeRepo',
+    'removeRepos',
     'discoverRepos',
     'restartDaemon',
     'reinstallDaemon',

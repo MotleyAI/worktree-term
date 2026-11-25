@@ -1,9 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { decodeMessage, encodeMessage } from '../../src/protocol/index.js';
 import { addWorktree, fakeWorktrees, git, makeRepo } from '../support/daemon-host.js';
-import { installRemote } from '../support/fake-ssh.js';
+import { installRemote, type FakeSsh } from '../support/fake-ssh.js';
+import { FakeSshfs } from '../support/fake-sshfs.js';
 import { freePort, type HubHost } from '../support/hub-host.js';
 import { remoteHub } from '../support/remote-hub.js';
 import { byTestId, hubsEntry, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
@@ -17,7 +18,7 @@ import {
   openUi,
   PRESETS,
   ready,
-  selectRepo,
+  REMOTE,
   selectWorktree,
   stopHub,
   test,
@@ -26,6 +27,7 @@ import {
   writeHubConfig,
 } from './fixture.js';
 import { holdAddReplies } from './held-presets.js';
+import { cloneAt, dropLinks, installedRemote, plainPath, selectGroup } from './origins.js';
 import { pickerSeen, watchPicker } from './panes.js';
 import type { BrowserMessage, HubMessage, WireRecorder } from './wire.js';
 
@@ -146,7 +148,7 @@ test.describe('open in editor', () => {
     await selectWorktree(page, spaced);
     await control(page).click();
     const req = await heldReq(route);
-    expect(route.requests()).toEqual([{ t: 'openEditor', req, worktree: spaced }]);
+    expect(route.requests()).toEqual([{ t: 'openEditor', req, host: LOCAL, worktree: spaced }]);
     await expect(control(page)).toBeDisabled();
 
     route.answer({ t: 'done', req });
@@ -198,7 +200,7 @@ test.describe('open in editor', () => {
     await expect(control(page)).toBeDisabled();
   });
 
-  test('is disabled for a remote host’s worktree on the home page, saying only this machine’s open', async ({ hub, page, ssh }) => {
+  test('is enabled for a connected remote host’s worktree on the home page', async ({ hub, page, ssh }) => {
     const remote = nodeRemote(ssh, 'box');
     await installRemote(hub, ssh, 'box');
     const remoteRepo = makeRepo(join(remote.home, 'src', 'app'));
@@ -206,10 +208,10 @@ test.describe('open in editor', () => {
     writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box', repos: [remoteRepo] }] });
     await openUi(hub, page);
     await expect(control(page)).toBeEnabled();
-    await selectRepo(page, remoteRepo);
+    await selectGroup(page, `box:${remoteRepo}`);
     await expect(page.locator(worktreeEntry(remoteRepo))).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
-    await expect(control(page)).toBeDisabled();
-    await expect(control(page)).toHaveAttribute('title', /only worktrees on this machine can be opened/i);
+    await expect(control(page)).toBeEnabled();
+    await expect(control(page)).toHaveAttribute('title', ENABLED_TITLE);
     await openForm(page);
   });
 
@@ -574,7 +576,11 @@ test.describe('editing the editor command', () => {
 });
 
 test.describe('on a remote page', () => {
-  test('the control is disabled, saying only this machine’s open, and right-click opens no form', async ({ hub, page, ssh }) => {
+  test('the control is disabled, saying to open the editor from this machine’s page, and right-click opens no form', async ({
+    hub,
+    page,
+    ssh,
+  }) => {
     test.setTimeout(120_000);
     const box = await remoteHub(hub, ssh, 'box', [hub.port]);
     let port = await freePort();
@@ -587,9 +593,140 @@ test.describe('on a remote page', () => {
     await expect.poll(() => page.url(), { timeout: 30_000 }).toBe(`http://127.0.0.1:${String(port)}/`);
     await expect(page.locator(worktreeEntry(box.repo))).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
     await expect(control(page)).toBeDisabled();
-    await expect(control(page)).toHaveAttribute('title', /only worktrees on this machine can be opened/i);
+    await expect(control(page)).toHaveAttribute('title', /from this machine.s page/i);
     await rightClick(page);
     await page.waitForTimeout(300); // NOSONAR(S2925) — absence check: nothing to synchronise on
     await expect(form(page)).toHaveCount(0);
+  });
+});
+
+const REMOTE_TIMEOUT = { timeout: 20_000 };
+
+/** Box lists `<box home>/srv/app` with a worktree `wt`, of origin `app`; `config.json` also holds `editor` unless null; opens the page and selects that worktree. */
+const remoteWorktree = async (hub: HubHost, ssh: FakeSsh, page: Page, editor: string | null = NO_EDITOR): Promise<string> => {
+  plainPath(hub);
+  const remote = await installedRemote(hub, ssh, 'box');
+  const { repo, worktrees } = cloneAt(join(remote.home, 'srv', 'app'), 'app', ['wt']);
+  const wt = worktrees[0] ?? '';
+  hub.writeConfig({
+    port: hub.port,
+    presets: PRESETS,
+    repos: [],
+    hosts: [{ name: 'box', ssh: 'box', repos: [repo] }],
+    ...(editor === null ? {} : { editor }),
+  });
+  await openUi(hub, page);
+  await expect(page.locator(worktreeEntry(wt))).toBeVisible(REMOTE_TIMEOUT);
+  await selectWorktree(page, wt);
+  return wt;
+};
+
+test.describe('open in editor across hosts', () => {
+  test('shows a code-window icon drawn in the current text colour, and no text glyph', async ({ hub, page }) => {
+    const { repo } = makeRepoWith(hub, 'app', []);
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    await expect(control(page).locator('svg')).toHaveCount(1);
+    expect(((await control(page).textContent()) ?? '').trim()).toBe('');
+    const inCurrentColour = await control(page)
+      .locator('svg')
+      .evaluate((svg) =>
+        [svg, ...svg.querySelectorAll('*')].some((el) => [el.getAttribute('stroke'), el.getAttribute('fill')].includes('currentColor')),
+      );
+    expect(inCurrentColour).toBe(true);
+  });
+
+  test('sends openEditor with this machine’s host index and the selected worktree', async ({ hub, page }) => {
+    const route = await routeEditor(page);
+    const { repo } = makeRepoWith(hub, 'app', []);
+    const spaced = addWorktree(repo, join(hub.dir, 'repos', 'feat x'), 'feat');
+    configure(hub, [repo]);
+    await openUi(hub, page);
+    await selectWorktree(page, spaced);
+    await control(page).click();
+    const req = await heldReq(route);
+    expect(route.requests()).toEqual([{ t: 'openEditor', req, host: LOCAL, worktree: spaced }]);
+    await expect(control(page)).toBeDisabled();
+  });
+
+  test('sends openEditor with box’s host index for its worktree on the home page, and names sshfs when the answer says it is missing', async ({
+    hub,
+    page,
+    ssh,
+  }) => {
+    test.setTimeout(120_000);
+    const route = await routeEditor(page);
+    const wt = await remoteWorktree(hub, ssh, page, 'kate');
+    await expect(control(page)).toBeEnabled(REMOTE_TIMEOUT);
+    await expect(control(page)).toHaveAttribute('title', ENABLED_TITLE);
+    await control(page).click();
+    const req = await heldReq(route);
+    expect(route.requests()).toEqual([{ t: 'openEditor', req, host: REMOTE, worktree: wt }]);
+
+    route.answer({ t: 'error', req, host: null, code: 'editor-missing', message: 'sshfs' });
+    await expect(dialog(page)).toBeVisible();
+    expect(await dialogText(page)).toContain(
+      'Could not find sshfs. Install it, or right-click the editor button to set the command of the editor you prefer.',
+    );
+  });
+
+  test('opens box’s worktree through the hub, running the editor on its sshfs mount', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    const sshfs = new FakeSshfs(join(hub.dir, 'sshfs'));
+    hub.extraEnv = { ...hub.extraEnv, ...sshfs.env };
+    const calls = join(hub.dir, 'editor-calls');
+    const editor = join(hub.dir, 'record-editor');
+    writeFileSync(editor, `#!/bin/sh\nprintf '%s\\n' "$@" >> '${calls}'\n`, { mode: 0o755 });
+    const wt = await remoteWorktree(hub, ssh, page, `${editor} {path}`);
+    await expect(control(page)).toBeEnabled(REMOTE_TIMEOUT);
+    await control(page).click();
+    await expect.poll(() => (existsSync(calls) ? readFileSync(calls, 'utf8').trim() : ''), REMOTE_TIMEOUT).not.toBe('');
+    const opened = readFileSync(calls, 'utf8').trim();
+    expect(dirname(opened)).toBe(join(hub.runDir, 'mounts'));
+    expect(sshfs.mounted()).toEqual([opened]);
+    const mounts = sshfs.calls('sshfs');
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0]?.args.some((arg) => arg.endsWith(`:${wt}`))).toBe(true);
+    await expect(control(page)).toBeEnabled();
+    await expect(dialog(page)).toHaveCount(0);
+  });
+
+  test('without sshfs on the hub’s PATH, opening box’s worktree says sshfs could not be found', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    await remoteWorktree(hub, ssh, page);
+    await expect(control(page)).toBeEnabled(REMOTE_TIMEOUT);
+    await control(page).click();
+    await expect(dialog(page)).toBeVisible(REMOTE_TIMEOUT);
+    expect(await dialogText(page)).toContain(
+      'Could not find sshfs. Install it, or right-click the editor button to set the command of the editor you prefer.',
+    );
+  });
+
+  test('is disabled while the selected worktree’s host reconnects, its title giving the status', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    await remoteWorktree(hub, ssh, page);
+    await expect(control(page)).toBeEnabled(REMOTE_TIMEOUT);
+    ssh.holdHost('box');
+    dropLinks(ssh, 'box');
+    await expect(control(page)).toBeDisabled(REMOTE_TIMEOUT);
+    await expect(control(page)).toHaveAttribute('title', /reconnecting/);
+  });
+});
+
+test.describe('the disabled reason on a remote page', () => {
+  test('the control is disabled, its title saying to open the editor from this machine’s page', async ({ hub, page, ssh }) => {
+    test.setTimeout(120_000);
+    const box = await remoteHub(hub, ssh, 'box', [hub.port]);
+    let port = await freePort();
+    while (port === hub.port || port === box.port) port = await freePort(); // NOSONAR(S9382) — retries until a port outside both is free
+    const { repo } = makeRepoWith(hub, 'local-app', []);
+    writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box', port }] });
+    await openUi(hub, page);
+    await page.locator(byTestId(TID.hubsMenu)).click();
+    await page.locator(hubsEntry('box')).click();
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toBe(`http://127.0.0.1:${String(port)}/`);
+    await expect(page.locator(worktreeEntry(box.repo))).toHaveAttribute('aria-selected', 'true', REMOTE_TIMEOUT);
+    await expect(control(page)).toBeDisabled();
+    await expect(control(page)).toHaveAttribute('title', /from this machine.s page/i);
   });
 });

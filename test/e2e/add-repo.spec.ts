@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { addWorktree, makeRepo } from '../support/daemon-host.js';
 import { installRemote } from '../support/fake-ssh.js';
-import { byTestId, hostBanner, repoTab, TID, worktreeEntry } from './contract.js';
+import { byTestId, groupTab, hostBanner, repoTab, TID, worktreeEntry } from './contract.js';
 import {
   confirmAction,
   expect,
@@ -19,6 +19,7 @@ import {
   test,
   writeHubConfig,
 } from './fixture.js';
+import { selectGroup, sentJson } from './origins.js';
 
 /** Opens the add-repo dialog and returns it. */
 const openAddRepo = async (page: Page): Promise<Locator> => {
@@ -161,7 +162,7 @@ test.describe('add repo', () => {
     });
     await openUi(hub, page);
     await expect(page.locator(hostBanner(2))).toContainText('down', { timeout: 15_000 });
-    await selectRepo(page, app);
+    await selectGroup(page, `box:${app}`);
     await expect(page.locator(worktreeEntry(app))).toBeVisible({ timeout: 15_000 });
 
     const dialog = await openAddRepo(page);
@@ -179,8 +180,8 @@ test.describe('add repo', () => {
     await expect.poll(() => offered(dialog), { timeout: 15_000 }).toEqual([other]);
     await dialog.locator(byTestId(TID.addRepoOption)).first().click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.locator(repoTab(other))).toContainText('box:other');
-    await expect(page.locator(repoTab(other))).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(groupTab(`box:${other}`))).toContainText('box:other');
+    await expect(page.locator(groupTab(`box:${other}`))).toHaveAttribute('aria-selected', 'true');
   });
 
   test('a dialog opened while its host connects discovers once the host is connected', async ({ hub, page, ssh }) => {
@@ -195,7 +196,7 @@ test.describe('add repo', () => {
       hosts: [{ name: 'box', ssh: 'box', repos: [app], roots: [remote.home] }],
     });
     await openUi(hub, page);
-    await selectRepo(page, app);
+    await selectGroup(page, `box:${app}`);
     const dialog = await openAddRepo(page);
     const select = dialog.locator(byTestId(TID.addRepoHost));
     await expect(select).toHaveValue(String(REMOTE));
@@ -239,7 +240,12 @@ test.describe('remove repo', () => {
     expect(hubRequests(wire, mark)).toEqual([]);
     await confirmAction(page);
     await expect(page.locator(repoTab(a.repo))).toHaveCount(0);
-    expect(hubRequests(wire, mark)).toEqual([{ t: 'removeRepo', host: LOCAL }]);
+    expect(hubRequests(wire, mark)).toEqual([]);
+    expect(
+      sentJson(wire, mark)
+        .filter((m) => m['t'] === 'removeRepo' || m['t'] === 'removeRepos')
+        .map(({ t, members }) => ({ t, members })),
+    ).toEqual([{ t: 'removeRepos', members: [{ host: LOCAL, repo: a.repo }] }]);
     await expect(page.locator(repoTab(b.repo))).toBeVisible();
   });
 

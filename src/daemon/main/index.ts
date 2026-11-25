@@ -28,6 +28,7 @@ import {
   unitPrefix,
   type UserManager,
 } from '../../platform/scopes/index.js';
+import { createPrs, githubFetcher, prIntervalMs, runBounded } from '../prs/index.js';
 import { bindSocket, Daemon } from '../server/index.js';
 import { StateStore } from '../state/index.js';
 import { TerminalProcess, type TerminalLauncher } from '../terminals/index.js';
@@ -40,7 +41,7 @@ export interface DaemonRun {
   /** The package version announced in `hello`. */
   version: string;
   paths: HostPaths;
-  /** Environment of terminal processes; read for `WTD_MEMORY_SAMPLE_MS`, the memory log's base interval. */
+  /** Environment of terminal processes; read for `WTD_MEMORY_SAMPLE_MS`, the memory log's base interval, and `WTD_PR_INTERVAL_MS`, the pull request refresh interval. */
   env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -191,6 +192,13 @@ export const runDaemon = async (run: DaemonRun): Promise<void> => {
       const launcher = terminalLauncher(unitOf, manager.lasting && manager.noExpand, oomKilled, report);
       const daemon = new Daemon({
         services: {
+          prs: createPrs({
+            fetch: githubFetcher(runBounded),
+            intervalMs: prIntervalMs(env['WTD_PR_INTERVAL_MS']),
+            log: (line) => {
+              console.error(line);
+            },
+          }),
           watchWorktrees,
           listWorktrees,
           discoverRepos,

@@ -65,7 +65,12 @@ describe('watchRepo', () => {
       checked: [],
       layouts: [],
     });
-    expect(client.messages.slice(from).map((m) => m.t)).toEqual(['repoState', 'done']);
+    expect(
+      client.messages
+        .slice(from)
+        .map((m) => m.t)
+        .filter((t) => t !== 'prStatus'),
+    ).toEqual(['repoState', 'done']);
   });
 
   it('sends repoState and done again when watched again', async () => {
@@ -73,7 +78,12 @@ describe('watchRepo', () => {
     await client.watch(repo);
     const from = client.mark();
     await client.watch(repo);
-    expect(client.messages.slice(from).map((m) => m.t)).toEqual(['repoState', 'done']);
+    expect(
+      client.messages
+        .slice(from)
+        .map((m) => m.t)
+        .filter((t) => t !== 'prStatus'),
+    ).toEqual(['repoState', 'done']);
   });
 
   it('reports a bare repository with a null head and branch', async () => {

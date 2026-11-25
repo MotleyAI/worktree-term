@@ -25,7 +25,7 @@ import {
   type Direction,
   type Frame,
 } from './index.js';
-import { CODE, DIRECTIONS, featWorktree, hello, hosts, layout, liveTerminal, raw, REPO, samples, WT } from './test-samples.js';
+import { CODE, DIRECTIONS, featWorktree, hello, hosts, layout, liveTerminal, openPr, raw, REPO, samples, WT } from './test-samples.js';
 
 const directionSchema = z.enum(['clientToDaemon', 'daemonToClient', 'browserToHub', 'hubToBrowser']);
 
@@ -277,6 +277,10 @@ const EDGE_CASES: readonly unknown[] = [
   { t: 'editor', command: 'code "{path}' },
   { t: 'editor', command: 'code \\' },
   { t: 'editor', command: 'e'.repeat(4097) },
+  { t: 'prStatus', repo: REPO, prs: [{ ...openPr, state: 'OPEN' }] },
+  { t: 'prStatus', repo: REPO, prs: [{ ...openPr, url: 'javascript:alert(1)' }] },
+  { t: 'prStatus', repo: REPO, prs: [openPr, { ...openPr, number: 1 }] },
+  { t: 'prStatus', repo: REPO, prs: [{ ...openPr, conflicts: undefined }] },
 ];
 
 const allJson = [...new Set([...DIRECTIONS.flatMap((dir) => samples[dir].map((m) => raw(m))), ...EDGE_CASES.map((m) => raw(m))])];
@@ -384,8 +388,8 @@ describe('wire golden', () => {
     await expect(JSON.stringify(current, null, 2) + '\n').toMatchFileSnapshot('./wire.golden.json');
   });
 
-  it('is blessed for daemon protocol 11 and browser protocol 15', () => {
-    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 11, browser: 15 });
+  it('is blessed for daemon protocol 12 and browser protocol 16', () => {
+    expect(previousSchema.parse(wireJson).protocolVersions).toEqual({ daemon: 12, browser: 16 });
   });
 
   it('records every sample as valid in its own direction', () => {

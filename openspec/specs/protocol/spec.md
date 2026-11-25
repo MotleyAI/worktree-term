@@ -6,7 +6,7 @@ The wire contract between the browser UI, the hub and every daemon: which messag
 ## Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 11, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 15, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 12, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 16, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -57,7 +57,8 @@ A control message SHALL be one UTF-8 JSON object whose `t` names a message of th
 
 ### Requirement: Daemon-link message catalogue
 Client-to-daemon messages SHALL be exactly: `hello`; `shutdown`; `watchRepo{req, repo}`; `unwatchRepo{req, repo}`; `discoverRepos{req, roots, depth}`; `createTerm{req, worktree, preset, command, cols, rows, memory}`; `attach{req, termId}`; `detach{req, termId}`; `resize{termId, cols, rows}`; `closeTerm{req, termId}`; `ack{termId, offset}`; `setVisible{termIds}`; `setChecked{req, worktree, checked}`; `setLayout{req, worktree, layout}`; `removeWorktree{req, worktree, force}` with `force` a boolean.
-Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}` with `req` a request id or null; `termExited{termId, code, signal, oom}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, state}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}`; `worktreeAtRisk{req, worktree, bases, ahead, fetchFailed, changes, running}` where `bases` is a list of at most 4 distinct strings of 1–4096 characters, `ahead` is null or an integer from 0 to 2^32−1 and is null exactly when `bases` is empty, `fetchFailed` is a list of at most 2 `{ref, reason}` with distinct `ref`s, each `ref` of 1–4096 characters and `reason` at most 1024 characters, `changes` is an integer from 0 to 2^32−1 and `running` is at most 1024 terminal ids.
+Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}` with `req` a request id or null; `termExited{termId, code, signal, oom}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, state}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}`; `worktreeAtRisk{req, worktree, bases, ahead, fetchFailed, changes, running}` where `bases` is a list of at most 4 distinct strings of 1–4096 characters, `ahead` is null or an integer from 0 to 2^32−1 and is null exactly when `bases` is empty, `fetchFailed` is a list of at most 2 `{ref, reason}` with distinct `ref`s, each `ref` of 1–4096 characters and `reason` at most 1024 characters, `changes` is an integer from 0 to 2^32−1 and `running` is at most 1024 terminal ids; `prStatus{repo, prs}` where `prs` is a list of at most 1024 PR statuses with distinct `branch`es.
+A PR status SHALL be `{branch, number, url, state, checks, conflicts, review}` where `branch` is a string of 1–4096 characters, `number` is an integer from 1 to 2^32−1, `url` is an `https:` URL of at most 2048 characters, `state` is one of `open`, `draft`, `merged`, `closed`, `checks` is one of `passing`, `failing`, `pending`, `none`, `conflicts` is a boolean, and `review` is null or one of `approved`, `changes-requested`, `review-required`.
 A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main}`; a terminal SHALL be `{termId, worktree, preset, cols, rows, exit, unseen, state}` where `exit` is null or `{code, signal, oom}`; `state` SHALL be one of `working`, `idle`, `input`; a `layouts` entry SHALL be `{worktree, layout}`; `reason` SHALL be `"lagging"`; `detached`, `locked`, `prunable`, `bare`, `main`, `checked`, `unseen`, `oom` and a host entry's `remote` SHALL be booleans; `code` SHALL be an integer; `error.req` SHALL be a request id or null; `memory` SHALL be memory limits: an object with optional keys `high`, `max` and `swapMax`, each a memory size, and no other key.
 
 #### Scenario: Broadcast termCreated carries a null req
@@ -127,6 +128,22 @@ A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main
 #### Scenario: Memory limits required and closed
 - **WHEN** a `createTerm` without `memory`, or with `memory` `{min: "1G"}`, is decoded
 - **THEN** decoding fails with a protocol error
+
+#### Scenario: PR status round-trips
+- **WHEN** a `prStatus` with `prs` [`{branch: "feature/x", number: 123, url: "https://github.com/acme/app/pull/123", state: "open", checks: "failing", conflicts: false, review: "changes-requested"}`, `{branch: "fix/y", number: 7, url: "https://github.example.com/acme/app/pull/7", state: "merged", checks: "none", conflicts: false, review: null}`] is encoded and decoded, and one with `prs` empty
+- **THEN** each decoded value equals its original
+
+#### Scenario: PR status values are closed sets
+- **WHEN** a PR status with `state` "OPEN", `checks` "success", `review` "commented", `number` 0, or without `conflicts` is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: PR URL is https and bounded
+- **WHEN** a PR status whose `url` is "http://github.com/acme/app/pull/1", "javascript:alert(1)", "/acme/app/pull/1" or an `https:` URL of 2049 characters is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: PR branches are distinct and bounded
+- **WHEN** a `prStatus` whose `prs` has two entries with `branch` "main", an entry with an empty `branch`, or 1025 entries is encoded or decoded
+- **THEN** it fails with a protocol error
 
 ### Requirement: Browser-link message catalogue
 Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `openHub{req, host}`; `installHub{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63; `openEditor{req, worktree}` where `worktree` is a path; `setEditor{req, command}` where `command` is an editor command or null.

@@ -22,11 +22,8 @@ export const shellQuote = (value: string): string => `'${value.replaceAll("'", Q
 
 const NODE_NAMES = new Set(['node', 'nodejs', 'npm', 'npx', 'corepack', 'pnpm', 'yarn']);
 
-/**
- * A directory holding a link to every executable on this machine's PATH except Node and its tools,
- * so a remote PATH can offer the usual commands without any Node.
- */
-export const pathWithoutNode = (dir: string): string => {
+/** A directory holding a link to every executable on this machine's PATH except those named `excluded`. */
+export const pathWithout = (dir: string, excluded: ReadonlySet<string>): string => {
   mkdirSync(dir, { recursive: true });
   const dirs = (process.env['PATH'] ?? '/usr/bin:/bin').split(delimiter).filter((d) => d.startsWith('/') && !d.startsWith(dir));
   for (const source of [...dirs, '/usr/local/bin', '/usr/bin', '/bin']) {
@@ -37,7 +34,7 @@ export const pathWithoutNode = (dir: string): string => {
       continue;
     }
     for (const name of names) {
-      if (NODE_NAMES.has(name) || existsSync(join(dir, name))) continue;
+      if (excluded.has(name) || existsSync(join(dir, name))) continue;
       const path = join(source, name);
       try {
         if ((statSync(path).mode & 0o111) === 0 || !statSync(path).isFile()) continue;
@@ -49,6 +46,9 @@ export const pathWithoutNode = (dir: string): string => {
   }
   return dir;
 };
+
+/** A directory linking every executable on this machine's PATH except Node and its tools, for a PATH without any Node. */
+export const pathWithoutNode = (dir: string): string => pathWithout(dir, NODE_NAMES);
 
 /** A directory whose `node` is this test runner's Node (20 or later). */
 export const currentNodeDir = (dir: string): string => {

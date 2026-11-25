@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Layout, Preset, Terminal, Worktree } from '../../protocol/index.js';
+import type { Layout, PrStatus, Preset, Terminal, Worktree } from '../../protocol/index.js';
 import { HubStore } from './store.js';
 
 const REPO = '/r/app';
@@ -282,5 +282,73 @@ describe('HubStore', () => {
     expect(store.repo(0, REPO)).toBeNull();
     expect(store.repo(0, '/r/b')).not.toBeNull();
     expect(store.kept.value.get(0)).toEqual([]);
+  });
+});
+
+describe('HubStore pull request statuses', () => {
+  const PR: PrStatus = {
+    branch: 'b',
+    number: 12,
+    url: 'https://github.com/acme/app/pull/12',
+    state: 'open',
+    checks: 'failing',
+    conflicts: false,
+    review: null,
+  };
+  const prStatus = (prs: PrStatus[], repo = REPO) => ({ t: 'prStatus', repo, prs }) as const;
+
+  it('has none before a prStatus', () => {
+    expect(watched().repo(0, REPO)?.prs).toEqual([]);
+  });
+
+  it('keeps the latest prStatus of a repo', () => {
+    const store = watched();
+    store.apply(0, prStatus([PR]));
+    expect(store.repo(0, REPO)?.prs).toEqual([PR]);
+    store.apply(0, prStatus([{ ...PR, state: 'merged' }]));
+    expect(store.repo(0, REPO)?.prs).toEqual([{ ...PR, state: 'merged' }]);
+    store.apply(0, prStatus([]));
+    expect(store.repo(0, REPO)?.prs).toEqual([]);
+  });
+
+  it('keeps statuses through worktree changes and resets them on repoState', () => {
+    const store = watched();
+    store.apply(0, prStatus([PR]));
+    store.apply(0, { t: 'worktreesChanged', repo: REPO, worktrees: [worktree(REPO)] });
+    expect(store.repo(0, REPO)?.prs).toEqual([PR]);
+    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [worktree(REPO)], terminals: [], checked: [], layouts: [] });
+    expect(store.repo(0, REPO)?.prs).toEqual([]);
+  });
+
+  it('keeps statuses per host', () => {
+    const store = watched();
+    store.apply(1, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(1, prStatus([PR]));
+    expect(store.repo(0, REPO)?.prs).toEqual([]);
+    expect(store.repo(1, REPO)?.prs).toEqual([PR]);
+  });
+
+  it('ignores a prStatus for a repo it does not hold', () => {
+    const store = watched();
+    store.apply(0, prStatus([PR], '/r/other'));
+    store.apply(1, prStatus([PR]));
+    expect(store.repo(0, '/r/other')).toBeNull();
+    expect(store.repo(1, REPO)).toBeNull();
+  });
+
+  it('forgets statuses with a dropped repo and ignores later ones for it', () => {
+    const store = watched();
+    store.apply(0, prStatus([PR]));
+    store.dropRepo(0, REPO);
+    store.apply(0, prStatus([PR]));
+    expect(store.repo(0, REPO)).toBeNull();
+  });
+
+  it('forgets statuses with a cleared host and ignores later ones for it', () => {
+    const store = watched();
+    store.apply(0, prStatus([PR]));
+    store.clearHost(0);
+    store.apply(0, prStatus([PR]));
+    expect(store.repo(0, REPO)).toBeNull();
   });
 });

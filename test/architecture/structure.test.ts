@@ -30,6 +30,7 @@ describe('model', () => {
       ['daemon.worktrees', 'src/daemon/worktrees', true],
       ['daemon.terminals', 'src/daemon/terminals', true],
       ['daemon.state', 'src/daemon/state', true],
+      ['daemon.prs', 'src/daemon/prs', true],
       ['daemon.server', 'src/daemon/server', true],
       ['daemon.main', 'src/daemon/main', true],
       ['hub.server', 'src/hub/server', true],
@@ -50,7 +51,7 @@ describe('model', () => {
     expect(model.arrows).toContainEqual({ from: 'daemon', to: 'protocol' });
     expect(model.arrows).toContainEqual({ from: 'platform.install', to: 'platform.dialer' });
     expect(model.arrows).toContainEqual({ from: 'daemon.main', to: 'platform.memory' });
-    expect(model.arrows).toHaveLength(43);
+    expect(model.arrows).toHaveLength(44);
   });
 });
 

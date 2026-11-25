@@ -17,8 +17,10 @@ import {
   hello,
   hosts,
   liveTerminal,
+  mergedPr,
   MESSAGE_TYPES,
   OPENED_URL,
+  openPr,
   raw,
   REPO,
   samples,
@@ -29,6 +31,8 @@ import {
 } from './test-samples.js';
 
 type Risk = Extract<MessageOf<'daemonToClient'>, { t: 'worktreeAtRisk' }>;
+type PrStatusMessage = Extract<MessageOf<'daemonToClient'>, { t: 'prStatus' }>;
+type PrStatus = PrStatusMessage['prs'][number];
 
 const RISK: Risk = {
   t: 'worktreeAtRisk',
@@ -1117,5 +1121,93 @@ describe('out-of-memory exits', () => {
   it('rejects an oom that is not a boolean', () => {
     expectRejected('daemonToClient', raw(exitedOf({ oom: 'true' })));
     expectRejected('daemonToClient', raw(exitedOf({ oom: null })));
+  });
+});
+
+describe('pull request status', () => {
+  const prStatus = (prs: unknown[]): unknown => ({ t: 'prStatus', repo: REPO, prs });
+  const withPr = (fields: Record<string, unknown>): unknown => prStatus([{ ...openPr, ...fields }]);
+  const withoutField = (field: string): unknown => prStatus([Object.fromEntries(Object.entries(openPr).filter(([key]) => key !== field))]);
+
+  /** Whether `message` both encodes and decodes; throws when only one of them accepts it. */
+  const bothValid = (message: PrStatusMessage): boolean => {
+    const decoded = decodes('daemonToClient', message);
+    let encoded = true;
+    try {
+      encodeMessage('daemonToClient', message);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProtocolError);
+      encoded = false;
+    }
+    expect(encoded).toBe(decoded);
+    return decoded;
+  };
+
+  it('round-trips two entries and an empty list', () => {
+    for (const message of [
+      { t: 'prStatus', repo: REPO, prs: [openPr, mergedPr] },
+      { t: 'prStatus', repo: REPO, prs: [] },
+    ] satisfies PrStatusMessage[]) {
+      expect(decodeMessage('daemonToClient', encodeMessage('daemonToClient', message))).toEqual(message);
+    }
+  });
+
+  it('round-trips inside the browser host envelope', () => {
+    const message: MessageOf<'hubToBrowser'> = { t: 'host', host: 3, m: { t: 'prStatus', repo: REPO, prs: [openPr] } };
+    expect(decodeMessage('hubToBrowser', encodeMessage('hubToBrowser', message))).toEqual(message);
+  });
+
+  it('is sent only by a daemon', () => {
+    expect(decodes('clientToDaemon', prStatus([openPr]))).toBe(false);
+    expect(decodes('browserToHub', { t: 'host', host: 0, m: prStatus([openPr]) })).toBe(false);
+  });
+
+  const cases: readonly (readonly [string, unknown, boolean])[] = [
+    ...['open', 'draft', 'merged', 'closed'].map((state) => [`state ${state}`, withPr({ state }), true] as const),
+    ...['passing', 'failing', 'pending', 'none'].map((checks) => [`checks ${checks}`, withPr({ checks }), true] as const),
+    ...['approved', 'changes-requested', 'review-required', null].map(
+      (review) => [`review ${String(review)}`, withPr({ review }), true] as const,
+    ),
+    ['conflicts true', withPr({ conflicts: true }), true],
+    ['state OPEN', withPr({ state: 'OPEN' }), false],
+    ['checks success', withPr({ checks: 'success' }), false],
+    ['review commented', withPr({ review: 'commented' }), false],
+    ['number 0', withPr({ number: 0 }), false],
+    ['number 1', withPr({ number: 1 }), true],
+    ['number 2^32-1', withPr({ number: 4294967295 }), true],
+    ['number 2^32', withPr({ number: 4294967296 }), false],
+    ['fractional number', withPr({ number: 1.5 }), false],
+    ['conflicts as a string', withPr({ conflicts: 'false' }), false],
+    ...['branch', 'number', 'url', 'state', 'checks', 'conflicts', 'review'].map(
+      (field) => [`without ${field}`, withoutField(field), false] as const,
+    ),
+    ['an extra field', withPr({ title: 'Fix it' }), false],
+    ['http url', withPr({ url: 'http://github.com/acme/app/pull/1' }), false],
+    ['javascript url', withPr({ url: 'javascript:alert(1)' }), false],
+    ['relative url', withPr({ url: '/acme/app/pull/1' }), false],
+    ['2048-char https url', withPr({ url: 'https://github.com/' + 'a'.repeat(2048 - 'https://github.com/'.length) }), true],
+    ['2049-char https url', withPr({ url: 'https://github.com/' + 'a'.repeat(2049 - 'https://github.com/'.length) }), false],
+    ['relative repo', { t: 'prStatus', repo: 'repo', prs: [] }, false],
+    ['without prs', { t: 'prStatus', repo: REPO }, false],
+  ];
+
+  it.each(cases)('decodes %s: %s', (_name, value, ok) => {
+    expect(decodes('daemonToClient', value)).toBe(ok);
+  });
+
+  const message = (prs: PrStatus[]): PrStatusMessage => ({ t: 'prStatus', repo: REPO, prs });
+  const named = (n: number): PrStatus[] => range(n).map((i) => ({ ...openPr, branch: `b${String(i)}`, number: i }));
+
+  const bounded: readonly (readonly [string, PrStatusMessage, boolean])[] = [
+    ['an empty branch', message([{ ...openPr, branch: '' }]), false],
+    ['a 4096-char branch', message([{ ...openPr, branch: 'b'.repeat(4096) }]), true],
+    ['a 4097-char branch', message([{ ...openPr, branch: 'b'.repeat(4097) }]), false],
+    ['two entries of one branch', message([openPr, { ...mergedPr, branch: openPr.branch }]), false],
+    ['1024 entries', message(named(1024)), true],
+    ['1025 entries', message(named(1025)), false],
+  ];
+
+  it.each(bounded)('encodes and decodes %s alike: %s', (_name, value, ok) => {
+    expect(bothValid(value)).toBe(ok);
   });
 });

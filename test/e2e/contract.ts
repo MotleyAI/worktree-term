@@ -112,6 +112,10 @@ export const TID = {
   editorError: 'editor-error',
   /** Hollow ring in a worktree entry with terminals and no mark, in the mark's place; `title` = `open: <N>`; absent elsewhere. */
   ring: 'ring',
+  /** Pull request icon in a worktree entry whose branch has a pull request, the element directly before its mark or ring, absent (taking no space) otherwise: an `<a>` with `href` = the pull request URL, `target="_blank"`, `rel` with `noopener` and `noreferrer`; `data-state` = open|draft|merged|closed; its computed `color` is the glyph's colour; `title` and `aria-label` = the hover line; a primary click does not select the worktree. */
+  prIcon: 'pr-icon',
+  /** Badge inside `prIcon` of an open or draft pull request: `data-badge` = alert (red ✕: checks failing or conflicts) or pending (amber dot: checks pending), its computed `color` being the badge's colour; absent otherwise. */
+  prBadge: 'pr-badge',
   /** Pane frame of the shown tab, placed over its terminal; `data-term`, `data-focused="true"` on the focused pane. */
   pane: 'pane',
   /** Close button in the header of a pane of a split (a lone pane has no header); closes its terminal, confirming first when it is running. */

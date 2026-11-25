@@ -12,7 +12,8 @@ useDaemonTerminalsHost();
 const ANY_REQ: unknown = expect.any(Number);
 
 /** Messages from index `from`, without activity flags, which login start-up output may raise at any time. */
-const repliesFrom = (client: DaemonClient, from: number): Event[] => client.messages.slice(from).filter((m) => m.t !== 'activity');
+const repliesFrom = (client: DaemonClient, from: number): Event[] =>
+  client.messages.slice(from).filter((m) => m.t !== 'activity' && m.t !== 'prStatus');
 
 const pidIn = (dir: string, name: string): Promise<number> =>
   waitUntil(() => {
@@ -93,9 +94,9 @@ describe('terminal creation', () => {
   });
 
   it('fails with unknown-worktree for a path that is not in the list', async () => {
-    expect(await fx.a.fails({ t: 'createTerm', worktree: join(fx.repo, 'sub'), preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe(
-      'unknown-worktree',
-    );
+    expect(
+      await fx.a.fails({ t: 'createTerm', worktree: join(fx.repo, 'sub'), preset: 'shell', command: null, cols: 80, rows: 24, memory: {} }),
+    ).toBe('unknown-worktree');
   });
 
   it('fails with spawn-failed when the worktree directory is gone', async () => {
@@ -103,12 +104,16 @@ describe('terminal creation', () => {
     await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone));
     rmSync(gone, { recursive: true });
     await fx.a.waitFor('worktreesChanged', (m) => m.worktrees.some((w) => w.path === gone && w.prunable));
-    expect(await fx.a.fails({ t: 'createTerm', worktree: gone, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe('spawn-failed');
+    expect(await fx.a.fails({ t: 'createTerm', worktree: gone, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe(
+      'spawn-failed',
+    );
   });
 
   it('fails with spawn-failed when the shell does not exist', async () => {
     await restart({ SHELL: join(fx.host.dir, 'no-such-shell') });
-    expect(await fx.a.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe('spawn-failed');
+    expect(await fx.a.fails({ t: 'createTerm', worktree: fx.wt, preset: 'shell', command: null, cols: 80, rows: 24, memory: {} })).toBe(
+      'spawn-failed',
+    );
   });
 });
 
@@ -236,7 +241,7 @@ describe('checked state and layouts', () => {
     const from = fx.a.mark();
     const fromB = fx.b.mark();
     await fx.a.ok({ t: 'setChecked', worktree: fx.wt, checked: true });
-    expect(fx.a.messages.slice(from)).toEqual([
+    expect(fx.a.messages.slice(from).filter((m) => m.t !== 'prStatus')).toEqual([
       { t: 'checkedChanged', worktree: fx.wt, checked: true },
       { t: 'done', req: ANY_REQ },
     ]);

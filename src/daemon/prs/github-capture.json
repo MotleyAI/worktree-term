@@ -1,0 +1,139 @@
+{
+  "data": {
+    "repository": {
+      "nameWithOwner": "MotleyAI/worktree-term",
+      "r0": {
+        "all": {
+          "nodes": [
+            {
+              "number": 27,
+              "url": "https://github.com/MotleyAI/worktree-term/pull/27",
+              "state": "MERGED",
+              "isDraft": false,
+              "updatedAt": "2026-11-20T10:00:03Z",
+              "mergeable": "UNKNOWN",
+              "reviewDecision": null,
+              "headRepository": {
+                "nameWithOwner": "MotleyAI/worktree-term"
+              },
+              "commits": {
+                "nodes": [
+                  {
+                    "commit": {
+                      "statusCheckRollup": {
+                        "state": "SUCCESS"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "open": {
+          "nodes": []
+        }
+      },
+      "n0": {
+        "nodes": [
+          {
+            "number": 27,
+            "url": "https://github.com/MotleyAI/worktree-term/pull/27",
+            "state": "MERGED",
+            "isDraft": false,
+            "updatedAt": "2026-11-20T10:00:03Z",
+            "mergeable": "UNKNOWN",
+            "reviewDecision": null,
+            "headRepository": {
+              "nameWithOwner": "MotleyAI/worktree-term"
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "state": "SUCCESS"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "o0": {
+        "nodes": []
+      },
+      "r1": {
+        "all": {
+          "nodes": [
+            {
+              "number": 19,
+              "url": "https://github.com/MotleyAI/worktree-term/pull/19",
+              "state": "CLOSED",
+              "isDraft": false,
+              "updatedAt": "2026-11-13T12:42:03Z",
+              "mergeable": "CONFLICTING",
+              "reviewDecision": null,
+              "headRepository": {
+                "nameWithOwner": "MotleyAI/worktree-term"
+              },
+              "commits": {
+                "nodes": [
+                  {
+                    "commit": {
+                      "statusCheckRollup": {
+                        "state": "FAILURE"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "open": {
+          "nodes": []
+        }
+      },
+      "n1": {
+        "nodes": [
+          {
+            "number": 19,
+            "url": "https://github.com/MotleyAI/worktree-term/pull/19",
+            "state": "CLOSED",
+            "isDraft": false,
+            "updatedAt": "2026-11-13T12:42:03Z",
+            "mergeable": "CONFLICTING",
+            "reviewDecision": null,
+            "headRepository": {
+              "nameWithOwner": "MotleyAI/worktree-term"
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "state": "FAILURE"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "o1": {
+        "nodes": []
+      },
+      "r2": null,
+      "n2": {
+        "nodes": []
+      },
+      "o2": {
+        "nodes": []
+      },
+      "parent": null
+    }
+  }
+}

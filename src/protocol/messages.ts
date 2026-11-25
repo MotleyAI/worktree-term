@@ -30,6 +30,11 @@ import {
   path,
   presetCommand,
   presetName,
+  prChecks,
+  prNumber,
+  prReview,
+  prState,
+  prUrl,
   reason,
   refName,
   req,
@@ -71,6 +76,16 @@ const terminal = z.strictObject({
   exit: z.strictObject({ code: z.int(), signal, oom: z.boolean() }).nullable(),
   unseen: z.boolean(),
   state: attentionState,
+});
+
+export const prStatus = z.strictObject({
+  branch: refName,
+  number: prNumber,
+  url: prUrl,
+  state: prState,
+  checks: prChecks,
+  conflicts: z.boolean(),
+  review: prReview.nullable(),
 });
 
 const repos = z.array(path).max(MAX_DISCOVERED);
@@ -129,6 +144,13 @@ const daemonEvents = [
   }).refine((m) => (m.ahead === null) === (m.bases.length === 0), {
     message: 'ahead is null exactly without bases',
     path: ['ahead'],
+  }),
+  message('prStatus', {
+    repo: path,
+    prs: z
+      .array(prStatus)
+      .max(MAX_ENTRIES)
+      .refine((prs) => distinct(prs.map((p) => p.branch)), 'prs repeat a branch'),
   }),
 ] as const;
 
@@ -198,6 +220,7 @@ export type MessageOf<D extends Direction> = z.infer<(typeof messageSchemas)[D]>
 export type Worktree = z.infer<typeof worktree>;
 export type HostEntry = z.infer<typeof hostEntry>;
 export type Terminal = z.infer<typeof terminal>;
+export type PrStatus = z.infer<typeof prStatus>;
 export type AttentionState = z.infer<typeof attentionState>;
 export type Preset = z.infer<typeof preset>;
 export type MemoryLimits = z.infer<typeof memoryLimits>;

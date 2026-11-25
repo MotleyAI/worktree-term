@@ -4,6 +4,7 @@ const U32_MAX = 2 ** 32 - 1;
 
 export const req = z.int().min(1).max(U32_MAX);
 export const termId = z.int().min(1).max(U32_MAX);
+export const prNumber = z.int().min(1).max(U32_MAX);
 export const count = z.int().min(0).max(U32_MAX);
 export const offset = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 export const size = z.int().min(1).max(1000);
@@ -44,8 +45,13 @@ export const instance = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 export const secret = z.string().regex(/^[0-9a-f]{64}$/);
 export const errorMessage = z.string().max(1024);
 export const reason = errorMessage.nullable();
+/** A pull request's web page. */
+export const prUrl = z.string().max(2048).startsWith('https://');
 /** A Tailscale SSH check login URL. */
 export const loginUrl = z.string().max(1024).startsWith('https://login.tailscale.com/');
+export const prState = z.enum(['open', 'draft', 'merged', 'closed']);
+export const prChecks = z.enum(['passing', 'failing', 'pending', 'none']);
+export const prReview = z.enum(['approved', 'changes-requested', 'review-required']);
 export const errorCode = z.enum([
   'bad-message',
   'unknown-host',

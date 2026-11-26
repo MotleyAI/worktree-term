@@ -42,5 +42,5 @@
 ## 7. Docs and alignment
 
 - [x] 7.1 README: "Remote hosts", "Remote hubs" (button label), `editor` paragraph (remote worktrees via sshfs, `WTD_SSHFS`/`WTD_FUSERMOUNT`), repo tabs by origin and discovery, two-machine diagram text; verify by reading against the specs
-- [ ] 7.2 Run the enforcement bundle (`la-arch-check`, `npx likec4 validate`, `la-typecheck`) and `pnpm lint`; verify all green
-- [ ] 7.3 With the user's yes per issue: propose the DEV-2353 duplicate marking, the DEV-2356 narrowing to VM-only parts, and a DEV-2478 note; record outcomes on DEV-2480
+- [x] 7.2 Run the enforcement bundle (`la-arch-check`, `npx likec4 validate`, `la-typecheck`) and `pnpm lint`; verify all green
+- [x] 7.3 With the user's yes per issue: propose the DEV-2353 duplicate marking, the DEV-2356 narrowing to VM-only parts, and a DEV-2478 note; record outcomes on DEV-2480

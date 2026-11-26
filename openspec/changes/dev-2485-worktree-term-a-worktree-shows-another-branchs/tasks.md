@@ -1,7 +1,7 @@
 ## 1. Tests first (pr-tests)
 
-- [ ] 1.1 `src/daemon/prs/github.test.ts`, branch on origin (real git, fake `gh`; assert the branches asked and the local branch each status is keyed by). Cover:
-  - `--track origin/main` with `push.default` unset, `simple`, `current`, `matching`, `nothing` and an invalid value → own name;
+- [x] 1.1 `src/daemon/prs/github.test.ts`, branch on origin (real git, fake `gh`; assert the branches asked and the local branch each status is keyed by). Cover:
+  - `--track origin/main` with `push.default` unset, `simple`, `current`, `matching` and `nothing` → own name;
   - `push.default` `upstream` and `tracking` → upstream's name;
   - `upstream` with two `branch.<b>.merge` values → own name;
   - `upstream` with `branch.<b>.remote` ≠ `origin` while the push remote is `origin` → own name;
@@ -11,18 +11,19 @@
   - no config → own name.
 
   Verify they fail.
-- [ ] 1.2 `src/daemon/prs/github.test.ts`, align existing tests (approved with the plan):
+- [x] 1.2 `src/daemon/prs/github.test.ts`, align existing tests (approved with the plan):
   - "asks for the origin branch a local branch tracks…" now sets `push.default=upstream`;
   - "asks for no branch that tracks another remote or several branches": the several-branches part now asks for the branch's own name.
-- [ ] 1.3 `src/daemon/prs/github.test.ts`, git failures:
+- [x] 1.3 `src/daemon/prs/github.test.ts`, git failures:
   - `for-each-ref` nonzero exit → `exit`;
+  - an invalid `push.default` (git's own `for-each-ref` exits 128) → `exit`;
   - `git config` exit 2+ → `exit`;
   - exit 1 → treated as unset;
   - malformed `for-each-ref` output → `invalid-response`;
   - either git process timing out → `timeout`.
 
   Verify they fail.
-- [ ] 1.4 `src/daemon/prs/github.test.ts`, candidates. Every PR node in the test responses carries `repository { nameWithOwner }`, and the parent carries `nameWithOwner`. Cover:
+- [x] 1.4 `src/daemon/prs/github.test.ts`, candidates. Every PR node in the test responses carries `repository { nameWithOwner }`, and the parent carries `nameWithOwner`. Cover:
   - the ref path drops a pull request whose repository is a fork of origin (the issue's `main` case);
   - the head-name path applies the same predicate;
   - a pull request into the parent is kept;
@@ -32,9 +33,9 @@
   - a missing `repository` field → `invalid-response`.
 
   `buildQuery` asks for `repository { nameWithOwner }` in the fragment and `nameWithOwner` in `parent`. Verify they fail.
-- [ ] 1.5 `test/support/fake-gh.ts`: every node answers `repository: { nameWithOwner: 'acme/app' }`.
-- [ ] 1.6 `test/process/daemon-prs.test.ts`, scenario "Upstream names another branch". A worktree on `feature/y`, created with `--track origin/main`, beside `main`: the `gh` call asks for `feature/y` and `main`, and `prStatus` lists nothing for `feature/y`. Verify it fails.
-- [ ] 1.7 Codex review of the tests against the spec delta and design.
+- [x] 1.5 `test/support/fake-gh.ts`: every node answers `repository: { nameWithOwner: 'acme/app' }`.
+- [x] 1.6 `test/process/daemon-prs.test.ts`, scenario "Upstream names another branch". A worktree on `feature/y`, created with `--track origin/main`, beside `main`: the `gh` call asks for `feature/y` and `main`, and `prStatus` lists nothing for `feature/y`. Verify it fails.
+- [x] 1.7 Codex review of the tests against the spec delta and design.
 
 ## 2. Daemon
 

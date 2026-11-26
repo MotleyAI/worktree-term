@@ -740,6 +740,19 @@ describe('View', () => {
       expect(view.worktree.value).toEqual({ host: 1, path: '/srv/app.w/fix' });
     });
 
+    it('restores a stored row of a host whose worktrees arrive after this machine’s', () => {
+      sameOrigin();
+      view.selectRepo(tabLabelled('app'));
+      view.selectWorktree({ host: 1, path: '/srv/app.w/fix' });
+      client.store.clearHost(0);
+      client.store.clearHost(1);
+      reopen();
+      stated(0, '/r/app', APP, ['/r/app.w/feat']);
+      expect(view.worktree.value).toEqual({ host: 0, path: '/r/app' });
+      stated(1, '/srv/app', APP, ['/srv/app.w/fix']);
+      expect(view.worktree.value).toEqual({ host: 1, path: '/srv/app.w/fix' });
+    });
+
     it('stores an origin-less repo’s preferences under its host’s name and path', () => {
       client.store.hosts.value = [named(1, 'box', ['/srv/x'])];
       stated(1, '/srv/x', null);

@@ -12,4 +12,13 @@ export {
   type HubConfig,
   type RemoteHostConfig,
 } from './config.js';
-export { ConfigEditor, type EditorEdit, type EditorHooks, type PortAssignment, type PresetEdit, type RepoEdit } from './editor.js';
+export {
+  ConfigEditor,
+  type EditorEdit,
+  type EditorHooks,
+  type PortAssignment,
+  type PresetEdit,
+  type RepoEdit,
+  type RepoGroupEdit,
+  type RepoMemberEdit,
+} from './editor.js';

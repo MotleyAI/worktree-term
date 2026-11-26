@@ -400,3 +400,21 @@ describe('HubStore origins', () => {
     expect(store.origins.value.get(repoKey(1, SRV))).toBe(APP);
   });
 });
+
+describe('HubStore clones', () => {
+  it('keeps each watched clone of a host once, with its discovered origin', () => {
+    const store = new HubStore();
+    store.addClone(1, '/srv/app', 'github.com/acme/app');
+    store.addClone(1, '/srv/app', 'github.com/acme/app');
+    store.addClone(0, '/r/app-2', null);
+    expect(store.clones.value.get(1)).toEqual([{ path: '/srv/app', origin: 'github.com/acme/app' }]);
+    expect(store.clones.value.get(0)).toEqual([{ path: '/r/app-2', origin: null }]);
+  });
+
+  it('keeps a host’s clones while it is cleared, as when it reconnects', () => {
+    const store = new HubStore();
+    store.addClone(1, '/srv/app', null);
+    store.clearHost(1);
+    expect(store.clones.value.get(1)).toEqual([{ path: '/srv/app', origin: null }]);
+  });
+});

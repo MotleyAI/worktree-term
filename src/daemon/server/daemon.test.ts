@@ -110,6 +110,7 @@ beforeEach(async () => {
     },
     listWorktrees: () => Promise.resolve(worktrees),
     discoverRepos: () => Promise.resolve([]),
+    readOrigin: () => Promise.resolve(null),
     worktreeRisks: () => {
       riskChecks++;
       return risks;

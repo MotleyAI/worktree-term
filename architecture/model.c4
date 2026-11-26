@@ -25,6 +25,7 @@ model {
       install = component 'Install'
       memory = component 'Memory'
       scopes = component 'Scopes'
+      mounts = component 'Mounts'
     }
 
     daemon = node 'Daemon' {
@@ -75,6 +76,8 @@ model {
     platform.install -> platform.files
     platform.install -> platform.dialer
     platform.memory -> platform.files
+    platform.mounts -> platform.files
+    platform.mounts -> platform.dialer
 
     daemon -> protocol
     daemon -> platform.files
@@ -95,6 +98,7 @@ model {
     hub.links -> platform.dialer
     hub.links -> platform.install
     hub.links -> platform.scopes
+    hub.links -> platform.mounts
     hub.main -> hub.server
     hub.main -> hub.router
     hub.main -> hub.links

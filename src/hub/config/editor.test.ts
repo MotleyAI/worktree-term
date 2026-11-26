@@ -145,6 +145,51 @@ describe('ConfigEditor removing repos', () => {
   });
 });
 
+describe('ConfigEditor removing repo groups', () => {
+  it('removes local and remote members in one write, keeping everything else', async () => {
+    write({ repos: ['~/app', '/r/x'], ...OTHERS });
+    let writes = 0;
+    const result = await editor({
+      beforeReplace: () => {
+        writes++;
+      },
+    }).removeRepoGroup([
+      { host: null, repo: '/home/u/app' },
+      { host: 'box', repo: '/srv/a' },
+    ]);
+    expect(result).toEqual({
+      changed: true,
+      hosts: [
+        { host: null, repos: ['/r/x'] },
+        { host: 'box', repos: [] },
+      ],
+    });
+    expect(writes).toBe(1);
+    expect(read()).toEqual({ repos: ['/r/x'], ...OTHERS, hosts: [{ ...OTHERS.hosts[0], repos: [] }, OTHERS.hosts[1]] });
+  });
+
+  it('leaves the file unchanged when no member is listed', async () => {
+    write({ repos: ['/r/a'], ...OTHERS });
+    const before = text();
+    expect(await editor().removeRepoGroup([{ host: null, repo: '/r/b' }])).toEqual({
+      changed: false,
+      hosts: [{ host: null, repos: ['/r/a'] }],
+    });
+    expect(text()).toBe(before);
+  });
+
+  it('refuses a member of a host no longer configured, changing nothing', async () => {
+    write({ repos: ['/r/a'], ...OTHERS });
+    const before = text();
+    const removing = editor().removeRepoGroup([
+      { host: null, repo: '/r/a' },
+      { host: 'gone', repo: '/srv/a' },
+    ]);
+    await expect(removing).rejects.toThrow(ConfigError);
+    expect(text()).toBe(before);
+  });
+});
+
 const SHELL = { name: 'shell', command: null };
 const CLAUDE = { name: 'claude', command: 'claude' };
 const CODEX = { name: 'codex', command: 'codex' };

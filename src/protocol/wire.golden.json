@@ -1,7 +1,7 @@
 {
   "protocolVersions": {
-    "daemon": 12,
-    "browser": 16
+    "daemon": 13,
+    "browser": 17
   },
   "constants": {
     "MAX_FRAME": 16777216,
@@ -671,6 +671,19 @@
               "maxLength": 4096,
               "pattern": "^\\/[^\\u0000]*$"
             },
+            "origin": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^[^\\s\\p{Cc}]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "worktrees": {
               "maxItems": 1024,
               "type": "array",
@@ -901,6 +914,7 @@
           "required": [
             "t",
             "repo",
+            "origin",
             "worktrees",
             "terminals",
             "checked",
@@ -1324,9 +1338,32 @@
               "maxItems": 4096,
               "type": "array",
               "items": {
-                "type": "string",
-                "maxLength": 4096,
-                "pattern": "^\\/[^\\u0000]*$"
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "pattern": "^\\/[^\\u0000]*$"
+                  },
+                  "origin": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "pattern": "^[^\\s\\p{Cc}]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "origin"
+                ],
+                "additionalProperties": false
               }
             }
           },
@@ -2141,6 +2178,51 @@
           "properties": {
             "t": {
               "type": "string",
+              "const": "removeRepos"
+            },
+            "req": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "members": {
+              "minItems": 1,
+              "maxItems": 1024,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                  },
+                  "repo": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "pattern": "^\\/[^\\u0000]*$"
+                  }
+                },
+                "required": [
+                  "host",
+                  "repo"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "t",
+            "req",
+            "members"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
               "const": "discoverRepos"
             },
             "req": {
@@ -2405,6 +2487,11 @@
               "minimum": 1,
               "maximum": 4294967295
             },
+            "host": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
             "worktree": {
               "type": "string",
               "maxLength": 4096,
@@ -2414,6 +2501,7 @@
           "required": [
             "t",
             "req",
+            "host",
             "worktree"
           ],
           "additionalProperties": false
@@ -2646,6 +2734,19 @@
                       "maxLength": 4096,
                       "pattern": "^\\/[^\\u0000]*$"
                     },
+                    "origin": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096,
+                          "pattern": "^[^\\s\\p{Cc}]+$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "worktrees": {
                       "maxItems": 1024,
                       "type": "array",
@@ -2876,6 +2977,7 @@
                   "required": [
                     "t",
                     "repo",
+                    "origin",
                     "worktrees",
                     "terminals",
                     "checked",
@@ -3299,9 +3401,32 @@
                       "maxItems": 4096,
                       "type": "array",
                       "items": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^\\/[^\\u0000]*$"
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "maxLength": 4096,
+                            "pattern": "^\\/[^\\u0000]*$"
+                          },
+                          "origin": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096,
+                                "pattern": "^[^\\s\\p{Cc}]+$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "origin"
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
@@ -3774,7 +3899,8 @@
                 "hub-outdated",
                 "hub-failed",
                 "editor-missing",
-                "editor-failed"
+                "editor-failed",
+                "not-a-worktree"
               ]
             },
             "message": {
@@ -3812,9 +3938,32 @@
               "maxItems": 4096,
               "type": "array",
               "items": {
-                "type": "string",
-                "maxLength": 4096,
-                "pattern": "^\\/[^\\u0000]*$"
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "pattern": "^\\/[^\\u0000]*$"
+                  },
+                  "origin": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "pattern": "^[^\\s\\p{Cc}]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "origin"
+                ],
+                "additionalProperties": false
               }
             }
           },
@@ -4047,12 +4196,12 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
       "valid": false
     },
     {
@@ -4117,7 +4266,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}",
       "valid": false
     },
     {
@@ -4148,6 +4297,21 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}",
       "valid": false
     },
     {
@@ -4297,7 +4461,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"openEditor\",\"req\":13,\"worktree\":\"/home/u/a b/$x;y\"}",
+      "json": "{\"t\":\"openEditor\",\"req\":13,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": false
     },
     {
@@ -4308,6 +4472,26 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"setEditor\",\"req\":15,\"command\":null}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeRepos\",\"req\":16,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":1,\"repo\":\"/srv/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeRepos\",\"req\":17,\"members\":[{\"host\":65535,\"repo\":\"/home/u/repo\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"openEditor\",\"req\":18,\"host\":1,\"worktree\":\"/srv/app\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"openEditor\",\"req\":19,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": false
     },
     {
@@ -4337,12 +4521,12 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
       "valid": false
     },
     {
@@ -4407,7 +4591,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}}",
       "valid": false
     },
     {
@@ -4442,6 +4626,21 @@
     },
     {
       "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": false
     },
@@ -4472,7 +4671,7 @@
     },
     {
       "dir": "clientToDaemon",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"}]}",
       "valid": false
     },
     {
@@ -4518,6 +4717,16 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"error\",\"req\":10,\"host\":null,\"code\":\"editor-failed\",\"message\":\"not a directory: /home/u/gone\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":11,\"host\":1,\"repos\":[{\"path\":\"/srv/app\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/srv/b\",\"origin\":null}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":12,\"host\":1,\"code\":\"not-a-worktree\",\"message\":\"not a worktree of devbox: /srv/gone\"}",
       "valid": false
     },
     {
@@ -5018,6 +5227,61 @@
     {
       "dir": "clientToDaemon",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[{\"branch\":\"feature/x\",\"number\":123,\"url\":\"https://github.com/acme/app/pull/123\",\"state\":\"open\",\"checks\":\"failing\",\"review\":\"changes-requested\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme app\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[{\"path\":\"/r/a\",\"origin\":null},{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"host\":0,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":0,\"repo\":\"/r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"openEditor\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "clientToDaemon",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"not-a-worktree\",\"message\":\"x\"}",
       "valid": false
     },
     {
@@ -5137,12 +5401,12 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": true
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
       "valid": true
     },
     {
@@ -5207,7 +5471,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}",
       "valid": true
     },
     {
@@ -5238,6 +5502,21 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[]}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}",
+      "valid": true
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}",
       "valid": true
     },
     {
@@ -5387,7 +5666,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"openEditor\",\"req\":13,\"worktree\":\"/home/u/a b/$x;y\"}",
+      "json": "{\"t\":\"openEditor\",\"req\":13,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": false
     },
     {
@@ -5398,6 +5677,26 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"setEditor\",\"req\":15,\"command\":null}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeRepos\",\"req\":16,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":1,\"repo\":\"/srv/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeRepos\",\"req\":17,\"members\":[{\"host\":65535,\"repo\":\"/home/u/repo\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"openEditor\",\"req\":18,\"host\":1,\"worktree\":\"/srv/app\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"openEditor\",\"req\":19,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": false
     },
     {
@@ -5427,12 +5726,12 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
       "valid": false
     },
     {
@@ -5497,7 +5796,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}}",
       "valid": false
     },
     {
@@ -5532,6 +5831,21 @@
     },
     {
       "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": false
     },
@@ -5562,7 +5876,7 @@
     },
     {
       "dir": "daemonToClient",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"}]}",
       "valid": false
     },
     {
@@ -5608,6 +5922,16 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"error\",\"req\":10,\"host\":null,\"code\":\"editor-failed\",\"message\":\"not a directory: /home/u/gone\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":11,\"host\":1,\"repos\":[{\"path\":\"/srv/app\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/srv/b\",\"origin\":null}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":12,\"host\":1,\"code\":\"not-a-worktree\",\"message\":\"not a worktree of devbox: /srv/gone\"}",
       "valid": false
     },
     {
@@ -6108,6 +6432,61 @@
     {
       "dir": "daemonToClient",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[{\"branch\":\"feature/x\",\"number\":123,\"url\":\"https://github.com/acme/app/pull/123\",\"state\":\"open\",\"checks\":\"failing\",\"review\":\"changes-requested\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme app\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[{\"path\":\"/r/a\",\"origin\":null},{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"host\":0,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":0,\"repo\":\"/r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"openEditor\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "daemonToClient",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"not-a-worktree\",\"message\":\"x\"}",
       "valid": false
     },
     {
@@ -6227,12 +6606,12 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
       "valid": false
     },
     {
@@ -6297,7 +6676,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}",
       "valid": false
     },
     {
@@ -6328,6 +6707,21 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}",
       "valid": false
     },
     {
@@ -6477,7 +6871,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"openEditor\",\"req\":13,\"worktree\":\"/home/u/a b/$x;y\"}",
+      "json": "{\"t\":\"openEditor\",\"req\":13,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": true
     },
     {
@@ -6488,6 +6882,26 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"setEditor\",\"req\":15,\"command\":null}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeRepos\",\"req\":16,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":1,\"repo\":\"/srv/app\"}]}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeRepos\",\"req\":17,\"members\":[{\"host\":65535,\"repo\":\"/home/u/repo\"}]}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"openEditor\",\"req\":18,\"host\":1,\"worktree\":\"/srv/app\"}",
+      "valid": true
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"openEditor\",\"req\":19,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": true
     },
     {
@@ -6517,12 +6931,12 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": false
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
       "valid": false
     },
     {
@@ -6587,7 +7001,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}}",
       "valid": false
     },
     {
@@ -6622,6 +7036,21 @@
     },
     {
       "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": false
     },
@@ -6652,7 +7081,7 @@
     },
     {
       "dir": "browserToHub",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"}]}",
       "valid": false
     },
     {
@@ -6698,6 +7127,16 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"error\",\"req\":10,\"host\":null,\"code\":\"editor-failed\",\"message\":\"not a directory: /home/u/gone\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":11,\"host\":1,\"repos\":[{\"path\":\"/srv/app\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/srv/b\",\"origin\":null}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":12,\"host\":1,\"code\":\"not-a-worktree\",\"message\":\"not a worktree of devbox: /srv/gone\"}",
       "valid": false
     },
     {
@@ -7138,7 +7577,7 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"openEditor\",\"req\":1,\"host\":0,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
-      "valid": false
+      "valid": true
     },
     {
       "dir": "browserToHub",
@@ -7198,6 +7637,61 @@
     {
       "dir": "browserToHub",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[{\"branch\":\"feature/x\",\"number\":123,\"url\":\"https://github.com/acme/app/pull/123\",\"state\":\"open\",\"checks\":\"failing\",\"review\":\"changes-requested\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme app\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[{\"path\":\"/r/a\",\"origin\":null},{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"host\":0,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":0,\"repo\":\"/r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"openEditor\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "browserToHub",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"not-a-worktree\",\"message\":\"x\"}",
       "valid": false
     },
     {
@@ -7317,12 +7811,12 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
       "valid": false
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
       "valid": false
     },
     {
@@ -7387,7 +7881,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}",
       "valid": false
     },
     {
@@ -7418,6 +7912,21 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}",
       "valid": false
     },
     {
@@ -7567,7 +8076,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"openEditor\",\"req\":13,\"worktree\":\"/home/u/a b/$x;y\"}",
+      "json": "{\"t\":\"openEditor\",\"req\":13,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": false
     },
     {
@@ -7578,6 +8087,26 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"setEditor\",\"req\":15,\"command\":null}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeRepos\",\"req\":16,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":1,\"repo\":\"/srv/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeRepos\",\"req\":17,\"members\":[{\"host\":65535,\"repo\":\"/home/u/repo\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"openEditor\",\"req\":18,\"host\":1,\"worktree\":\"/srv/app\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"openEditor\",\"req\":19,\"host\":0,\"worktree\":\"/home/u/a b/$x;y\"}",
       "valid": false
     },
     {
@@ -7607,12 +8136,12 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"},{\"termId\":2,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"claude\",\"cols\":120,\"rows\":40,\"exit\":{\"code\":1,\"signal\":\"SIGTERM\",\"oom\":false},\"unseen\":true,\"state\":\"input\"}],\"checked\":[\"/home/u/repo.worktrees/feat\"],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
       "valid": true
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":null,\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}}",
       "valid": true
     },
     {
@@ -7677,7 +8206,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[\"/home/u/repo\",\"/home/u/repo.worktrees/feat\"]}}",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":4,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/home/u/repo.worktrees/feat\",\"origin\":null}]}}",
       "valid": true
     },
     {
@@ -7712,6 +8241,21 @@
     },
     {
       "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\",\"worktrees\":[{\"path\":\"/home/u/repo\",\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"branch\":\"main\",\"detached\":false,\"locked\":false,\"prunable\":false,\"bare\":false,\"main\":true},{\"path\":\"/home/u/repo.worktrees/feat\",\"head\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"branch\":null,\"detached\":true,\"locked\":true,\"prunable\":true,\"bare\":false,\"main\":false}],\"terminals\":[{\"termId\":1,\"worktree\":\"/home/u/repo.worktrees/feat\",\"preset\":\"shell\",\"cols\":80,\"rows\":24,\"exit\":null,\"unseen\":false,\"state\":\"working\"}],\"checked\":[],\"layouts\":[{\"worktree\":\"/home/u/repo.worktrees/feat\",\"layout\":{\"tabs\":[{\"id\":\"main\",\"root\":{\"split\":\"right\",\"ratio\":0.5,\"a\":{\"term\":1},\"b\":{\"split\":\"down\",\"ratio\":0.25,\"a\":{\"term\":2},\"b\":{\"term\":3}}}},{\"id\":\"logs\",\"name\":\"tail logs\",\"root\":{\"term\":4}}],\"active\":1}}]}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":5,\"repos\":[{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"},{\"path\":\"/r/b\",\"origin\":null},{\"path\":\"/home/u/repo\",\"origin\":\"[2001:db8::1]:2222/Acme/App\"}]}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"host\",\"host\":0,\"m\":{\"t\":\"reposDiscovered\",\"req\":6,\"repos\":[]}}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
       "json": "{\"t\":\"hosts\",\"hosts\":[{\"idx\":0,\"name\":\"local\",\"remote\":false,\"status\":\"connected\",\"reason\":null,\"daemonVersion\":\"0.1.0\",\"instance\":\"d_1-A\",\"login\":null,\"repos\":[\"/home/u/repo\"]},{\"idx\":1,\"name\":\"devbox\",\"remote\":true,\"status\":\"outdated\",\"reason\":null,\"daemonVersion\":\"0.0.9\",\"instance\":\"old_D\",\"login\":null,\"repos\":[]},{\"idx\":2,\"name\":\"gpu\",\"remote\":true,\"status\":\"connecting\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[\"/home/u/repo.worktrees/feat\"]},{\"idx\":3,\"name\":\"old\",\"remote\":true,\"status\":\"reconnecting\",\"reason\":\"ssh: connect to host old port 22: Connection refused\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":65535,\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"remote\":true,\"status\":\"down\",\"reason\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"daemonVersion\":null,\"instance\":null,\"login\":null,\"repos\":[]},{\"idx\":4,\"name\":\"tail\",\"remote\":true,\"status\":\"needs-login\",\"reason\":null,\"daemonVersion\":null,\"instance\":null,\"login\":\"https://login.tailscale.com/a/abc123\",\"repos\":[]}]}",
       "valid": true
     },
@@ -7742,7 +8286,7 @@
     },
     {
       "dir": "hubToBrowser",
-      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[\"/home/u/repo\"]}",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":3,\"host\":0,\"repos\":[{\"path\":\"/home/u/repo\",\"origin\":\"github.com/acme/app\"}]}",
       "valid": true
     },
     {
@@ -7788,6 +8332,16 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"error\",\"req\":10,\"host\":null,\"code\":\"editor-failed\",\"message\":\"not a directory: /home/u/gone\"}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":11,\"host\":1,\"repos\":[{\"path\":\"/srv/app\",\"origin\":\"github.com/acme/app\"},{\"path\":\"/srv/b\",\"origin\":null}]}",
+      "valid": true
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":12,\"host\":1,\"code\":\"not-a-worktree\",\"message\":\"not a worktree of devbox: /srv/gone\"}",
       "valid": true
     },
     {
@@ -8288,6 +8842,61 @@
     {
       "dir": "hubToBrowser",
       "json": "{\"t\":\"prStatus\",\"repo\":\"/home/u/repo\",\"prs\":[{\"branch\":\"feature/x\",\"number\":123,\"url\":\"https://github.com/acme/app/pull/123\",\"state\":\"open\",\"checks\":\"failing\",\"review\":\"changes-requested\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"github.com/acme app\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"repoState\",\"repo\":\"/home/u/repo\",\"origin\":\"ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\",\"worktrees\":[],\"terminals\":[],\"checked\":[],\"layouts\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"repos\":[{\"path\":\"/r/a\",\"origin\":null},{\"path\":\"/r/a\",\"origin\":\"github.com/acme/a\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"reposDiscovered\",\"req\":1,\"host\":0,\"repos\":[\"/r/a\"]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"/r/app\"},{\"host\":0,\"repo\":\"/r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"removeRepos\",\"req\":1,\"members\":[{\"host\":0,\"repo\":\"r/app\"}]}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"openEditor\",\"req\":1,\"worktree\":\"/home/u/repo.worktrees/feat\"}",
+      "valid": false
+    },
+    {
+      "dir": "hubToBrowser",
+      "json": "{\"t\":\"error\",\"req\":1,\"code\":\"not-a-worktree\",\"message\":\"x\"}",
       "valid": false
     }
   ]

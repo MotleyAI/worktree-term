@@ -47,6 +47,10 @@ export class HubStore {
   readonly presets = signal<readonly Preset[] | null>(null);
   /** The editor command of the current session; null until the hub sends it. */
   readonly editor = signal<string | null>(null);
+  /** Each repo's origin from its latest `repoState` in the page session, by `repoKey`; kept while its host reconnects. */
+  readonly origins = signal<ReadonlyMap<string, string | null>>(new Map());
+  /** Per host, the discovered clones the page watches, with their discovered origins. */
+  readonly clones = signal<ReadonlyMap<number, readonly { path: string; origin: string | null }[]>>(new Map());
   /** Per host, repos the hub no longer lists that the page keeps while they have running terminals. */
   readonly kept = signal<ReadonlyMap<number, readonly string[]>>(new Map());
   /** The layouts each repo's daemon last reported, by `repoKey` and worktree. */
@@ -95,6 +99,13 @@ export class HubStore {
     this.kept.value = next;
   }
 
+  /** Watches the discovered clone `path` of `host` for the rest of the page session. */
+  addClone(host: number, path: string, origin: string | null): void {
+    const current = this.clones.value.get(host) ?? [];
+    if (current.some((c) => c.path === path)) return;
+    this.clones.value = new Map(this.clones.value).set(host, [...current, { path, origin }]);
+  }
+
   /** Forgets the state of one repo. */
   dropRepo(host: number, repo: string): void {
     const key = repoKey(host, repo);
@@ -135,6 +146,7 @@ export class HubStore {
   apply(host: number, m: DaemonEvent): void {
     switch (m.t) {
       case 'repoState':
+        this.knowOrigin(repoKey(host, m.repo), m.origin);
         this.reported.set(repoKey(host, m.repo), new Map(m.layouts.map((l) => [l.worktree, l.layout])));
         this.update(host, m.repo, () => ({
           worktrees: m.worktrees,
@@ -189,6 +201,11 @@ export class HubStore {
       case 'worktreeAtRisk':
         return;
     }
+  }
+
+  private knowOrigin(key: string, origin: string | null): void {
+    const known = this.origins.value;
+    if (!known.has(key) || known.get(key) !== origin) this.origins.value = new Map(known).set(key, origin);
   }
 
   /** Shows `layout` for `worktree` at once, as the daemon will once our `setLayout` of it lands; `layoutWritten` follows its answer. */

@@ -8,9 +8,11 @@ import {
   MAX_INPUT,
   ProtocolError,
   type DataFrame,
+  type DiscoveredRepo,
   type HostEntry,
   type MessageOf,
   type Preset,
+  type RepoMember,
 } from '../../protocol/index.js';
 import { reconnectDelay } from './backoff.js';
 import { hostKey, TerminalMemory, type TerminalStorage } from './memory.js';
@@ -197,8 +199,8 @@ export class HubClient {
     await this.exchange(null, (req) => ({ t: 'reinstallDaemon', req, host }));
   }
 
-  /** The repos the hub discovers on `host` below its configured roots. */
-  async discoverRepos(host: number): Promise<readonly string[]> {
+  /** The repos, with their origins, the hub discovers on `host` below its configured roots. */
+  async discoverRepos(host: number): Promise<readonly DiscoveredRepo[]> {
     const m = await this.exchange(null, (req) => ({ t: 'discoverRepos', req, host }));
     if (m.t !== 'reposDiscovered') throw new Error(`unexpected hub reply ${m.t}`);
     return m.repos;
@@ -212,6 +214,17 @@ export class HubClient {
   /** Asks the hub to remove `repo` from `host`'s configured repos. */
   async removeRepo(host: number, repo: string): Promise<void> {
     await this.exchange(null, (req) => ({ t: 'removeRepo', req, host, repo }));
+  }
+
+  /** Asks the hub to remove every member's repo from its host's configured repos, all or none. */
+  async removeRepos(members: readonly RepoMember[]): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'removeRepos', req, members: [...members] }));
+  }
+
+  /** Watches the discovered clone `repo` of `host` for the rest of the page session, again whenever the host connects. */
+  watchClone(host: number, repo: string, origin: string | null): void {
+    this.store.addClone(host, repo, origin);
+    void this.watch(host, repo);
   }
 
   /** Asks the hub to add `preset` to the configured presets; every page then receives them. */
@@ -229,9 +242,9 @@ export class HubClient {
     await this.exchange(null, (req) => ({ t: 'removePreset', req, name }));
   }
 
-  /** Asks the hub to open `worktree`, on its machine, with the session's editor command. */
-  async openEditor(worktree: string): Promise<void> {
-    await this.exchange(null, (req) => ({ t: 'openEditor', req, worktree }));
+  /** Asks the hub to open `host`'s `worktree` with the session's editor command, on its machine or a mount of it there. */
+  async openEditor(host: number, worktree: string): Promise<void> {
+    await this.exchange(null, (req) => ({ t: 'openEditor', req, host, worktree }));
   }
 
   /** Asks the hub to set the editor command, or reset it when null; every page then receives it. */
@@ -435,7 +448,8 @@ export class HubClient {
     for (const [host, before] of following) this.followRepos(host.idx, before, host.repos);
     for (const host of connected) {
       if (host.instance === null) continue;
-      const repos = [...host.repos, ...(this.store.kept.value.get(host.idx) ?? []).filter((r) => !host.repos.includes(r))];
+      const extra = [...(this.store.kept.value.get(host.idx) ?? []), ...(this.store.clones.value.get(host.idx) ?? []).map((c) => c.path)];
+      const repos = [...new Set([...host.repos, ...extra])];
       for (const listener of this.connectedListeners) listener(host.idx, host.instance, repos);
     }
   }

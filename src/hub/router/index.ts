@@ -5,6 +5,7 @@ import {
   HubOpener,
   installOnRemote,
   LocalDaemon,
+  MountRegistry,
   RemoteDaemon,
   type DaemonEndpoint,
   type DaemonPaths,
@@ -95,6 +96,7 @@ export class Router {
   private readonly coordinators = new Map<string, HostCoordinator>();
   private readonly budgets: RouterBudgets;
   private readonly launcher: EditorLauncher;
+  private readonly mounts: MountRegistry;
 
   constructor(private readonly options: RouterOptions) {
     this.budgets = {
@@ -106,6 +108,7 @@ export class Router {
     this.config = new ConfigSource(options.configPath, options.home, options.config);
     this.editor = new ConfigEditor(options.configPath, options.home);
     this.launcher = new EditorLauncher(options.paths.stateDir, options.report);
+    this.mounts = new MountRegistry(options.paths, options.report);
     this.context = {
       hello: this.hello,
       endpoint: (host) => this.endpoint(host),
@@ -115,9 +118,18 @@ export class Router {
         const name = host.ssh === null ? null : host.name;
         return change === 'add' ? this.editor.addRepo(name, repo) : this.editor.removeRepo(name, repo);
       },
-      reposEdited: (host, repos) => {
+      removeRepoGroup: async (members) => {
+        const nameOf = (host: SessionHost): string | null => (host.ssh === null ? null : host.name);
+        const edit = await this.editor.removeRepoGroup(members.map((m) => ({ host: nameOf(m.host), repo: m.repo })));
+        const hosts = members.map((m) => m.host).filter((host, i, all) => all.findIndex((h) => nameOf(h) === nameOf(host)) === i);
+        return {
+          changed: edit.changed,
+          hosts: edit.hosts.flatMap(({ host: name, repos }) => hosts.filter((h) => nameOf(h) === name).map((host) => ({ host, repos }))),
+        };
+      },
+      reposEdited: (edits) => {
         this.broadcast((session) => {
-          session.showRepos(host, repos);
+          session.showRepos(edits);
         });
       },
       editPresets: (edit) => {
@@ -136,6 +148,13 @@ export class Router {
         });
       },
       openEditor: (command, worktree) => this.launcher.launch(command, worktree),
+      openRemoteEditor: async (command, target) => {
+        const mounted = await this.mounts.mount(target);
+        return mounted.kind === 'mounted' ? this.launcher.launch(command, mounted.point) : mounted;
+      },
+      worktreesListed: (host, repo, worktrees) => {
+        if (host.ssh !== null) this.mounts.listed(host.name, host.ssh, repo, worktrees);
+      },
       greeted: (host, from) => {
         for (const session of this.sessions) if (session !== from) session.redialLogin(host);
       },
@@ -162,8 +181,16 @@ export class Router {
 
   private async snapshot(): Promise<ConfigSnapshot> {
     const read = await this.config.snapshot();
-    if (read.problem === null) this.options.configRead(read.config);
+    if (read.problem === null) {
+      this.options.configRead(read.config);
+      this.mounts.configured(read.config.hosts.map((h) => ({ name: h.name, alias: h.ssh })));
+    }
     return read;
+  }
+
+  /** Unmounts every remote worktree mount. */
+  close(): Promise<void> {
+    return this.mounts.close();
   }
 
   /** Opens the hub of the remote host `name`; a cancelled opening changes no listener and reports nothing. */

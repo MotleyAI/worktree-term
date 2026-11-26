@@ -5,14 +5,15 @@ import { repoKey, RequestError, type HubClient } from '../client/index.js';
 import { termsOf, type Divider } from '../layout/index.js';
 import { followArea, type TerminalManager } from '../terminals/index.js';
 import { hasBanner, hostAction, statusText } from './hosts.js';
-import { hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
+import { hubButtonLabel, hubLineText, hubsMenu, hubStep, initialHubState, type HubAction, type HubLine, type HubTarget } from './hubs.js';
 import { EDITOR_HINT, EDITOR_TITLE, editorBlocker, editorFailure, editorSave, type EditorFailure } from './editor.js';
 import { aggregate, exitNote, markTitle, ringTitle, worktreeTitle, type Aggregate } from './marks.js';
 import { activeSpot, choicesTakeFocus } from './focus.js';
-import { PR_GLYPHS, prHover, prIcon, prOf } from './prs.js';
+import { PR_GLYPHS, prHover, prIcon, rowPr } from './prs.js';
 import { dropPosition, pickerKey, presetFromForm } from './picker.js';
-import { SIDEBAR_WIDTH, type FilterSwitch, type SidebarEntry } from './sidebar.js';
-import type { RepoTab } from './repo-tabs.js';
+import { hostPath, type RepoGroup } from './groups.js';
+import { rowPill, type Pill } from './pills.js';
+import { rowKey, SIDEBAR_WIDTH, type FilterSwitch, type SidebarRow } from './sidebar.js';
 import {
   hasPaneHeaders,
   MAX_TAB_NAME,
@@ -211,7 +212,7 @@ const Hubs = ({ client }: { client: HubClient }) => {
             }}
             onKeyDown={closeOnEscape}
           >
-            Hubs
+            {hubButtonLabel(client.remote, hosts)}
           </button>
           {open && (
             <div class="hubs-list" data-testid="hubs-list" role="menu" tabIndex={-1} onKeyDown={closeOnEscape}>
@@ -254,7 +255,19 @@ const dialogKeys =
 /** What a confirmation asks, and what it lists. */
 const ConfirmBody = ({ confirmation }: { confirmation: Confirmation }) => {
   if (confirmation.t === 'removeRepo') {
-    return <div class="title">Remove {confirmation.label} from the repo tabs?</div>;
+    return (
+      <>
+        <div class="title">Remove {confirmation.label} from the repo tabs?</div>
+        <p>These repos will no longer be listed:</p>
+        <ul>
+          {confirmation.names.map((name) => (
+            <li key={name} data-testid="confirm-target">
+              {name}
+            </li>
+          ))}
+        </ul>
+      </>
+    );
   }
   if (confirmation.t === 'removeWorktree') {
     return (
@@ -423,9 +436,10 @@ const AddRepoBox = ({ client, view, dialog }: { client: HubClient; view: View; d
 };
 
 /** One repo tab: its label, the host's status while not connected, attention marks and a remove action. */
-const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; view: View; tab: RepoTab; selected: boolean }) => {
-  const key = repoKey(tab.host, tab.repo);
+const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; view: View; tab: RepoGroup; selected: boolean }) => {
   const status = client.store.hosts.value.find((h) => h.idx === tab.host)?.status ?? null;
+  const repos = client.store.repos.value;
+  const terminals = tab.members.flatMap((m) => repos.get(repoKey(m.host, m.repo))?.terminals ?? []);
   const select = (): void => {
     view.selectRepo(tab);
   };
@@ -434,7 +448,7 @@ const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; vie
       class={`repo-tab${selected ? ' active' : ''}`}
       role="tab"
       data-testid="repo-tab"
-      title={tab.repo}
+      title={tab.title}
       aria-selected={selected ? 'true' : 'false'}
       tabIndex={0}
       onClick={select}
@@ -444,13 +458,13 @@ const RepoTabButton = ({ client, view, tab, selected }: { client: HubClient; vie
         select();
       }}
     >
-      {tab.label}
+      <span class="repo-tab-label">{tab.label}</span>
       {status !== null && status !== 'connected' && (
         <span class="host-status" data-testid="host-status">
           {statusText(status)}
         </span>
       )}
-      <Mark of={aggregate(client.store.repos.value.get(key)?.terminals ?? [], 'group')} />
+      <Mark of={aggregate(terminals, 'group')} />
       <button
         type="button"
         class="close remove-repo"
@@ -500,33 +514,51 @@ const PrIcon = ({ pr }: { pr: PrStatus }) => {
   );
 };
 
+/** The pill after a row's label: its host's colour, dimmed or in the error colour by the host's status. */
+const HostPill = ({ pill }: { pill: Pill }) => (
+  <span
+    class={`host-pill${pill.muted ? ' muted' : ''} look-${pill.look}`}
+    data-testid="host-pill"
+    title={pill.title}
+    style={{ '--pill-hue': String(pill.hue) }}
+  >
+    {pill.text}
+  </span>
+);
+
 const WorktreeEntry = ({
   entry,
+  hover,
   selected,
   terminals,
   pr,
+  pill,
   view,
 }: {
-  entry: SidebarEntry;
+  entry: SidebarRow;
+  /** The path as hovering shows it, prefixed `<host>:` for a remote host. */
+  hover: string;
   selected: boolean;
   terminals: Terminal[];
   pr: PrStatus | null;
+  pill: Pill | null;
   view: View;
 }) => (
   <div // NOSONAR(S6848) — a pointer shortcut; the label button is the keyboard control
     class={`worktree${entry.prunable ? ' prunable' : ''}${entry.gone ? ' gone' : ''}`}
     data-testid="worktree"
+    data-host={String(entry.host)}
     data-path={entry.path}
-    title={worktreeTitle(entry.path, terminals)}
+    title={worktreeTitle(hover, terminals)}
     aria-selected={selected ? 'true' : 'false'}
     data-prunable={entry.prunable ? 'true' : undefined}
     data-gone={entry.gone ? 'true' : undefined}
     onClick={() => {
-      view.selectWorktree(entry.path);
+      view.selectWorktree({ host: entry.host, path: entry.path });
     }}
     onContextMenu={(event) => {
       event.preventDefault();
-      view.openWorktreeMenu(entry.path, event.clientX, event.clientY);
+      view.openWorktreeMenu({ host: entry.host, path: entry.path }, event.clientX, event.clientY);
     }}
   >
     {!entry.gone && (
@@ -540,7 +572,7 @@ const WorktreeEntry = ({
           event.stopPropagation();
         }}
         onChange={(event) => {
-          view.setChecked(entry.path, event.currentTarget.checked).catch(report('checking a worktree'));
+          view.setChecked({ host: entry.host, path: entry.path }, event.currentTarget.checked).catch(report('checking a worktree'));
         }}
       />
     )}
@@ -548,6 +580,7 @@ const WorktreeEntry = ({
       {entry.label}
       {entry.gone ? ' (gone)' : ''}
     </button>
+    {pill !== null && <HostPill pill={pill} />}
     {pr !== null && <PrIcon pr={pr} />}
     <Mark of={aggregate(terminals, 'group')} />
     <Ring terminals={terminals} />
@@ -573,7 +606,8 @@ const WorktreeMenuBox = ({ view, menu }: { view: View; menu: WorktreeMenu }) => 
       document.removeEventListener('pointerdown', outside, true);
     };
   }, [view]);
-  const blocker = view.deleteBlocker(menu.worktree);
+  const row = { host: menu.host, path: menu.worktree };
+  const blocker = view.deleteBlocker(row);
   return (
     <div
       class="context-menu"
@@ -596,7 +630,7 @@ const WorktreeMenuBox = ({ view, menu }: { view: View; menu: WorktreeMenu }) => 
         disabled={blocker !== null}
         title={blocker ?? undefined}
         onClick={() => {
-          view.deleteWorktree(menu.worktree);
+          view.deleteWorktree(row);
         }}
       >
         Delete worktree
@@ -746,7 +780,15 @@ const TabControls = ({ client, view }: { client: HubClient; view: View }) => (
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** "Open in editor": opens the selected local worktree; a right-click, enabled or not, edits the command. */
+/** A window outline with `</>` inside, in the current text colour. */
+const CodeWindowIcon = () => (
+  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+    <path d="M1.5 5.5h13M6 8l-2 2 2 2M10 8l2 2-2 2M8.8 7.5l-1.6 5" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+);
+
+/** "Open in editor": opens the selected worktree, a remote host's through a mount; a right-click, enabled or not, edits the command. */
 const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
   const [pending, setPending] = useState(false);
   const failure = view.editorFailure.value;
@@ -754,10 +796,12 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
   const worktree = view.worktree.value;
   const command = client.store.editor.value;
   const remotePage = client.remote !== null;
+  const host = view.host.value;
   const blocker = editorBlocker({
     remotePage,
-    worktree: view.entries.value.find((e) => e.path === worktree) ?? null,
-    remoteHost: view.host.value?.remote ?? false,
+    worktree: view.rows.value.find((r) => worktree !== null && r.host === worktree.host && r.path === worktree.path) ?? null,
+    remoteHost: host?.remote ?? false,
+    hostStatus: host?.status ?? 'connecting',
     command,
     pending,
   });
@@ -769,7 +813,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
     const sent = command;
     setPending(true);
     client
-      .openEditor(worktree)
+      .openEditor(worktree.host, worktree.path)
       .catch((error: unknown) => {
         const code = error instanceof RequestError ? error.code : null;
         view.editorFailure.value = editorFailure(code, messageOf(error), sent);
@@ -796,7 +840,7 @@ const EditorControl = ({ client, view }: { client: HubClient; view: View }) => {
         aria-disabled={blocker !== null}
         onClick={open}
       >
-        ✎
+        <CodeWindowIcon />
       </button>
       {editing && command !== null && (
         <EditorForm
@@ -1453,8 +1497,8 @@ const TerminalArea = ({ client, manager, view }: AppProps) => {
   const presets = client.store.presets.value;
   const focused = view.focused.value;
   const empty = view.termTabs.value.tabs.length === 0;
-  const tab = view.tab.value;
-  const choicesKey = `${String(tab?.host)}\n${String(tab?.repo)}\n${String(view.worktree.value)}`;
+  const tab = view.current.value;
+  const choicesKey = `${String(tab?.host)}\n${String(tab?.repo)}\n${String(view.worktree.value?.path)}`;
   return (
     <div class="terminal-area" ref={area}>
       {view.panes.value.map((pane) => (
@@ -1588,9 +1632,24 @@ const FilterToggle = ({
   );
 };
 
-const Workspace = ({ client, manager, view }: AppProps) => {
+/** Each row's hover path, terminals, pull request and pill, from the member of the selected tab holding it. */
+const rowDetails = (client: HubClient, view: View, row: SidebarRow) => {
+  const members = view.memberStates.value;
+  const holder = members.find(
+    ({ host, state }) =>
+      host === row.host && (state.worktrees.some((w) => w.path === row.path) || state.terminals.some((t) => t.worktree === row.path)),
+  );
+  const host = client.store.hosts.value.find((h) => h.idx === row.host);
   const tab = view.tab.value;
-  const repo = view.repo.value;
+  return {
+    hover: host === undefined ? row.path : hostPath(host, row.path),
+    terminals: (holder?.state.terminals ?? []).filter((t) => t.worktree === row.path),
+    pr: row.gone ? null : rowPr(members, row),
+    pill: host === undefined || holder === undefined || tab === null ? null : rowPill(host, holder.member.repo, tab.members),
+  };
+};
+
+const Workspace = ({ client, manager, view }: AppProps) => {
   const worktree = view.worktree.value;
   const { tabs, active } = view.termTabs.value;
   const closing = view.closing.value;
@@ -1608,30 +1667,24 @@ const Workspace = ({ client, manager, view }: AppProps) => {
         <div class="worktree-list">
           {view.listed.value.map((e) => (
             <WorktreeEntry
-              key={e.path}
+              key={rowKey(e)}
               entry={e}
-              selected={e.path === worktree}
-              terminals={(repo?.terminals ?? []).filter((t) => t.worktree === e.path)}
-              pr={
-                e.gone
-                  ? null
-                  : prOf(
-                      repo?.prs ?? [],
-                      repo?.worktrees.find((w) => w.path === e.path),
-                    )
-              }
+              selected={worktree !== null && e.host === worktree.host && e.path === worktree.path}
               view={view}
+              {...rowDetails(client, view, e)}
             />
           ))}
         </div>
       </nav>
       <SidebarResizer view={view} />
       <main class="terminal-pane">
-        {tab !== null && repo?.error != null && (
-          <div class="repo-error" data-testid="repo-error">
-            {repo.error.code}: {tab.repo} ({repo.error.message})
-          </div>
-        )}
+        {view.memberStates.value
+          .flatMap(({ member, state }) => (state.error === null ? [] : [{ member, error: state.error }]))
+          .map(({ member, error }) => (
+            <div class="repo-error" data-testid="repo-error" key={member.name}>
+              {error.code}: {member.name} ({error.message})
+            </div>
+          ))}
         <div class="term-tabs" role="tablist">
           <div class="term-tab-strip">
             {tabs.map((t) => (
@@ -1662,11 +1715,9 @@ export const App = ({ client, manager, view }: AppProps): JSX.Element => {
   return (
     <div class="app">
       <div class="repo-tabs" role="tablist">
-        {view.tabs.value.map((t) => {
-          const key = repoKey(t.host, t.repo);
-          const isSelected = selected !== null && repoKey(selected.host, selected.repo) === key;
-          return <RepoTabButton key={key} client={client} view={view} tab={t} selected={isSelected} />;
-        })}
+        {view.tabs.value.map((t) => (
+          <RepoTabButton key={t.key} client={client} view={view} tab={t} selected={selected?.key === t.key} />
+        ))}
         <button
           type="button"
           class="add-repo"

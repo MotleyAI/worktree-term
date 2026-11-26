@@ -52,7 +52,7 @@ describe('model', () => {
     expect(model.arrows).toContainEqual({ from: 'daemon', to: 'protocol' });
     expect(model.arrows).toContainEqual({ from: 'platform.install', to: 'platform.dialer' });
     expect(model.arrows).toContainEqual({ from: 'daemon.main', to: 'platform.memory' });
-    expect(model.arrows).toHaveLength(44);
+    expect(model.arrows).toHaveLength(47);
   });
 });
 

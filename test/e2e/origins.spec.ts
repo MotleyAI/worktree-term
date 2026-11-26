@@ -330,6 +330,7 @@ test.describe('selection across hosts', () => {
 
     const other = await hub.session();
     try {
+      await other.waitHost(LOCAL, (h) => h.status === 'connected');
       expect((await other.hubRequest({ t: 'addRepo', host: LOCAL, repo: local })).m.t).toBe('done');
       await expect(tabs(page)).toHaveText(['app'], REMOTE_TIMEOUT);
       await expect(page.locator(groupTab(local))).toHaveAttribute('aria-selected', 'true');

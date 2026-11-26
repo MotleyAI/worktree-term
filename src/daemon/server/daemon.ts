@@ -12,6 +12,7 @@ import {
 import {
   NotARepoError,
   type discoverRepos,
+  type readOrigin,
   type listWorktrees,
   type removeWorktree,
   type watchWorktrees,
@@ -99,6 +100,7 @@ export interface DaemonServices {
   watchWorktrees: typeof watchWorktrees;
   listWorktrees: typeof listWorktrees;
   discoverRepos: typeof discoverRepos;
+  readOrigin: typeof readOrigin;
   worktreeRisks: typeof worktreeRisks;
   removeWorktree: typeof removeWorktree;
   spawnTerminal: (spec: TerminalSpec, events: TerminalEvents) => Promise<TerminalProcess>;
@@ -310,6 +312,7 @@ export class Daemon {
   // Repos and worktrees.
 
   private async watchRepo(peer: Peer, repo: string): Promise<void> {
+    const origin = await this.options.services.readOrigin(repo);
     let entry = this.repos.get(repo);
     if (entry === undefined) {
       increment(this.waiting, repo);
@@ -328,6 +331,7 @@ export class Daemon {
     peer.send({
       t: 'repoState',
       repo,
+      origin,
       worktrees: entry.watch.worktrees,
       terminals: this.terminalsOf(repo).map(describe),
       checked: this.options.store.checked(repo),

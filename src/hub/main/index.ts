@@ -161,7 +161,7 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
     const sampler = sampleMemory(paths.hubMemoryLog, env, { version, instance, daemonCommand }, report);
     await stopped;
     sampler.stop();
-    await Promise.all([server.close(), tunnels.close()]);
+    await Promise.all([server.close(), tunnels.close(), router.close()]);
   } finally {
     for (const signal of STOP_SIGNALS) process.off(signal, stop);
   }

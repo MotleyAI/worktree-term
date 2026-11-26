@@ -32,7 +32,7 @@ import { createPrs, githubFetcher, prIntervalMs, runBounded } from '../prs/index
 import { bindSocket, Daemon } from '../server/index.js';
 import { StateStore } from '../state/index.js';
 import { TerminalProcess, type TerminalLauncher } from '../terminals/index.js';
-import { discoverRepos, listWorktrees, removeWorktree, watchWorktrees, worktreeRisks } from '../worktrees/index.js';
+import { discoverRepos, listWorktrees, readOrigin, removeWorktree, watchWorktrees, worktreeRisks } from '../worktrees/index.js';
 import { daemonRecord } from './memory.js';
 
 export { AlreadyRunningError } from '../server/index.js';
@@ -202,6 +202,7 @@ export const runDaemon = async (run: DaemonRun): Promise<void> => {
           watchWorktrees,
           listWorktrees,
           discoverRepos,
+          readOrigin,
           worktreeRisks,
           removeWorktree,
           spawnTerminal: (spec, events) => TerminalProcess.spawn(spec, events, launcher),

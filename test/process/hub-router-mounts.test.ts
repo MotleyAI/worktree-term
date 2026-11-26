@@ -194,7 +194,7 @@ describe('remote worktree mounts', () => {
     const point = mountPoint('box', 'box', remoteWt);
     configure([], { editor: editor.command });
     await fx.host.session();
-    await waitUntil(() => unmounted().includes(point), 'the removed host’s mount to be unmounted', 10_000);
+    await waitUntil(() => unmounted().includes(point) && !existsSync(point), 'the removed host’s mount to be unmounted', 10_000);
     expect(mx.sshfs.mounted()).toEqual([]);
   });
 
@@ -207,7 +207,7 @@ describe('remote worktree mounts', () => {
     fx.ssh.failHost('box-other', 'ssh: Could not resolve hostname box-other');
     configure([{ name: 'box', ssh: 'box-other', repos: [remoteRepo] }], { editor: editor.command });
     await fx.host.session();
-    await waitUntil(() => unmounted().includes(point), 'the re-aliased host’s mount to be unmounted', 10_000);
+    await waitUntil(() => unmounted().includes(point) && !existsSync(point), 'the re-aliased host’s mount to be unmounted', 10_000);
     expect(mx.sshfs.mounted()).toEqual([]);
   });
 

@@ -27,6 +27,7 @@ import {
   memoryLimits,
   name,
   offset,
+  origin,
   path,
   presetCommand,
   presetName,
@@ -88,7 +89,16 @@ export const prStatus = z.strictObject({
   review: prReview.nullable(),
 });
 
-const repos = z.array(path).max(MAX_DISCOVERED);
+const repos = z
+  .array(z.strictObject({ path, origin: origin.nullable() }))
+  .max(MAX_DISCOVERED)
+  .refine((found) => distinct(found.map((r) => r.path)), 'repos repeat a path');
+
+const removedRepos = z
+  .array(z.strictObject({ host: hostIdx, repo: path }))
+  .min(1)
+  .max(MAX_ENTRIES)
+  .refine((members) => distinct(members.map((m) => `${String(m.host)}\u0000${m.repo}`)), 'members repeat a repo');
 
 export const preset = z.strictObject({ name: presetName, command: presetCommand, memory: memoryLimits.optional() });
 
@@ -113,6 +123,7 @@ const daemonEvents = [
   message('error', { req: req.nullable(), code: errorCode, message: errorMessage }),
   message('repoState', {
     repo: path,
+    origin: origin.nullable(),
     worktrees: z.array(worktree).max(MAX_ENTRIES),
     terminals: z.array(terminal).max(MAX_ENTRIES),
     checked: z.array(path).max(MAX_ENTRIES),
@@ -179,6 +190,7 @@ export const messageSchemas = {
     message('host', { host: hostIdx, m: z.discriminatedUnion('t', daemonRequests) }),
     message('addRepo', { req, host: hostIdx, repo: path }),
     message('removeRepo', { req, host: hostIdx, repo: path }),
+    message('removeRepos', { req, members: removedRepos }),
     message('discoverRepos', { req, host: hostIdx }),
     message('restartDaemon', { req, host: hostIdx }),
     message('reinstallDaemon', { req, host: hostIdx }),
@@ -194,7 +206,7 @@ export const messageSchemas = {
         .min(0)
         .max(MAX_PRESETS - 1),
     }),
-    message('openEditor', { req, worktree: path }),
+    message('openEditor', { req, host: hostIdx, worktree: path }),
     message('setEditor', { req, command: editorCommand.nullable() }),
   ]),
   hubToBrowser: z.discriminatedUnion('t', [
@@ -218,6 +230,8 @@ export type Direction = keyof typeof messageSchemas;
 export type MessageOf<D extends Direction> = z.infer<(typeof messageSchemas)[D]>;
 
 export type Worktree = z.infer<typeof worktree>;
+export type DiscoveredRepo = z.infer<typeof repos>[number];
+export type RepoMember = z.infer<typeof removedRepos>[number];
 export type HostEntry = z.infer<typeof hostEntry>;
 export type Terminal = z.infer<typeof terminal>;
 export type PrStatus = z.infer<typeof prStatus>;

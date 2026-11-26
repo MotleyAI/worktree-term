@@ -6,7 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeSshfs } from '../../../test/support/fake-sshfs.js';
 import { sshCommand } from '../dialer/index.js';
 import { hostPaths, sshControlPath, type HostPaths } from '../files/index.js';
-import { listMounts, mount, mountCommand, mountDir, MountError, mountPoint, unmount, unmountCommand, type MountTarget } from './index.js';
+import {
+  listMounts,
+  mount,
+  mountCommand,
+  mountDir,
+  MountError,
+  mountPoint,
+  removeLeftovers,
+  unmount,
+  unmountCommand,
+  type MountTarget,
+} from './index.js';
 
 const BOX_A: MountTarget = { host: 'box', alias: 'box', path: '/srv/a' };
 const KEEP_ALIVE = 'reconnect,ServerAliveInterval=15,ServerAliveCountMax=3';
@@ -246,6 +257,16 @@ describe('mount', () => {
     expect(error.message).toContain('sshfs');
   });
 
+  it('fails as a missing program naming the unmount program before mounting, running nothing', async () => {
+    const missing = join(dir, 'no-fusermount');
+    vi.stubEnv('WTD_FUSERMOUNT', missing);
+    const error = await failure(mount(paths, BOX_A));
+    expect(error.failure).toBe('missing-program');
+    expect(error.program).toBe(missing);
+    expect(fake.calls()).toEqual([]);
+    expect(entries(mountDir(paths))).toEqual([]);
+  });
+
   it('refuses an option-like alias, naming it, running nothing and creating no mount point', async () => {
     await expect(mount(paths, { ...BOX_A, alias: OPTION_LIKE })).rejects.toThrow(OPTION_LIKE);
     expect(fake.calls()).toEqual([]);
@@ -327,5 +348,29 @@ describe('listMounts', () => {
     vi.stubEnv('WTD_MOUNTINFO', undefined);
     mkdirSync(mountPoint(paths, BOX_A), { recursive: true });
     await expect(listMounts(paths)).resolves.toEqual([]);
+  });
+});
+
+describe('removeLeftovers', () => {
+  beforeEach(useFake);
+
+  it('removes the empty directories under the mount directory that the mount table does not list, keeping mounted ones', async () => {
+    const kept = await mount(paths, BOX_A);
+    const leftover = mountPoint(paths, { ...BOX_A, path: '/srv/gone' });
+    mkdirSync(leftover);
+    await removeLeftovers(paths);
+    expect(entries(mountDir(paths))).toEqual([kept.slice(mountDir(paths).length + 1)]);
+  });
+
+  it('never removes a directory that holds anything', async () => {
+    const full = mountPoint(paths, { ...BOX_A, path: '/srv/full' });
+    mkdirSync(full, { recursive: true });
+    writeFileSync(join(full, 'file'), '');
+    await expect(removeLeftovers(paths)).rejects.toThrow();
+    expect(existsSync(join(full, 'file'))).toBe(true);
+  });
+
+  it('does nothing when the mount directory does not exist', async () => {
+    await expect(removeLeftovers(paths)).resolves.toBeUndefined();
   });
 });

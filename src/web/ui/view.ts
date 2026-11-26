@@ -1,5 +1,5 @@
-import { batch, computed, effect, signal } from '@preact/signals';
-import type { HostEntry, Layout, Preset, Terminal } from '../../protocol/index.js';
+import { batch, computed, effect, signal, untracked } from '@preact/signals';
+import type { DiscoveredRepo, HostEntry, Layout, Preset, Terminal, Worktree } from '../../protocol/index.js';
 import { hostKey, repoKey, RequestError, type HubClient, type Recalled, type RepoState } from '../client/index.js';
 import {
   canAddTab,
@@ -24,29 +24,31 @@ import {
   type TerminalTab,
 } from '../layout/index.js';
 import type { Box, TerminalManager } from '../terminals/index.js';
+import { cloneStep, initialCloneState, type CloneAction, type CloneState } from './clones.js';
 import { closeTargets, needsConfirm } from './closing.js';
 import type { EditorFailure } from './editor.js';
 import { terminalTakesFocus, type ClaimTrigger, type PageFocus } from './focus.js';
 import { hostAction, Latest, offeredRepos, type HostAction } from './hosts.js';
 import { keymap, type Action } from './keymap.js';
 import { pickerValid, type PickerContext, type PickerOp, type PickerWorld } from './picker.js';
-import { repoTabs, type RepoTab } from './repo-tabs.js';
+import { groupRemoval, repoGroups, type GroupMember, type RepoGroup } from './groups.js';
 import {
   clampSidebarWidth,
-  defaultWorktree,
+  defaultRow,
+  groupRows,
   isFilterOn,
   keptNote,
   parseSidebarWidth,
   removalReasons,
   searchOf,
-  sidebarEntries,
-  visibleWorktrees,
+  visibleRows,
   withFilter,
   withSearch,
   type FilterSwitch,
   type RepoFilters,
   type RepoSearches,
-  type SidebarEntry,
+  type RowId,
+  type SidebarRow,
   type WorktreeFilter,
 } from './sidebar.js';
 
@@ -96,6 +98,17 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 
 /** An error as the add-repo dialog shows it: the code of a refused request, then its message. */
 const describe = (error: unknown): string => (error instanceof RequestError ? `${error.code}: ${error.message}` : message(error));
+
+const sameRow = (a: RowId | null, b: RowId | null): boolean => a !== null && b !== null && a.host === b.host && a.path === b.path;
+
+/** A row shown selected: the worktree, the repo holding it and the key of the tab it was shown in. */
+interface MemberRow extends RowId {
+  repo: string;
+  key: string;
+}
+
+/** The `<host>:<repo>` a `busy` group removal names, from its message. */
+const busyRepo = (text: string): string | null => /^(\S+) has terminals/.exec(text)?.[1] ?? null;
 
 /** Whether panes show headers: only in a split, where they tell the panes apart. */
 export const hasPaneHeaders = (paneCount: number): boolean => paneCount > 1;
@@ -174,11 +187,12 @@ interface Picker {
 /** What the in-page confirmation asks about. */
 export type Confirmation =
   | { t: 'host'; host: HostEntry; action: HostAction; recalled: Recalled | null }
-  | { t: 'removeRepo'; host: number; repo: string; label: string }
+  | { t: 'removeRepo'; label: string; names: readonly string[]; members: readonly { host: number; repo: string }[] }
   | { t: 'removeWorktree'; host: number; worktree: string; label: string; reasons: readonly string[]; note: string };
 
 /** The worktree context menu, at its viewport position. */
 export interface WorktreeMenu {
+  host: number;
   worktree: string;
   x: number;
   y: number;
@@ -188,7 +202,7 @@ export interface WorktreeMenu {
 export interface AddRepoDialog {
   host: number;
   /** Repos discovered on the host; null until discovery answers. */
-  discovered: readonly string[] | null;
+  discovered: readonly DiscoveredRepo[] | null;
   /** Whether discovery runs once the host is connected: none has run yet, or the last one failed. */
   pending: boolean;
   filter: string;
@@ -226,15 +240,27 @@ export class View {
   private readonly focusRecords = signal(new Map<string, { termId: number; root: Pane }>());
   /** Per host and worktree, a terminal its full layout misses that the page shows anyway. */
   private readonly outside = signal(new Map<string, number>());
-  /** Per repo key, the default selection derived in this page, kept until a switch toggles or it is no longer an entry. */
-  private readonly heldDefaults = signal<Readonly<Record<string, string>>>({});
+  /** Per group key, the default selection derived in this page, kept until a switch toggles or it is no longer a row. */
+  private readonly heldDefaults = signal<Readonly<Record<string, RowId>>>({});
+  /** The row last shown selected, with its repo: when groups merge or split, its tab is selected. */
+  private readonly anchor = signal<MemberRow | null>(null);
+  /** The page session's clone discovery. */
+  private clones: CloneState = initialCloneState;
 
-  readonly tabs = computed<RepoTab[]>(() => {
-    const kept = this.client.store.kept.value;
-    return repoTabs(
+  readonly tabs = computed<RepoGroup[]>(() => {
+    const { kept, clones, origins } = this.client.store;
+    const originOf = (host: number, repo: string): string | null => origins.value.get(repoKey(host, repo)) ?? null;
+    return repoGroups(
       this.client.store.hosts.value.map((h) => ({
         ...h,
-        repos: [...h.repos, ...(kept.get(h.idx) ?? []).filter((r) => !h.repos.includes(r))],
+        repos: [...h.repos, ...(kept.value.get(h.idx) ?? []).filter((r) => !h.repos.includes(r))].map((path) => ({
+          path,
+          origin: originOf(h.idx, path),
+        })),
+        clones: (clones.value.get(h.idx) ?? []).map((c) => ({
+          path: c.path,
+          origin: origins.value.has(repoKey(h.idx, c.path)) ? originOf(h.idx, c.path) : c.origin,
+        })),
       })),
     );
   });
@@ -243,72 +269,106 @@ export class View {
     const dialog = this.addRepo.value;
     if (dialog?.discovered == null) return [];
     const listed = this.client.store.hosts.value.find((h) => h.idx === dialog.host)?.repos ?? [];
-    return offeredRepos(dialog.discovered, listed, dialog.filter);
+    return offeredRepos(
+      dialog.discovered.map((r) => r.path),
+      listed,
+      dialog.filter,
+    );
   });
-  readonly tab = computed<RepoTab | null>(() => {
+  /** The selected tab: the stored one, else the one holding the row last shown selected, else the first. */
+  readonly tab = computed<RepoGroup | null>(() => {
     const tabs = this.tabs.value;
-    return tabs.find((t) => repoKey(t.host, t.repo) === this.selectedRepo.value) ?? tabs[0] ?? null;
+    const anchor = this.anchor.value;
+    const holding = anchor === null ? undefined : tabs.find((t) => t.members.some((m) => m.host === anchor.host && m.repo === anchor.repo));
+    return tabs.find((t) => t.key === this.selectedRepo.value) ?? holding ?? tabs[0] ?? null;
   });
-  readonly host = computed<HostEntry | null>(() => {
-    const tab = this.tab.value;
-    return tab === null ? null : (this.client.store.hosts.value.find((h) => h.idx === tab.host) ?? null);
+  /** The selected tab's members that the page has a state of. */
+  readonly memberStates = computed<{ member: GroupMember; host: number; state: RepoState }[]>(() => {
+    const repos = this.client.store.repos.value;
+    return (this.tab.value?.members ?? []).flatMap((member) => {
+      const state = repos.get(repoKey(member.host, member.repo));
+      return state === undefined ? [] : [{ member, host: member.host, state }];
+    });
   });
-  readonly repo = computed<RepoState | null>(() => {
-    const tab = this.tab.value;
-    return tab === null ? null : (this.client.store.repos.value.get(repoKey(tab.host, tab.repo)) ?? null);
-  });
-  /** The selected repo's filter switches. */
+  /** The selected tab's rows, its members' in member order. */
+  readonly rows = computed<SidebarRow[]>(() => groupRows(this.memberStates.value));
+  /** The selected tab's filter switches. */
   readonly filter = computed<WorktreeFilter>(() => {
-    const tab = this.tab.value;
-    const key = tab === null ? null : repoKey(tab.host, tab.repo);
+    const key = this.tab.value?.key ?? null;
     return {
       checked: key !== null && isFilterOn(this.filters.value, key, 'checked'),
       open: key !== null && isFilterOn(this.openFilters.value, key, 'open'),
     };
   });
-  /** The selected repo's name search. */
+  /** The selected tab's name search. */
   readonly search = computed<string>(() => {
     const tab = this.tab.value;
-    return tab === null ? '' : searchOf(this.searches.value, repoKey(tab.host, tab.repo));
+    return tab === null ? '' : searchOf(this.searches.value, tab.key);
   });
-  readonly entries = computed<SidebarEntry[]>(() => {
-    const repo = this.repo.value;
-    return repo === null ? [] : sidebarEntries(repo);
-  });
-  /** The selected worktree: the held default, else the stored one, else a freshly derived one, which `derived` flags. */
-  private readonly selection = computed<{ key: string; path: string | null; derived: boolean } | null>(() => {
+  /** The selected row: the held default, else the stored one, else the row last shown, else a freshly derived one, which `derived` flags. */
+  private readonly selection = computed<{ key: string; row: RowId | null; derived: boolean } | null>(() => {
     const tab = this.tab.value;
     if (tab === null) return null;
-    const key = repoKey(tab.host, tab.repo);
-    const entries = this.entries.value;
-    const isEntry = (path: string | undefined): path is string => path !== undefined && entries.some((e) => e.path === path);
+    const { key } = tab;
+    const rows = this.rows.value;
+    const isRow = (row: RowId | null | undefined): boolean => row != null && rows.some((r) => sameRow(r, row));
     // A held default is newer than the stored selection: selecting a worktree releases it.
     const held = this.heldDefaults.value[key];
-    if (isEntry(held)) return { key, path: held, derived: false };
-    const stored = this.selections.value[key];
-    if (isEntry(stored)) return { key, path: stored, derived: false };
-    return { key, path: defaultWorktree(entries, this.filter.value), derived: true };
+    if (held !== undefined && isRow(held)) return { key, row: held, derived: false };
+    const stored = this.decodeRow(this.selections.value[key]);
+    if (stored !== null && isRow(stored)) return { key, row: stored, derived: false };
+    // The stored row's host has no rows yet, as while it connects: show a default without holding it.
+    if (stored !== null && !rows.some((r) => r.host === stored.host))
+      return { key, row: defaultRow(rows, this.filter.value), derived: false };
+    // The row shown in another tab now belongs to this one: its group merged or split.
+    const anchor = this.anchor.value;
+    if (anchor !== null && anchor.key !== key && isRow(anchor))
+      return { key, row: { host: anchor.host, path: anchor.path }, derived: false };
+    return { key, row: defaultRow(rows, this.filter.value), derived: true };
   });
-  readonly worktree = computed<string | null>(() => this.selection.value?.path ?? null);
-  readonly listed = computed<SidebarEntry[]>(() =>
-    visibleWorktrees(this.entries.value, this.filter.value, this.search.value, this.worktree.value),
-  );
+  /** The selected worktree, by host and path. */
+  readonly worktree = computed<RowId | null>(() => this.selection.value?.row ?? null);
+  /** The member holding the selected worktree, else the tab's first member with a state. */
+  readonly current = computed<{ host: number; repo: string } | null>(() => {
+    const row = this.worktree.value;
+    const states = this.memberStates.value;
+    const holding =
+      row === null
+        ? undefined
+        : states.find(
+            ({ host, state }) =>
+              host === row.host &&
+              (state.worktrees.some((w) => w.path === row.path) || state.terminals.some((t) => t.worktree === row.path)),
+          );
+    const member = (holding ?? states[0])?.member ?? this.tab.value?.members[0];
+    return member === undefined ? null : { host: member.host, repo: member.repo };
+  });
+  readonly host = computed<HostEntry | null>(() => {
+    const current = this.current.value;
+    return current === null ? null : (this.client.store.hosts.value.find((h) => h.idx === current.host) ?? null);
+  });
+  readonly repo = computed<RepoState | null>(() => {
+    const current = this.current.value;
+    return current === null ? null : (this.client.store.repos.value.get(repoKey(current.host, current.repo)) ?? null);
+  });
+  /** The selected worktree's path. */
+  private readonly path = computed<string | null>(() => this.worktree.value?.path ?? null);
+  readonly listed = computed<SidebarRow[]>(() => visibleRows(this.rows.value, this.filter.value, this.search.value, this.worktree.value));
   readonly terminals = computed<Terminal[]>(() => {
-    const worktree = this.worktree.value;
-    return (this.repo.value?.terminals ?? []).filter((t) => t.worktree === worktree);
+    const path = this.path.value;
+    return (this.repo.value?.terminals ?? []).filter((t) => t.worktree === path);
   });
   /** The selected worktree's layout as shown: the one being dragged, else the stored one. */
   readonly layout = computed<Layout | null>(() => {
-    const tab = this.tab.value;
     const worktree = this.worktree.value;
-    if (tab === null || worktree === null) return null;
+    if (worktree === null) return null;
     const drag = this.drag.value;
-    if (drag?.host === tab.host && drag.worktree === worktree) return drag.layout;
-    return this.repo.value?.layouts.get(worktree) ?? null;
+    if (drag?.host === worktree.host && drag.worktree === worktree.path) return drag.layout;
+    return this.repo.value?.layouts.get(worktree.path) ?? null;
   });
   readonly termTabs = computed<{ tabs: ShownTab[]; active: number | null }>(() => {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value ?? '';
+    const tab = this.current.value;
+    const worktree = this.path.value ?? '';
     const terminals = this.terminals.value;
     const layout = this.layout.value;
     const live = new Set(terminals.map((t) => t.termId));
@@ -359,7 +419,8 @@ export class View {
   });
   /** Whether a terminal may be created in the selected worktree now. */
   readonly canCreate = computed<boolean>(() => {
-    const entry = this.entries.value.find((e) => e.path === this.worktree.value);
+    const selected = this.worktree.value;
+    const entry = this.rows.value.find((r) => sameRow(r, selected));
     return (
       entry !== undefined &&
       !entry.prunable &&
@@ -413,37 +474,107 @@ export class View {
     effect(() => {
       this.checkAddRepo();
     });
+    effect(() => {
+      this.followSelection();
+    });
+    effect(() => {
+      this.discoverClones();
+    });
     manager.onFocus((host, termId) => {
-      if (host === this.tab.peek()?.host) this.focusPane(termId);
+      if (host === this.current.peek()?.host) this.focusPane(termId);
     });
   }
 
-  selectRepo(tab: RepoTab): void {
-    const key = repoKey(tab.host, tab.repo);
-    this.selectedRepo.value = key;
-    this.store(REPO_KEY, key);
+  selectRepo(tab: RepoGroup): void {
+    this.selectedRepo.value = tab.key;
+    this.store(REPO_KEY, tab.key);
   }
 
-  /** Selects `path` in the current repo, timing the switch. */
-  selectWorktree(path: string): void {
+  /** Selects the worktree `row` in the selected tab, timing the switch. */
+  selectWorktree(row: RowId): void {
     performance.mark(SWITCH_START);
     const tab = this.tab.value;
-    if (tab === null) return;
-    const key = repoKey(tab.host, tab.repo);
-    const selections = { ...this.selections.value, [key]: path };
+    const encoded = this.encodeRow(row);
+    if (tab === null || encoded === null) return;
+    const { key } = tab;
+    const selections = { ...this.selections.value, [key]: encoded };
     batch(() => {
       this.selections.value = selections;
       this.releaseDefault(key);
+      if (this.selectedRepo.value !== key) this.selectRepo(tab);
     });
     this.store(WORKTREES_KEY, JSON.stringify(selections));
     markAfterPaint(SWITCH_END);
   }
 
-  /** Sets the selected repo's switch `which`, deriving its default selection afresh. */
+  /** `row` as stored: its host's name and its path. */
+  private encodeRow(row: RowId): string | null {
+    const name = this.client.store.hosts.peek().find((h) => h.idx === row.host)?.name;
+    return name === undefined ? null : `${name}:${row.path}`;
+  }
+
+  /** The row a stored selection names, while its host is listed. */
+  private decodeRow(stored: string | undefined): RowId | null {
+    const at = stored?.indexOf(':/') ?? -1;
+    if (stored === undefined || at < 0) return null;
+    const name = stored.slice(0, at);
+    const host = this.client.store.hosts.value.find((h) => h.name === name);
+    return host === undefined ? null : { host: host.idx, path: stored.slice(at + 1) };
+  }
+
+  /** Remembers the row shown selected, with its repo, so a merge or split keeps it selected. */
+  private followSelection(): void {
+    const selection = this.selection.value;
+    const row = selection?.row ?? null;
+    const current = this.current.value;
+    if (selection === null || row === null || current?.host !== row.host) return;
+    const anchor = this.anchor.peek();
+    if (anchor !== null && sameRow(anchor, row) && anchor.repo === current.repo && anchor.key === selection.key) return;
+    this.anchor.value = { ...row, repo: current.repo, key: selection.key };
+  }
+
+  /** Feeds the hosts and listed repos' origins to clone discovery, running its effects. */
+  private discoverClones(): void {
+    const hosts = this.client.store.hosts.value;
+    const origins = this.client.store.origins.value;
+    if (this.client.store.status.value !== 'open') return;
+    untracked(() => {
+      this.cloneStep({ t: 'hosts', hosts });
+      for (const host of hosts) {
+        for (const repo of host.repos) {
+          const key = repoKey(host.idx, repo);
+          if (origins.has(key)) this.cloneStep({ t: 'origin', host: host.idx, repo, origin: origins.get(key) ?? null });
+        }
+      }
+    });
+  }
+
+  private cloneStep(action: CloneAction): void {
+    const { state, effects } = cloneStep(this.clones, action);
+    this.clones = state;
+    for (const effect of effects) {
+      if (effect.t === 'watch') {
+        const origin = state.watched.find((w) => w.host === effect.host && w.path === effect.path)?.origin ?? null;
+        this.client.watchClone(effect.host, effect.path, origin);
+        continue;
+      }
+      const { host } = effect;
+      this.client.discoverRepos(host).then(
+        (repos) => {
+          this.cloneStep({ t: 'discovered', host, repos });
+        },
+        (error: unknown) => {
+          console.warn(`discovering clones on host ${String(host)} failed`, error);
+        },
+      );
+    }
+  }
+
+  /** Sets the selected tab's switch `which`, deriving its default selection afresh. */
   setFilter(which: FilterSwitch, on: boolean): void {
     const tab = this.tab.value;
     if (tab === null) return;
-    const key = repoKey(tab.host, tab.repo);
+    const { key } = tab;
     const target = which === 'checked' ? this.filters : this.openFilters;
     const filters = withFilter(target.value, key, which, on);
     batch(() => {
@@ -453,7 +584,7 @@ export class View {
     this.store(FILTER_KEYS[which], JSON.stringify(filters));
   }
 
-  /** Drops repo `key`'s held default, so the next default is derived afresh. */
+  /** Drops group `key`'s held default, so the next default is derived afresh. */
   private releaseDefault(key: string): void {
     this.heldDefaults.value = Object.fromEntries(Object.entries(this.heldDefaults.peek()).filter(([k]) => k !== key));
   }
@@ -461,15 +592,15 @@ export class View {
   /** Holds a freshly derived default selection, so data changes do not move it. */
   private holdDefault(): void {
     const selection = this.selection.value;
-    if (selection?.derived !== true || selection.path === null) return;
-    this.heldDefaults.value = { ...this.heldDefaults.peek(), [selection.key]: selection.path };
+    if (selection?.derived !== true || selection.row === null) return;
+    this.heldDefaults.value = { ...this.heldDefaults.peek(), [selection.key]: selection.row };
   }
 
   /** Sets the selected repo's name search; empty shows every worktree. */
   setSearch(search: string): void {
     const tab = this.tab.value;
     if (tab === null) return;
-    const searches = withSearch(this.searches.value, repoKey(tab.host, tab.repo), search);
+    const searches = withSearch(this.searches.value, tab.key, search);
     this.searches.value = searches;
     this.store(SEARCHES_KEY, JSON.stringify(searches));
   }
@@ -496,8 +627,8 @@ export class View {
 
   /** Shows the tab of `termId` at once, then stores it as the worktree's active tab. */
   chooseTab(termId: number): void {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     if (tab === null || worktree === null) return;
     const layout = this.storedLayout(tab.host, tab.repo, worktree);
     // A full layout cannot take the tab, so it is only shown.
@@ -508,8 +639,8 @@ export class View {
 
   /** Whether the tab of `termId` can be named: the layout holds it or can take it. */
   canRename(termId: number): boolean {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     if (tab === null || worktree === null) return false;
     const layout = this.storedLayout(tab.host, tab.repo, worktree);
     return tabOf(layout, termId) >= 0 || canAddTab(layout);
@@ -517,8 +648,8 @@ export class View {
 
   /** Stores the trimmed `text` as the name of `termId`'s tab, empty removing it; its unchanged label stores nothing. */
   renameTab(termId: number, text: string): void {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     const shown = this.termTabs.value.tabs.find((t) => t.termId === termId);
     if (tab === null || worktree === null || shown === undefined || !this.canRename(termId)) return;
     const trimmed = text.slice(0, MAX_TAB_NAME).trim();
@@ -545,15 +676,15 @@ export class View {
     this.focusRecords.value = new Map(this.focusRecords.peek()).set(tab.key, { termId, root: tab.root });
   }
 
-  async setChecked(path: string, checked: boolean): Promise<void> {
-    const tab = this.tab.value;
-    if (tab !== null) await this.client.request(tab.host, { t: 'setChecked', worktree: path, checked });
+  /** Checks or unchecks `row` on its host. */
+  async setChecked(row: RowId, checked: boolean): Promise<void> {
+    await this.client.request(row.host, { t: 'setChecked', worktree: row.path, checked });
   }
 
   /** Starts a new terminal for `op` in the selected worktree, through the picker unless there is one preset. */
   startCreate(op: PickerOp): void {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     const presets = this.client.store.presets.value;
     if (tab === null || worktree === null || presets === null || !this.canCreate.value) return;
     const context: PickerContext = { host: tab.host, repo: tab.repo, worktree, op };
@@ -605,15 +736,15 @@ export class View {
 
   /** Runs `preset` as a new tab of the selected worktree, which has no terminals. */
   choose(preset: Preset): void {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     if (tab === null || worktree === null || !this.canCreate.value) return;
     this.create({ host: tab.host, repo: tab.repo, worktree, op: { t: 'newTab' } }, preset);
   }
 
   /** Closes `termIds` of the selected repo, asking first when any of them is running. */
   requestClose(termIds: readonly number[]): void {
-    const tab = this.tab.value;
+    const tab = this.current.value;
     if (tab === null || termIds.length === 0) return;
     const request: CloseRequest = { host: tab.host, repo: tab.repo, termIds };
     if (needsConfirm(this.liveTerminals(request)).length === 0) this.close(request);
@@ -642,44 +773,53 @@ export class View {
     this.confirmation.value = { t: 'host', host, action, recalled: this.client.memory.recall(hostKey(host), host.instance) };
   }
 
-  /** Asks to confirm removing the repo of `tab`. */
-  requestRemoveRepo(tab: RepoTab): void {
-    this.confirmation.value = { t: 'removeRepo', host: tab.host, repo: tab.repo, label: tab.label };
+  /** Asks to confirm removing every listed repo of `tab`'s group. */
+  requestRemoveRepo(tab: RepoGroup): void {
+    this.confirmation.value = { t: 'removeRepo', label: tab.label, ...groupRemoval(tab) };
   }
 
   cancelConfirmation(): void {
     this.confirmation.value = null;
   }
 
-  /** Opens the worktree menu at `x`, `y`; the main worktree has none, its only item being deletion. */
-  openWorktreeMenu(worktree: string, x: number, y: number): void {
-    const main = this.repo.value?.worktrees.find((w) => w.path === worktree)?.main === true;
-    this.worktreeMenu.value = main ? null : { worktree, x, y };
+  /** Opens the worktree menu of `row` at `x`, `y`; the main worktree has none, its only item being deletion. */
+  openWorktreeMenu(row: RowId, x: number, y: number): void {
+    const main = this.listedWorktree(row)?.main === true;
+    this.worktreeMenu.value = main ? null : { host: row.host, worktree: row.path, x, y };
+  }
+
+  /** The worktree git lists for `row` in the selected tab, and the repo holding it. */
+  private listedWorktree(row: RowId): (Worktree & { repo: string }) | null {
+    for (const { member, host, state } of this.memberStates.value) {
+      const worktree = host === row.host ? state.worktrees.find((w) => w.path === row.path) : undefined;
+      if (worktree !== undefined) return { ...worktree, repo: member.repo };
+    }
+    return null;
   }
 
   closeWorktreeMenu(): void {
     this.worktreeMenu.value = null;
   }
 
-  /** Why `worktree` of the selected repo cannot be deleted now, or null when it can. */
-  deleteBlocker(worktree: string): string | null {
-    const entry = this.entries.value.find((e) => e.path === worktree);
-    const listed = this.repo.value?.worktrees.find((w) => w.path === worktree);
-    if (entry === undefined || entry.gone || listed === undefined) return 'It is no longer a worktree';
+  /** Why the worktree `row` of the selected tab cannot be deleted now, or null when it can. */
+  deleteBlocker(row: RowId): string | null {
+    const entry = this.rows.value.find((r) => sameRow(r, row));
+    const listed = this.listedWorktree(row);
+    if (entry === undefined || entry.gone || listed === null) return 'It is no longer a worktree';
     if (listed.main) return 'The main worktree cannot be deleted';
     if (listed.locked) return 'It is locked';
-    if (this.host.value?.status !== 'connected') return 'Its host is not connected';
+    if (this.client.store.hosts.value.find((h) => h.idx === row.host)?.status !== 'connected') return 'Its host is not connected';
     return null;
   }
 
-  /** Deletes `worktree` of the selected repo; when the daemon reports what that would lose, asks to confirm first. */
-  deleteWorktree(worktree: string): void {
+  /** Deletes the worktree `row` on its host; when the daemon reports what that would lose, asks to confirm first. */
+  deleteWorktree(row: RowId): void {
     this.worktreeMenu.value = null;
-    const tab = this.tab.value;
-    const repo = this.repo.value;
-    if (tab === null || repo === null || this.deleteBlocker(worktree) !== null) return;
-    const label = this.entries.value.find((e) => e.path === worktree)?.label ?? worktree;
-    const { host } = tab;
+    const listedWorktree = this.listedWorktree(row);
+    if (listedWorktree === null || this.deleteBlocker(row) !== null) return;
+    const { host, path: worktree } = row;
+    const label = this.rows.value.find((r) => sameRow(r, row))?.label ?? worktree;
+    const tab = { repo: listedWorktree.repo };
     this.client
       .request(host, { t: 'removeWorktree', worktree, force: false })
       .then((reply) => {
@@ -689,7 +829,7 @@ export class View {
           const term = terminals.find((t) => t.termId === id);
           return term === undefined ? `terminal ${String(id)}` : `${term.preset} ${String(id)}`;
         });
-        const listed = repo.worktrees.find((w) => w.path === worktree) ?? { detached: false, head: null };
+        const listed = listedWorktree;
         this.confirmation.value = {
           t: 'removeWorktree',
           host,
@@ -718,10 +858,10 @@ export class View {
       return;
     }
     if (confirmation.t === 'removeRepo') {
-      this.client.removeRepo(confirmation.host, confirmation.repo).catch((error: unknown) => {
+      this.client.removeRepos(confirmation.members).catch((error: unknown) => {
         this.notice.value =
           error instanceof RequestError && error.code === 'busy'
-            ? `${confirmation.label} has terminals: close them first, then remove the repo.`
+            ? `${busyRepo(error.message) ?? confirmation.label} has terminals: close them first, then remove the repo.`
             : `Removing ${confirmation.label} failed: ${message(error)}`;
       });
       return;
@@ -735,7 +875,7 @@ export class View {
 
   /** Opens the add-repo dialog for the selected tab's host and discovers its repos. */
   openAddRepo(): void {
-    this.changeAddRepoHost(this.tab.value?.host ?? 0);
+    this.changeAddRepoHost(this.current.value?.host ?? 0);
   }
 
   /** Shows the add-repo dialog for `host`, discovering its repos once it is connected. */
@@ -766,8 +906,12 @@ export class View {
       .addRepo(host, repo)
       .then(() => {
         if (this.addRepo.peek()?.host === host) this.addRepo.value = null;
-        this.selectedRepo.value = repoKey(host, repo);
-        this.store(REPO_KEY, repoKey(host, repo));
+        const name = this.client.store.hosts.peek().find((h) => h.idx === host)?.name ?? '';
+        batch(() => {
+          this.selectedRepo.value = `${name}:${repo}`;
+          this.anchor.value = { host, repo, path: repo, key: '' };
+        });
+        this.store(REPO_KEY, `${name}:${repo}`);
       })
       .catch((error: unknown) => {
         this.updateAddRepo(host, { error: describe(error) });
@@ -804,8 +948,8 @@ export class View {
 
   /** Starts dragging `divider` of the shown tab. */
   startDrag(divider: Divider): void {
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     const shown = this.activeTab.value;
     const layout = this.layout.value;
     const index = shown?.index ?? null;
@@ -859,7 +1003,7 @@ export class View {
 
   /** The current terminal, when `trigger` gives it the keyboard focus. */
   private claimTarget(trigger: ClaimTrigger, page: PageFocus): { host: number; termId: number } | null {
-    const host = this.tab.peek()?.host;
+    const host = this.current.peek()?.host;
     const termId = this.focused.peek();
     const current = host !== undefined && termId !== null && this.manager.has(host, termId);
     const modal = this.modal.peek();
@@ -905,14 +1049,15 @@ export class View {
 
   private stepWorktree(dir: -1 | 1): void {
     const listed = this.listed.value;
-    const next = listed[listed.findIndex((e) => e.path === this.worktree.value) + dir];
-    if (next !== undefined && next.path !== this.worktree.value) this.selectWorktree(next.path);
+    const selected = this.worktree.value;
+    const next = listed[listed.findIndex((r) => sameRow(r, selected)) + dir];
+    if (next !== undefined && !sameRow(next, selected)) this.selectWorktree({ host: next.host, path: next.path });
   }
 
   private stepRepo(dir: -1 | 1): void {
     const tabs = this.tabs.value;
     const current = this.tab.value;
-    const index = current === null ? -1 : tabs.findIndex((t) => t.host === current.host && t.repo === current.repo);
+    const index = current === null ? -1 : tabs.findIndex((t) => t.key === current.key);
     const next = index < 0 ? undefined : tabs[index + dir];
     if (next !== undefined) this.selectRepo(next);
   }
@@ -932,7 +1077,7 @@ export class View {
   }
 
   private copy(): void {
-    const host = this.tab.value?.host;
+    const host = this.current.value?.host;
     const focused = this.focused.value;
     if (host === undefined || focused === null) return;
     const text = this.manager.selection(host, focused);
@@ -943,7 +1088,7 @@ export class View {
   }
 
   private paste(): void {
-    const host = this.tab.value?.host;
+    const host = this.current.value?.host;
     const focused = this.focused.value;
     if (host === undefined || focused === null) return;
     navigator.clipboard
@@ -957,11 +1102,11 @@ export class View {
   }
 
   private world(): PickerWorld {
-    const tab = this.tab.value;
+    const tab = this.current.value;
     return {
       host: tab?.host ?? null,
       repo: tab?.repo ?? null,
-      worktree: this.worktree.value,
+      worktree: this.path.value,
       hostStatus: this.host.value?.status ?? null,
       live: this.terminals.value.map((t) => t.termId),
       layout: this.layout.value,
@@ -1072,8 +1217,8 @@ export class View {
   /** Opens the selected worktree's terminals on their first view, shows the panes of its active tab and focuses one. */
   private sync(): void {
     const status = this.client.store.status.value;
-    const tab = this.tab.value;
-    const worktree = this.worktree.value;
+    const tab = this.current.value;
+    const worktree = this.path.value;
     const terminals = this.terminals.value;
     const panes = this.panes.value;
     const focused = this.focused.value;

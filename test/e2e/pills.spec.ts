@@ -105,6 +105,7 @@ test.describe('host and clone pills', () => {
     expect(await coloursOf(pillOf(page, BOX, boxLib))).toEqual(colours);
 
     const other = await openPage(hub, context);
+    await selectGroup(other.page, app);
     await expect(pillOf(other.page, BOX, boxApp)).toHaveText('box', REMOTE_TIMEOUT);
     expect(await coloursOf(pillOf(other.page, BOX, boxApp))).toEqual(colours);
   });

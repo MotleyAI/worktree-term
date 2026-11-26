@@ -39,16 +39,16 @@
 
 ## 2. Daemon
 
-- [ ] 2.1 `src/daemon/prs/github.ts`, branch on origin per design D1:
+- [x] 2.1 `src/daemon/prs/github.ts`, branch on origin per design D1:
   - `git for-each-ref` plus `git config -z --get-regexp '^(push\.default|branch\..*\.merge)$'`;
   - strict parsing;
   - `git config` exit 1 = none set, any other failure fails the refresh.
 
   Verify 1.1–1.3 pass.
-- [ ] 2.2 `src/daemon/prs/github.ts`, candidates per design D2: `repository { nameWithOwner }` in the fragment, parent `nameWithOwner`, zod schema, one predicate over the union of all aliases. Verify 1.4–1.6 pass.
-- [ ] 2.3 Re-capture `src/daemon/prs/github-capture.json` by running the new query once against real GitHub with the local `gh` (same repository and branch as the current capture). Never hand-edit it. Verify the capture test passes.
+- [x] 2.2 `src/daemon/prs/github.ts`, candidates per design D2: `repository { nameWithOwner }` in the fragment, parent `nameWithOwner`, zod schema, one predicate over the union of all aliases. Verify 1.4–1.6 pass.
+- [x] 2.3 Re-capture `src/daemon/prs/github-capture.json` by running the new query once against real GitHub with the local `gh` (same repository and branch as the current capture). Never hand-edit it. Verify the capture test passes.
 
 ## 3. Gates
 
 - [ ] 3.1 Run the local test scope (`la-affected-tests --base main`, plus `test/process/daemon-prs.test.ts`); all green.
-- [ ] 3.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `la-typecheck`, `pnpm lint`; all green.
+- [x] 3.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `la-typecheck`, `pnpm lint`; all green.

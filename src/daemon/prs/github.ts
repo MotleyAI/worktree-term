@@ -43,6 +43,7 @@ export const parseOrigin = (url: string): Origin | null => {
 const PR_FIELDS = `fragment P on PullRequest {
   number url state isDraft updatedAt mergeable reviewDecision
   headRepository { nameWithOwner }
+  repository { nameWithOwner }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }`;
 
@@ -84,6 +85,7 @@ export const buildQuery = (
     nameWithOwner
     ${own.join('\n    ')}
     parent {
+      nameWithOwner
       ${parent.join('\n      ')}
     }
   }
@@ -101,6 +103,7 @@ const prNode = z.object({
   mergeable: z.enum(['MERGEABLE', 'CONFLICTING', 'UNKNOWN']),
   reviewDecision: z.enum(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']).nullable(),
   headRepository: z.object({ nameWithOwner: z.string() }).nullable(),
+  repository: z.object({ nameWithOwner: z.string() }),
   commits: z.object({
     nodes: z.array(
       z.object({
@@ -117,7 +120,7 @@ const nodes = z.object({ nodes: z.array(prNode) });
 const refNodes = z.object({ all: nodes, open: nodes }).nullable();
 const response = z.object({
   data: z.object({
-    repository: z.looseObject({ nameWithOwner: z.string(), parent: z.looseObject({}).nullable() }),
+    repository: z.looseObject({ nameWithOwner: z.string(), parent: z.looseObject({ nameWithOwner: z.string() }).nullable() }),
   }),
 });
 
@@ -178,6 +181,10 @@ const headsOf = (repository: Readonly<Record<string, unknown>> | null, i: string
 /** Each asked branch's chosen pull request, or null when an alias is missing or malformed. */
 const pickPrs = (repository: z.infer<typeof response>['data']['repository'], branches: readonly string[]): Map<string, PrNode> | null => {
   const own = repository.nameWithOwner.toLowerCase();
+  const bases = new Set([own, ...(repository.parent === null ? [] : [repository.parent.nameWithOwner.toLowerCase()])]);
+  /** Headed by origin's branch and belonging to origin or its parent. */
+  const isCandidate = (pr: PrNode): boolean =>
+    pr.headRepository?.nameWithOwner.toLowerCase() === own && bases.has(pr.repository.nameWithOwner.toLowerCase());
   const chosen = new Map<string, PrNode>();
   for (const [index, branch] of branches.entries()) {
     const i = String(index);
@@ -185,11 +192,8 @@ const pickPrs = (repository: z.infer<typeof response>['data']['repository'], bra
     const heads = headsOf(repository, i);
     const parentHeads = headsOf(repository.parent, i);
     if (!ref.success || heads === null || parentHeads === null) return null;
-    const candidates =
-      ref.data === null
-        ? [...heads, ...parentHeads].filter((pr) => pr.headRepository?.nameWithOwner.toLowerCase() === own)
-        : [...ref.data.all.nodes, ...ref.data.open.nodes];
-    const pr = choose(candidates);
+    const byRef = ref.data === null ? [] : [...ref.data.all.nodes, ...ref.data.open.nodes];
+    const pr = choose([...byRef, ...heads, ...parentHeads].filter(isCandidate));
     if (pr !== undefined) chosen.set(branch, pr);
   }
   return chosen;
@@ -199,40 +203,76 @@ type Step<T> = { ok: true; value: T } | { ok: false; outcome: FetchOutcome };
 
 const EMPTY: FetchOutcome = { ok: true, prs: [] };
 
-/** Parses `git config -z --get-regexp` output into each branch's remote and merge refs. */
-const parseBranchConfig = (output: string): Map<string, { remote?: string; merges: string[] }> => {
-  const branches = new Map<string, { remote?: string; merges: string[] }>();
-  for (const entry of output.split('\0')) {
-    const newline = entry.indexOf('\n');
-    if (newline < 0) continue;
-    const [key, value] = [entry.slice(0, newline), entry.slice(newline + 1)];
-    const match = /^branch\.(.+)\.(remote|merge)$/.exec(key);
-    const [, branch, variable] = match ?? [];
-    if (branch === undefined) continue;
-    const config = branches.get(branch) ?? { merges: [] };
-    if (variable === 'remote') config.remote = value;
-    else config.merges.push(value);
-    branches.set(branch, config);
+const HEADS = 'refs/heads/';
+const FOR_EACH_REF = ['for-each-ref', '--format=%(refname)%00%(push:remotename)%00%(upstream:remotename)', 'refs/heads'];
+const CONFIG = ['config', '-z', '--get-regexp', String.raw`^(push\.default|branch\..*\.merge)$`];
+/** `push.default` modes under which `git push` sends a branch to its upstream's name. */
+const TO_UPSTREAM = new Set(['upstream', 'tracking']);
+
+const refLine = z.tuple([z.string().startsWith(HEADS), z.string(), z.string()]);
+const configEntry = z.tuple([z.string().regex(/^(?:push\.default|branch\..+\.merge)$/), z.string()]);
+
+interface Remotes {
+  push: string;
+  upstream: string;
+}
+
+interface GitConfig {
+  pushDefault?: string;
+  merges: Map<string, string[]>;
+}
+
+/** Each local branch's push and upstream remote (empty when unset), or null when malformed. */
+const parseRefs = (output: string): Map<string, Remotes> | null => {
+  const remotes = new Map<string, Remotes>();
+  for (const line of output.split('\n')) {
+    if (line === '') continue;
+    const parsed = refLine.safeParse(line.split('\0'));
+    if (!parsed.success) return null;
+    const [refname, push, upstream] = parsed.data;
+    remotes.set(refname.slice(HEADS.length), { push, upstream });
   }
-  return branches;
+  return remotes;
 };
 
-/** The branch of `origin` local `branch` stands for, or null when it tracks another remote or several branches. */
-const originBranch = (branch: string, config: { remote?: string; merges: string[] } | undefined): string | null => {
-  if (config?.remote === undefined) return branch;
-  if (config.remote !== 'origin') return null;
-  if (config.merges.length > 1) return null;
-  const [merge] = config.merges;
-  return merge?.startsWith('refs/heads/') === true ? merge.slice('refs/heads/'.length) : branch;
+/** `push.default` and each branch's merge values, or null when malformed. */
+const parseConfig = (output: string): GitConfig | null => {
+  const config: GitConfig = { merges: new Map() };
+  for (const entry of output.split('\0')) {
+    if (entry === '') continue;
+    const newline = entry.indexOf('\n');
+    const parsed = configEntry.safeParse(newline < 0 ? [entry] : [entry.slice(0, newline), entry.slice(newline + 1)]);
+    if (!parsed.success) return null;
+    const [key, value] = parsed.data;
+    if (key === 'push.default') {
+      config.pushDefault = value;
+      continue;
+    }
+    const branch = key.slice('branch.'.length, -'.merge'.length);
+    config.merges.set(branch, [...(config.merges.get(branch) ?? []), value]);
+  }
+  return config;
 };
 
-/** The origin branch of each worktree's local branch, for those that have one. */
-const originBranches = (worktrees: readonly Worktree[], output: string): Map<string, string> => {
-  const config = parseBranchConfig(output);
+/** The branch of `origin` local `branch` is pushed to, or null when it is pushed to another remote. */
+const originBranch = (branch: string, remotes: Remotes | undefined, config: GitConfig): string | null => {
+  const push = remotes?.push ?? '';
+  if (push !== '' && push !== 'origin') return null;
+  const merges = config.merges.get(branch) ?? [];
+  const [merge] = merges;
+  const toUpstream = config.pushDefault !== undefined && TO_UPSTREAM.has(config.pushDefault) && remotes?.upstream === 'origin';
+  return toUpstream && merges.length === 1 && merge?.startsWith(HEADS) === true ? merge.slice(HEADS.length) : branch;
+};
+
+/** The origin branch of each worktree's local branch, for those that have one, or null when git's output is malformed. */
+const originBranches = (worktrees: readonly Worktree[], refs: string, configOutput: string): Map<string, string> | null => {
+  const remotes = parseRefs(refs);
+  const config = parseConfig(configOutput);
+  if (remotes === null || config === null) return null;
   const asked = new Map<string, string>();
   for (const { branch, bare } of worktrees) {
     if (branch === null || bare || asked.has(branch)) continue;
-    const remote = originBranch(branch, config.get(branch));
+    const remote = originBranch(branch, remotes.get(branch), config);
     if (remote !== null) asked.set(branch, remote);
   }
   return asked;
@@ -256,10 +296,17 @@ export const githubFetcher = (run: Runner): Fetch => {
   /** Real host names of SSH origins, by origin URL. */
   const sshHosts = new Map<string, string>();
 
-  const query = async (repo: string, args: readonly string[], signal: AbortSignal): Promise<Step<string | null>> => {
+  /** Git's output in `repo`, null on an exit code `absent` accepts, else the failure. */
+  const query = async (
+    repo: string,
+    args: readonly string[],
+    signal: AbortSignal,
+    absent: (code: number) => boolean,
+  ): Promise<Step<string | null>> => {
     const outcome = await run('git', args, { cwd: repo, timeoutMs: OTHER_MS, signal });
-    if (outcome.kind !== 'exit') return { ok: false, outcome: { ok: false, failure: failureOf(outcome) } };
-    return { ok: true, value: outcome.code === 0 ? outcome.stdout : null };
+    if (outcome.kind === 'exit' && outcome.code === 0) return { ok: true, value: outcome.stdout };
+    if (outcome.kind === 'exit' && absent(outcome.code)) return { ok: true, value: null };
+    return { ok: false, outcome: { ok: false, failure: failureOf(outcome) } };
   };
 
   const hostOf = async (url: string, origin: Origin, repo: string, signal: AbortSignal): Promise<Step<string>> => {
@@ -292,13 +339,16 @@ export const githubFetcher = (run: Runner): Fetch => {
   };
 
   return async (repo, worktrees, signal) => {
-    const url = await query(repo, ['remote', 'get-url', 'origin'], signal);
+    const url = await query(repo, ['remote', 'get-url', 'origin'], signal, () => true);
     if (!url.ok) return url.outcome;
     const origin = url.value === null ? null : parseOrigin(url.value.trim());
     if (url.value === null || origin === null) return EMPTY;
-    const config = await query(repo, ['config', '-z', '--get-regexp', String.raw`^branch\..*\.(remote|merge)$`], signal);
+    const refs = await query(repo, FOR_EACH_REF, signal, () => false);
+    if (!refs.ok) return refs.outcome;
+    const config = await query(repo, CONFIG, signal, (code) => code === 1);
     if (!config.ok) return config.outcome;
-    const asked = originBranches(worktrees, config.value ?? '');
+    const asked = originBranches(worktrees, refs.value ?? '', config.value ?? '');
+    if (asked === null) return { ok: false, failure: 'invalid-response' };
     const branches = [...new Set(asked.values())];
     if (branches.length === 0) return EMPTY;
     const host = await hostOf(url.value.trim(), origin, repo, signal);

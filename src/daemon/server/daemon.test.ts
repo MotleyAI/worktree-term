@@ -9,7 +9,7 @@ import { writeFileAtomic } from '../../platform/files/index.js';
 import type { Layout, PrStatus, Worktree } from '../../protocol/index.js';
 import { StateStore } from '../state/index.js';
 import { SpawnError, TerminalProcess, type TerminalEvents, type TerminalLauncher, type TerminalSpec } from '../terminals/index.js';
-import type { WorktreeHandlers, WorktreeRisks, WorktreeWatch } from '../worktrees/index.js';
+import { NotARepoError, type WorktreeHandlers, type WorktreeRisks, type WorktreeWatch } from '../worktrees/index.js';
 import { Daemon, type DaemonServices } from './daemon.js';
 
 const REPO = '/r';
@@ -61,6 +61,9 @@ let prCache: Map<string, PrStatus[]>;
 /** What closing pull requests waits for. */
 let prsClosed: Promise<void>;
 let prsCloses: number;
+/** What starting a repo watch and reading a repo's origin fail with, if anything. */
+let watchError: Error | null;
+let originError: Error | null;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'wtd-daemon-'));
@@ -78,6 +81,8 @@ beforeEach(async () => {
   prCache = new Map();
   prsClosed = Promise.resolve();
   prsCloses = 0;
+  watchError = null;
+  originError = null;
   const prs: DaemonServices['prs'] = {
     watch: (repo, list, changed) => {
       const watch: FakePrWatch = { repo, worktrees: list, changed, updates: [], closed: false };
@@ -100,6 +105,7 @@ beforeEach(async () => {
   const services: DaemonServices = {
     prs,
     watchWorktrees: async (_repo, handlers) => {
+      if (watchError !== null) throw watchError;
       watchHandlers.push(handlers);
       if (heldWatches !== null) {
         const held = heldWatches;
@@ -110,7 +116,7 @@ beforeEach(async () => {
     },
     listWorktrees: () => Promise.resolve(worktrees),
     discoverRepos: () => Promise.resolve([]),
-    readOrigin: () => Promise.resolve(null),
+    readOrigin: () => (originError === null ? Promise.resolve(null) : Promise.reject(originError)),
     worktreeRisks: () => {
       riskChecks++;
       return risks;
@@ -745,6 +751,20 @@ describe('pull request status', () => {
     const client = await connected();
     await client.watch(REPO);
     await client.ok({ t: 'unwatchRepo', repo: REPO });
+    expect(prWatches[0]?.closed).toBe(true);
+  });
+
+  it('answers not-a-repo for a path that is no repository even when reading its config fails too', async () => {
+    const client = await connected();
+    watchError = new NotARepoError(`${REPO} is not a git repository`);
+    originError = Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+    expect(await client.fails({ t: 'watchRepo', repo: REPO })).toBe('not-a-repo');
+  });
+
+  it('stops the repo watch it started when reading the origin fails', async () => {
+    const client = await connected();
+    originError = Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+    expect(await client.fails({ t: 'watchRepo', repo: REPO })).toBe('internal');
     expect(prWatches[0]?.closed).toBe(true);
   });
 

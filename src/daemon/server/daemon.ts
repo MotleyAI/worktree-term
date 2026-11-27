@@ -312,7 +312,11 @@ export class Daemon {
   // Repos and worktrees.
 
   private async watchRepo(peer: Peer, repo: string): Promise<void> {
-    const origin = await this.options.services.readOrigin(repo);
+    // A failed origin read counts only once the watch shows the path is a repository.
+    const read = await this.options.services.readOrigin(repo).then(
+      (origin) => ({ origin }),
+      (error: unknown) => ({ error }),
+    );
     let entry = this.repos.get(repo);
     if (entry === undefined) {
       increment(this.waiting, repo);
@@ -322,6 +326,11 @@ export class Daemon {
         decrement(this.waiting, repo);
       }
     }
+    if ('error' in read) {
+      if (entry.watchers.size === 0 && !this.waiting.has(repo)) this.stopWatch(repo);
+      throw read.error;
+    }
+    const { origin } = read;
     if (peer.closed) {
       if (entry.watchers.size === 0 && !this.waiting.has(repo)) this.stopWatch(repo);
       return;

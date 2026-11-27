@@ -355,6 +355,15 @@ describe('githubFetcher: the branch on origin', () => {
     },
   );
 
+  it("looks a branch up by its upstream's name with push.default upstream when origin's fetch refspec omits that branch", async () => {
+    git(repo, 'config', 'remote.origin.fetch', '+refs/heads/main:refs/remotes/origin/main');
+    git(repo, 'config', 'push.default', 'upstream');
+    branchWith('wip', { remote: 'origin', merge: 'refs/heads/feature/x' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] }, wip: { ref: [pr(3)] } });
+    expect(await fetchOnce([worktree('wip')])).toEqual({ ok: true, prs: [status('wip', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
+  });
+
   it('looks a branch with two upstream branches up by its own name with push.default upstream', async () => {
     git(repo, 'config', 'push.default', 'upstream');
     branchWith('multi', { remote: 'origin', merge: 'refs/heads/one' });

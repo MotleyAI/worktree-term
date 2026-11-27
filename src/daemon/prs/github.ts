@@ -204,40 +204,37 @@ type Step<T> = { ok: true; value: T } | { ok: false; outcome: FetchOutcome };
 const EMPTY: FetchOutcome = { ok: true, prs: [] };
 
 const HEADS = 'refs/heads/';
-const FOR_EACH_REF = ['for-each-ref', '--format=%(refname)%00%(push:remotename)%00%(upstream:remotename)', 'refs/heads'];
-const CONFIG = ['config', '-z', '--get-regexp', String.raw`^(push\.default|branch\..*\.merge)$`];
+const FOR_EACH_REF = ['for-each-ref', '--format=%(refname)%00%(push:remotename)', 'refs/heads'];
+const CONFIG = ['config', '-z', '--get-regexp', String.raw`^(push\.default|branch\..*\.(merge|remote))$`];
 /** `push.default` modes under which `git push` sends a branch to its upstream's name. */
 const TO_UPSTREAM = new Set(['upstream', 'tracking']);
 
-const refLine = z.tuple([z.string().startsWith(HEADS), z.string(), z.string()]);
-const configEntry = z.tuple([z.string().regex(/^(?:push\.default|branch\..+\.merge)$/), z.string()]);
-
-interface Remotes {
-  push: string;
-  upstream: string;
-}
+const refLine = z.tuple([z.string().startsWith(HEADS), z.string()]);
+const configEntry = z.tuple([z.string().regex(/^(?:push\.default|branch\..+\.(?:merge|remote))$/), z.string()]);
 
 interface GitConfig {
   pushDefault?: string;
   merges: Map<string, string[]>;
+  /** `branch.<b>.remote`, read from config since `%(upstream:remotename)` is empty when no fetch refspec maps the merge ref. */
+  remotes: Map<string, string>;
 }
 
-/** Each local branch's push and upstream remote (empty when unset), or null when malformed. */
-const parseRefs = (output: string): Map<string, Remotes> | null => {
-  const remotes = new Map<string, Remotes>();
+/** Each local branch's push remote (empty when unset), or null when malformed. */
+const parseRefs = (output: string): Map<string, string> | null => {
+  const pushRemotes = new Map<string, string>();
   for (const line of output.split('\n')) {
     if (line === '') continue;
     const parsed = refLine.safeParse(line.split('\0'));
     if (!parsed.success) return null;
-    const [refname, push, upstream] = parsed.data;
-    remotes.set(refname.slice(HEADS.length), { push, upstream });
+    const [refname, push] = parsed.data;
+    pushRemotes.set(refname.slice(HEADS.length), push);
   }
-  return remotes;
+  return pushRemotes;
 };
 
-/** `push.default` and each branch's merge values, or null when malformed. */
+/** `push.default` and each branch's merge values and remote, or null when malformed. */
 const parseConfig = (output: string): GitConfig | null => {
-  const config: GitConfig = { merges: new Map() };
+  const config: GitConfig = { merges: new Map(), remotes: new Map() };
   for (const entry of output.split('\0')) {
     if (entry === '') continue;
     const newline = entry.indexOf('\n');
@@ -246,33 +243,35 @@ const parseConfig = (output: string): GitConfig | null => {
     const [key, value] = parsed.data;
     if (key === 'push.default') {
       config.pushDefault = value;
-      continue;
+    } else if (key.endsWith('.remote')) {
+      config.remotes.set(key.slice('branch.'.length, -'.remote'.length), value);
+    } else {
+      const branch = key.slice('branch.'.length, -'.merge'.length);
+      config.merges.set(branch, [...(config.merges.get(branch) ?? []), value]);
     }
-    const branch = key.slice('branch.'.length, -'.merge'.length);
-    config.merges.set(branch, [...(config.merges.get(branch) ?? []), value]);
   }
   return config;
 };
 
 /** The branch of `origin` local `branch` is pushed to, or null when it is pushed to another remote. */
-const originBranch = (branch: string, remotes: Remotes | undefined, config: GitConfig): string | null => {
-  const push = remotes?.push ?? '';
-  if (push !== '' && push !== 'origin') return null;
+const originBranch = (branch: string, push: string | undefined, config: GitConfig): string | null => {
+  if (push !== undefined && push !== '' && push !== 'origin') return null;
   const merges = config.merges.get(branch) ?? [];
   const [merge] = merges;
-  const toUpstream = config.pushDefault !== undefined && TO_UPSTREAM.has(config.pushDefault) && remotes?.upstream === 'origin';
+  const toUpstream =
+    config.pushDefault !== undefined && TO_UPSTREAM.has(config.pushDefault) && config.remotes.get(branch) === 'origin';
   return toUpstream && merges.length === 1 && merge?.startsWith(HEADS) === true ? merge.slice(HEADS.length) : branch;
 };
 
 /** The origin branch of each worktree's local branch, for those that have one, or null when git's output is malformed. */
 const originBranches = (worktrees: readonly Worktree[], refs: string, configOutput: string): Map<string, string> | null => {
-  const remotes = parseRefs(refs);
+  const pushRemotes = parseRefs(refs);
   const config = parseConfig(configOutput);
-  if (remotes === null || config === null) return null;
+  if (pushRemotes === null || config === null) return null;
   const asked = new Map<string, string>();
   for (const { branch, bare } of worktrees) {
     if (branch === null || bare || asked.has(branch)) continue;
-    const remote = originBranch(branch, remotes.get(branch), config);
+    const remote = originBranch(branch, pushRemotes.get(branch), config);
     if (remote !== null) asked.set(branch, remote);
   }
   return asked;

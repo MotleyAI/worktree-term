@@ -7,7 +7,7 @@ import { installRemote, type FakeSsh } from '../support/fake-ssh.js';
 import { FakeSshfs } from '../support/fake-sshfs.js';
 import { freePort, type HubHost } from '../support/hub-host.js';
 import { remoteHub } from '../support/remote-hub.js';
-import { byTestId, hubsEntry, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
+import { byTestId, groupTab, hubsEntry, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
 import {
   expect,
   LOCAL,
@@ -208,6 +208,10 @@ test.describe('open in editor', () => {
     writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box', repos: [remoteRepo] }] });
     await openUi(hub, page);
     await expect(control(page)).toBeEnabled();
+    // The tab shrinks when its host status goes; a click before that can miss it.
+    const remoteTab = page.locator(groupTab(`box:${remoteRepo}`));
+    await expect(remoteTab).toBeVisible();
+    await expect(remoteTab.locator(byTestId(TID.hostStatus))).toHaveCount(0, { timeout: 20_000 });
     await selectGroup(page, `box:${remoteRepo}`);
     await expect(page.locator(worktreeEntry(remoteRepo))).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
     await expect(control(page)).toBeEnabled();

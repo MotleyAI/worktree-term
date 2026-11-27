@@ -72,6 +72,7 @@ process.stdin.on('end', () => {
       mergeable: pr.mergeable ?? 'MERGEABLE',
       reviewDecision: pr.reviewDecision ?? null,
       headRepository: { nameWithOwner: 'acme/app' },
+      repository: { nameWithOwner: 'acme/app' },
       commits: { nodes: [{ commit: { statusCheckRollup: pr.checks === null ? null : { state: pr.checks ?? 'SUCCESS' } } }] },
     }];
     repository['r' + i] = { all: { nodes }, open: { nodes: nodes.filter((node) => node.state === 'OPEN') } };

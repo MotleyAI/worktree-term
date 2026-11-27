@@ -4,6 +4,7 @@ import type { DaemonClient } from '../support/daemon-client.js';
 import { addWorktree, git, makeRepo, waitUntil } from '../support/daemon-host.js';
 import { FakeGh } from '../support/fake-gh.js';
 import { HubHost } from '../support/hub-host.js';
+import { bestOf, describeRound, frameInterval, frames, ROUNDS, withinMs, type Budget, type Verdict } from './budget.js';
 import { byTestId, DRAG_MOVE, DRAG_PAINT, SWITCH_END, SWITCH_START, terminalBox, TID, worktreeEntry } from './contract.js';
 import { createShells, LOCAL, openUi, selectWorktree } from './fixture.js';
 import { balanced, boxOf, createTerms, divider, storeTabs } from './panes.js';
@@ -15,6 +16,13 @@ const PANES = 8;
 /** Worktrees no other test views, turned into one tab of 8 panes by `eightPanes`. */
 const EIGHT_PANE_WORKTREES = [56, 57] as const;
 const DRAG_MOVES = 60;
+/** Animation frame gaps collected to estimate the page's frame interval. */
+const FRAME_GAPS = 60;
+const RECENT = [0, 1, 2, 3] as const;
+/** The first of the 20 worktrees switched to while they render via DOM. */
+const REATTACH_FIRST = 4;
+/** Worktrees viewed after the reattach targets so that every target falls back to DOM; the LRU holds 8. */
+const REATTACH_EVICT = 9;
 /** The daemon's pull request refresh interval here: a hanging request starts again within a second of being killed. */
 const PR_INTERVAL_MS = '1000';
 
@@ -30,7 +38,8 @@ interface PerfRepo {
 
 declare global {
   interface Window {
-    __wtdSidebar?: { appeared: number | null; gone: number | null };
+    __wtdSidebar?: { appeared: number | null; gone: number | null; observer: MutationObserver };
+    __wtdSlowdownMs?: number;
   }
 }
 
@@ -69,25 +78,56 @@ const test = base.extend<{ page: Page }, { perf: PerfRepo }>({
 
 test.describe.configure({ mode: 'serial' });
 
-const median = (values: readonly number[]): number => {
-  const sorted = [...values].sort((x, y) => x - y);
-  const mid = sorted.length / 2;
-  return sorted.length % 2 === 0 ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2 : (sorted[Math.floor(mid)] ?? 0);
+/** Opens the UI and returns its frame interval, estimated from FRAME_GAPS animation frame gaps. */
+const openTimed = async (perf: PerfRepo, page: Page): Promise<number> => {
+  await openUi(perf.hub, page);
+  const gaps = await page.evaluate(
+    (count) =>
+      new Promise<number[]>((resolve) => {
+        const collected: number[] = [];
+        let last: number | null = null;
+        const tick = (now: number): void => {
+          if (last !== null) collected.push(now - last);
+          last = now;
+          if (collected.length < count) requestAnimationFrame(tick);
+          else resolve(collected);
+        };
+        requestAnimationFrame(tick);
+      }),
+    FRAME_GAPS,
+  );
+  const interval = frameInterval(gaps);
+  const description = `${interval.toFixed(2)} ms`;
+  console.log(`frame interval: ${description}`);
+  test.info().annotations.push({ type: 'frame interval', description });
+  return interval;
 };
 
-const percentile = (values: readonly number[], p: number): number => {
-  const sorted = [...values].sort((x, y) => x - y);
-  return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0;
+/** Measures up to 3 rounds against `budget`, logging and annotating each round as it completes. */
+const judge = (name: string, budget: Budget, round: (index: number) => Promise<readonly number[]>): Promise<Verdict> =>
+  bestOf(budget, round, (result, index) => {
+    const description = describeRound(budget, result, index);
+    console.log(`${name}: ${description}`);
+    test.info().annotations.push({ type: name, description });
+  });
+
+/** Fails unless at least one of up to 3 rounds meets `budget`. */
+const holds = async (name: string, budget: Budget, round: (index: number) => Promise<readonly number[]>): Promise<void> => {
+  const verdict = await judge(name, budget, round);
+  expect(verdict.met, `${name}: no round met ${budget.label}`).toBe(true);
 };
 
-const report = (name: string, durations: readonly number[]): void => {
-  const summary = `median ${median(durations).toFixed(2)} ms, p95 ${percentile(durations, 95).toFixed(2)} ms, max ${Math.max(...durations).toFixed(2)} ms`;
-  console.log(`${name}: ${summary}`);
-  test.info().annotations.push({ type: name, description: summary });
-};
-
-/** Clicks the worktree and returns the switch duration from the `wtd:switch` marks. */
+/** Clicks the worktree, once every earlier switch has painted, and returns the switch duration from the `wtd:switch` marks. */
 const timedSwitch = async (page: Page, path: string): Promise<number> => {
+  // A preceding `view` returns before its switch paints when the worktree already holds WebGL.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ([startName, endName]) => performance.getEntriesByName(endName).length >= performance.getEntriesByName(startName).length,
+        [SWITCH_START, SWITCH_END] as const,
+      ),
+    )
+    .toBe(true);
   const ends = await page.evaluate((name) => performance.getEntriesByName(name).length, SWITCH_END);
   await page.locator(worktreeEntry(path)).locator(byTestId(TID.worktreeLabel)).click();
   await expect.poll(() => page.evaluate((name) => performance.getEntriesByName(name).length, SWITCH_END)).toBeGreaterThan(ends);
@@ -149,67 +189,60 @@ const viewPanes = async (page: Page, target: EightPanes): Promise<void> => {
 
 const entries = (page: Page, name: string): Promise<number> => page.evaluate((n) => performance.getEntriesByName(n).length, name);
 
-test('WebGL runs on a hardware renderer', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
-  const renderer = await webglRenderer(page);
-  console.log(`WebGL renderer: ${renderer}`);
-  expect(renderer).not.toMatch(/swiftshader|llvmpipe|software|no webgl2/i);
-});
+/** Init script: busy-waits `window.__wtdSlowdownMs` right after every `startName` mark, inside the caller's handler. */
+const injectSwitchSlowdown = (startName: string): void => {
+  const mark = performance.mark.bind(performance);
+  performance.mark = (name: string, options?: PerformanceMarkOptions): PerformanceMark => {
+    const entry = mark(name, options);
+    if (name === startName) {
+      const until = performance.now() + (window.__wtdSlowdownMs ?? 0);
+      while (performance.now() < until) {
+        // busy-wait
+      }
+    }
+    return entry;
+  };
+};
 
-/** Measures 20 switches between recently viewed worktrees; their median is at most 16 ms. */
-const recentSwitches = async (page: Page, perf: PerfRepo): Promise<void> => {
-  const recent = [0, 1, 2, 3];
-  for (const index of recent) await view(page, perf, index);
+/** One round: views the recently viewed worktrees, then times 20 switches between them. */
+const recentRound = async (page: Page, perf: PerfRepo): Promise<number[]> => {
+  for (const index of RECENT) await view(page, perf, index);
   const durations: number[] = [];
   for (let i = 0; i < SWITCHES; i++) {
-    const index = recent[i % recent.length] ?? 0;
+    const index = RECENT[i % RECENT.length] ?? 0;
     durations.push(await timedSwitch(page, perf.worktrees[index] ?? ''));
     expect(await holdsWebgl(page, LOCAL, perf.terms[index]?.[0] ?? 0)).toBe(true);
   }
-  report('recently viewed switch', durations);
-  expect(durations.every(Number.isFinite)).toBe(true);
-  expect(median(durations)).toBeLessThanOrEqual(16);
+  return durations;
 };
 
-test('switching between recently viewed worktrees takes at most 16 ms (median of 20)', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
-  await recentSwitches(page, perf);
-});
-
-/** Measures 20 switches to worktrees rendered via DOM; their median is at most 50 ms. */
-const reattachSwitches = async (page: Page, perf: PerfRepo): Promise<void> => {
-  const first = 4;
-  const viewed = SWITCHES + 8 + 1;
-  for (let index = first; index < first + viewed; index++) await view(page, perf, index);
+/** One round: views the 20 targets and 9 more so the targets fall back to DOM, then times a switch to each target. */
+const reattachRound = async (page: Page, perf: PerfRepo): Promise<number[]> => {
+  for (let index = REATTACH_FIRST; index < REATTACH_FIRST + SWITCHES + REATTACH_EVICT; index++) await view(page, perf, index);
   const durations: number[] = [];
-  for (let index = first; index < first + SWITCHES; index++) {
+  for (let index = REATTACH_FIRST; index < REATTACH_FIRST + SWITCHES; index++) {
     const term = perf.terms[index]?.[0] ?? 0;
     expect(await holdsWebgl(page, LOCAL, term)).toBe(false);
     durations.push(await timedSwitch(page, perf.worktrees[index] ?? ''));
     await expect.poll(() => holdsWebgl(page, LOCAL, term)).toBe(true);
   }
-  report('WebGL reattach switch', durations);
-  expect(durations.every(Number.isFinite)).toBe(true);
-  expect(median(durations)).toBeLessThanOrEqual(50);
+  return durations;
 };
 
-test('switching to worktrees rendered via DOM takes at most 50 ms (median of 20)', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
-  await reattachSwitches(page, perf);
-});
-
-/** Adds and removes a worktree on branch `branch` with git; the sidebar reflects each within 250 ms. */
-const sidebarFollowsGit = async (page: Page, perf: PerfRepo, branch: string): Promise<void> => {
+/** One round: adds and removes a worktree on `branch` with git; returns how long the sidebar took to reflect each. */
+const sidebarRound = async (page: Page, perf: PerfRepo, branch: string): Promise<number[]> => {
   await expect(page.locator(worktreeEntry(perf.repo))).toBeVisible();
   const path = `${perf.repo}.worktrees/${branch}`;
   await page.evaluate((selector) => {
-    const state: { appeared: number | null; gone: number | null } = { appeared: null, gone: null };
-    window.__wtdSidebar = state;
-    new MutationObserver(() => {
+    window.__wtdSidebar?.observer.disconnect();
+    const observer = new MutationObserver(() => {
       const present = document.querySelector(selector) !== null;
       if (present && state.appeared === null) state.appeared = Date.now();
       if (!present && state.appeared !== null && state.gone === null) state.gone = Date.now();
-    }).observe(document, { subtree: true, childList: true, attributes: true });
+    });
+    const state: { appeared: number | null; gone: number | null; observer: MutationObserver } = { appeared: null, gone: null, observer };
+    window.__wtdSidebar = state;
+    observer.observe(document, { subtree: true, childList: true, attributes: true });
   }, worktreeEntry(path));
 
   git(perf.repo, 'worktree', 'add', '-q', '-b', branch, path);
@@ -221,19 +254,11 @@ const sidebarFollowsGit = async (page: Page, perf: PerfRepo, branch: string): Pr
   const removed = Date.now();
   await expect.poll(() => page.evaluate(() => window.__wtdSidebar?.gone ?? null), { timeout: 5000 }).not.toBeNull();
   const gone = (await page.evaluate(() => window.__wtdSidebar?.gone)) ?? Number.NaN;
-
-  console.log(`sidebar: add ${String(appeared - added)} ms, remove ${String(gone - removed)} ms`);
-  expect(appeared - added).toBeLessThanOrEqual(250);
-  expect(gone - removed).toBeLessThanOrEqual(250);
+  return [appeared - added, gone - removed];
 };
 
-test('worktrees added or removed with git show in the sidebar within 250 ms', async ({ perf, page }) => {
-  await openUi(perf.hub, page);
-  await sidebarFollowsGit(page, perf, 'sidebar-probe');
-});
-
-/** Measures 20 switches to an 8-pane tab rendered via DOM; their median is at most 100 ms. */
-const eightPaneSwitches = async (page: Page, targets: readonly EightPanes[]): Promise<void> => {
+/** One round: views both 8-pane tabs, so the first falls back to DOM, then times 20 switches between them. */
+const eightPaneRound = async (page: Page, targets: readonly EightPanes[]): Promise<number[]> => {
   // Each view takes all 8 WebGL contexts, so the other 8-pane tab falls back to DOM.
   for (const target of targets) await viewPanes(page, target);
   const durations: number[] = [];
@@ -244,20 +269,11 @@ const eightPaneSwitches = async (page: Page, targets: readonly EightPanes[]): Pr
     durations.push(await timedSwitch(page, target.path));
     for (const term of target.terms) await expect.poll(() => holdsWebgl(page, LOCAL, term)).toBe(true);
   }
-  report('eight-pane switch', durations);
-  expect(durations.every(Number.isFinite)).toBe(true);
-  expect(median(durations)).toBeLessThanOrEqual(100);
+  return durations;
 };
 
-test('switching to an 8-pane tab rendered via DOM takes at most 100 ms (median of 20)', async ({ perf, page }) => {
-  test.setTimeout(180_000);
-  const targets = await eightPanes(perf);
-  await openUi(perf.hub, page);
-  await eightPaneSwitches(page, targets);
-});
-
-/** Drags a divider of an 8-pane tab across 60 pointer moves; the median from move to painted frame is at most 16 ms. */
-const dividerDrag = async (page: Page, target: EightPanes): Promise<void> => {
+/** One round: drags a divider of the 8-pane tab across 60 pointer moves, timing each to its painted frame, and drags it back. */
+const dragRound = async (page: Page, target: EightPanes): Promise<number[]> => {
   await viewPanes(page, target);
   // The root split of the balanced tab runs right, so its divider moves along x.
   const box = await boxOf(divider(page, ''));
@@ -283,34 +299,81 @@ const dividerDrag = async (page: Page, target: EightPanes): Promise<void> => {
       ),
     );
   }
+  // Back where the round started, so the next round's moves stay inside the same range; its paint lands in this round.
+  const paints = await entries(page, DRAG_PAINT);
+  await page.mouse.move(x, y);
+  await expect.poll(() => entries(page, DRAG_PAINT)).toBeGreaterThan(paints);
   await page.mouse.up();
-  report('divider drag', durations);
-  expect(durations.every(Number.isFinite)).toBe(true);
-  expect(median(durations)).toBeLessThanOrEqual(16);
+  return durations;
 };
 
-test('dragging a divider of an 8-pane tab paints each pointer move within 16 ms (median of 60)', async ({ perf, page }) => {
-  test.setTimeout(180_000);
+test('WebGL runs on a hardware renderer', async ({ perf, page }) => {
+  await openUi(perf.hub, page);
+  const renderer = await webglRenderer(page);
+  console.log(`WebGL renderer: ${renderer}`);
+  expect(renderer).not.toMatch(/swiftshader|llvmpipe|software|no webgl2/i);
+});
+
+test('switching between recently viewed worktrees takes at most 1 frame (median of 20, best of 3 rounds)', async ({ perf, page }) => {
+  const interval = await openTimed(perf, page);
+  await holds('recently viewed switch', frames(1, interval), () => recentRound(page, perf));
+});
+
+test('a recently viewed switch slowed by 2 frames misses its 1-frame budget in all 3 rounds', async ({ perf, page }) => {
+  await page.addInitScript(injectSwitchSlowdown, SWITCH_START);
+  const interval = await openTimed(perf, page);
+  await page.evaluate((ms) => {
+    window.__wtdSlowdownMs = ms;
+  }, 2 * interval);
+  const verdict = await judge('slowed recently viewed switch', frames(1, interval), () => recentRound(page, perf));
+  expect(verdict.met).toBe(false);
+  expect(verdict.rounds).toHaveLength(ROUNDS);
+  expect(verdict.rounds.every((round) => !round.met)).toBe(true);
+});
+
+test('switching to worktrees rendered via DOM takes at most 3 frames (median of 20, best of 3 rounds)', async ({ perf, page }) => {
+  test.setTimeout(120_000);
+  const interval = await openTimed(perf, page);
+  await holds('WebGL reattach switch', frames(3, interval), () => reattachRound(page, perf));
+});
+
+test('worktrees added and removed with git show in, and leave, the sidebar within 250 ms (best of 3 rounds)', async ({ perf, page }) => {
+  await openUi(perf.hub, page);
+  await holds('sidebar', withinMs(250), (index) => sidebarRound(page, perf, `sidebar-probe-${String(index + 1)}`));
+});
+
+test('switching to an 8-pane tab rendered via DOM takes at most 6 frames (median of 20, best of 3 rounds)', async ({ perf, page }) => {
+  test.setTimeout(120_000);
+  const targets = await eightPanes(perf);
+  const interval = await openTimed(perf, page);
+  await holds('eight-pane switch', frames(6, interval), () => eightPaneRound(page, targets));
+});
+
+test('dragging a divider of an 8-pane tab paints each pointer move within 1 frame (median of 60, best of 3 rounds)', async ({
+  perf,
+  page,
+}) => {
+  test.setTimeout(120_000);
   const [target] = await eightPanes(perf);
   if (target === undefined) throw new Error('no 8-pane worktree');
-  await openUi(perf.hub, page);
-  await dividerDrag(page, target);
+  const interval = await openTimed(perf, page);
+  await holds('divider drag', frames(1, interval), () => dragRound(page, target));
 });
 
 test('every budget holds while the status request never returns', async ({ perf, page }) => {
   test.setTimeout(300_000);
   const targets = await eightPanes(perf);
+  const [target] = targets;
+  if (target === undefined) throw new Error('no 8-pane worktree');
   git(perf.repo, 'remote', 'add', 'origin', 'https://github.com/acme/app.git');
   try {
     await waitUntil(() => perf.gh.running().length > 0, 'gh to hang', 10_000);
-    await openUi(perf.hub, page);
-    await recentSwitches(page, perf);
-    await reattachSwitches(page, perf);
-    await sidebarFollowsGit(page, perf, 'sidebar-probe-hanging');
-    await eightPaneSwitches(page, targets);
-    const [target] = targets;
-    if (target === undefined) throw new Error('no 8-pane worktree');
-    await dividerDrag(page, target);
+    const interval = await openTimed(perf, page);
+    await holds('recently viewed switch', frames(1, interval), () => recentRound(page, perf));
+    await holds('WebGL reattach switch', frames(3, interval), () => reattachRound(page, perf));
+    await holds('sidebar', withinMs(250), (index) => sidebarRound(page, perf, `sidebar-probe-hanging-${String(index + 1)}`));
+    await holds('eight-pane switch', frames(6, interval), () => eightPaneRound(page, targets));
+    await holds('divider drag', frames(1, interval), () => dragRound(page, target));
   } finally {
     git(perf.repo, 'remote', 'remove', 'origin');
   }

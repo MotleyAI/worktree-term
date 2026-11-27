@@ -712,6 +712,45 @@ describe('View', () => {
       expect(view.worktree.value).toEqual({ host: 1, path: '/srv/app.w/fix' });
     });
 
+    it('follows the selected worktree to its new tab when its repo leaves the selected group, storing that tab', () => {
+      sameOrigin();
+      view.selectRepo(tabLabelled('app'));
+      view.selectWorktree({ host: 1, path: '/srv/app.w/fix' });
+      stated(1, '/srv/app', 'github.com/acme/fork', ['/srv/app.w/fix']);
+      expect(labels()).toEqual(['app', 'box:app']);
+      expect(view.tab.value?.label).toBe('box:app');
+      expect(view.worktree.value).toEqual({ host: 1, path: '/srv/app.w/fix' });
+      expect(localStorage.getItem(REPO_KEY)).toBe('origin:github.com/acme/fork');
+      view.selectRepo(tabLabelled('app'));
+      expect(view.tab.value?.label).toBe('app');
+    });
+
+    it('keeps the selected worktree when its repo joins a tab holding a default selection', () => {
+      client.store.hosts.value = [named(0, 'laptop', ['/r/app']), named(1, 'box', ['/srv/app'])];
+      stated(0, '/r/app', APP, ['/r/app.w/feat']);
+      stated(1, '/srv/app', null, ['/srv/app.w/fix']);
+      view.selectRepo(tabLabelled('app'));
+      expect(view.worktree.value).toEqual({ host: 0, path: '/r/app' });
+      view.selectRepo(tabLabelled('box:app'));
+      view.selectWorktree({ host: 1, path: '/srv/app.w/fix' });
+      stated(1, '/srv/app', APP, ['/srv/app.w/fix']);
+      expect(labels()).toEqual(['app']);
+      expect(view.worktree.value).toEqual({ host: 1, path: '/srv/app.w/fix' });
+      stated(0, '/r/app', APP, ['/r/app.w/feat', '/r/app.w/new']);
+      expect(view.worktree.value).toEqual({ host: 1, path: '/srv/app.w/fix' });
+    });
+
+    it('restores a stored repo of its own once its origin puts it in an origin tab, storing that tab', () => {
+      localStorage.setItem(REPO_KEY, 'box:/srv/new');
+      reopen();
+      client.store.hosts.value = [named(0, 'laptop', ['/r/app']), named(1, 'box', ['/srv/new'])];
+      stated(0, '/r/app', APP);
+      stated(1, '/srv/new', 'github.com/acme/new');
+      expect(labels()).toEqual(['app', 'box:new']);
+      expect(view.tab.value?.label).toBe('box:new');
+      expect(localStorage.getItem(REPO_KEY)).toBe('origin:github.com/acme/new');
+    });
+
     it('shows a down host’s repo in a tab of its own until it joins its origin’s tab, and keeps it there while reconnecting', () => {
       client.store.hosts.value = [named(0, 'laptop', ['/r/app']), named(1, 'box', ['/srv/app'], 'down')];
       stated(0, '/r/app', APP);
@@ -803,6 +842,22 @@ describe('View', () => {
       ]);
     });
 
+    it('leaves a repo the hub no longer lists out of the removal, sending nothing for a tab of only such repos', () => {
+      sameOrigin();
+      client.store.hosts.value = [named(0, 'laptop', ['/r/app']), named(1, 'box', ['/srv/old'])];
+      client.store.keep(1, '/srv/app', true);
+      stated(1, '/srv/old', null);
+      client.store.keep(1, '/srv/gone', true);
+      const removeRepos = vi.spyOn(client, 'removeRepos').mockResolvedValue(undefined);
+      view.requestRemoveRepo(tabLabelled('app'));
+      expect(view.confirmation.value).toMatchObject({ t: 'removeRepo', names: ['/r/app'] });
+      view.confirm();
+      expect(removeRepos).toHaveBeenCalledWith([{ host: 0, repo: '/r/app' }]);
+      view.requestRemoveRepo(tabLabelled('box:gone'));
+      view.confirm();
+      expect(removeRepos).toHaveBeenCalledTimes(1);
+    });
+
     describe('rows at the same path on two hosts', () => {
       const SAME = '/w/fix';
 
@@ -883,6 +938,27 @@ describe('View', () => {
         [0, '/r/app'],
         [0, '/r/app-2'],
         [0, '/r/app-2.w/x'],
+      ]);
+    });
+
+    it('keeps watching a discovered clone when the config stops listing its path', () => {
+      const request = vi.spyOn(client, 'request').mockResolvedValue({ t: 'done', req: 1 });
+      const laptop = (repos: readonly string[]): HostEntry => ({ ...named(0, 'laptop', repos), instance: 'i' });
+      const hosts = (entries: HostEntry[]): void => {
+        const receive: unknown = Reflect.get(client, 'message');
+        if (typeof receive !== 'function') throw new Error('no message handler');
+        Reflect.apply(receive, client, [{ t: 'hosts', hosts: entries }]);
+      };
+      hosts([laptop(['/r/app', '/r/app-2'])]);
+      client.store.addClone(0, '/r/app-2', APP);
+      stated(0, '/r/app', APP);
+      stated(0, '/r/app-2', APP);
+      hosts([laptop(['/r/app'])]);
+      expect(request.mock.calls.filter(([, body]) => body.t === 'unwatchRepo')).toEqual([]);
+      expect(client.store.repo(0, '/r/app-2')).not.toBeNull();
+      expect(rows()).toEqual([
+        [0, '/r/app'],
+        [0, '/r/app-2'],
       ]);
     });
   });

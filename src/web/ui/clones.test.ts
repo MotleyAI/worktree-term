@@ -17,12 +17,18 @@ const run = (...actions: CloneAction[]): { state: CloneState; effects: CloneEffe
   return { state, effects };
 };
 
-const host = (idx: number, status: HostEntry['status'], repos: readonly string[] = []) => ({ idx, status, repos });
+const host = (idx: number, status: HostEntry['status'], repos: readonly string[] = [], name = `h${String(idx)}`) => ({
+  idx,
+  name,
+  status,
+  repos,
+});
 const hosts = (...entries: ReturnType<typeof host>[]): CloneAction => ({ t: 'hosts', hosts: entries });
 const origin = (idx: number, repo: string, value: string | null): CloneAction => ({ t: 'origin', host: idx, repo, origin: value });
 const discovered = (idx: number, ...repos: { path: string; origin: string | null }[]): CloneAction => ({
   t: 'discovered',
   host: idx,
+  name: `h${String(idx)}`,
   repos,
 });
 
@@ -54,6 +60,55 @@ describe('cloneStep', () => {
       hosts(host(0, 'connected'), host(1, 'connected')),
     );
     expect(effects).toEqual([[{ t: 'discover', host: 0 }], [{ t: 'discover', host: 1 }], [], [], [], []]);
+  });
+
+  it('discovers a host whose discovery failed again when it next becomes connected, not before', () => {
+    const { effects } = run(
+      hosts(host(0, 'connected'), host(1, 'connected')),
+      { t: 'failed', host: 1, name: 'h1' },
+      hosts(host(0, 'connected'), host(1, 'connected')),
+      hosts(host(0, 'connected'), host(1, 'reconnecting')),
+      hosts(host(0, 'connected'), host(1, 'connected')),
+      hosts(host(0, 'connected'), host(1, 'reconnecting')),
+      hosts(host(0, 'connected'), host(1, 'connected')),
+    );
+    expect(effects).toEqual([
+      [
+        { t: 'discover', host: 0 },
+        { t: 'discover', host: 1 },
+      ],
+      [],
+      [],
+      [],
+      [{ t: 'discover', host: 1 }],
+      [],
+      [],
+    ]);
+  });
+
+  it('forgets what it knew of an index once it names another host, discovering that host afresh', () => {
+    const { state, effects } = run(
+      CONNECTED,
+      origin(0, '/r/app', APP),
+      discovered(1, { path: '/srv/app', origin: APP }),
+      hosts(host(0, 'connected', ['/r/app']), host(1, 'connected', [], 'vm')),
+    );
+    expect(effects[3]).toEqual([{ t: 'discover', host: 1 }]);
+    expect(state.watched).toEqual([]);
+    expect(state.found.has(1)).toBe(false);
+  });
+
+  it('ignores a discovery reply or failure of the host an index named before', () => {
+    const { state } = run(
+      CONNECTED,
+      origin(0, '/r/app', APP),
+      hosts(host(0, 'connected', ['/r/app']), host(1, 'connected', [], 'vm')),
+      discovered(1, { path: '/srv/app', origin: APP }),
+      { t: 'failed', host: 1, name: 'h1' },
+    );
+    expect(state.found.has(1)).toBe(false);
+    expect(state.watched).toEqual([]);
+    expect(state.discovering).toContain(1);
   });
 
   it('watches a remote clone with a listed repo’s origin, and no other discovered repo', () => {

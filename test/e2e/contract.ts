@@ -198,7 +198,12 @@ export const hostBanner = (host: number): string => `${byTestId(TID.hostBanner)}
 export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[data-path="${path}"]`;
 
 /** The repo tab whose `title` holds `entry` on a line of its own: one line per repo of its group, `<host>:<path>` for a remote host's. */
-export const groupTab = (entry: string): string => `${byTestId(TID.repoTab)}[title~="${entry}"]`;
+export const groupTab = (entry: string): string => {
+  const line = `\n${entry}\n`;
+  if (line.includes('"') && line.includes("'")) throw new Error(`cannot quote ${entry} in XPath`);
+  const literal = line.includes('"') ? `'${line}'` : `"${line}"`;
+  return `xpath=//*[@data-testid="${TID.repoTab}" and contains(concat("\n", @title, "\n"), ${literal})]`;
+};
 
 /** The sidebar row of `host`'s worktree at `path`: every row carries `data-host` = its host index. */
 export const worktreeAt = (host: number, path: string): string => `${worktreeEntry(path)}[data-host="${String(host)}"]`;

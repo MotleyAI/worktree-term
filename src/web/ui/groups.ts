@@ -13,6 +13,8 @@ export interface GroupHost {
   remote: boolean;
   repos: readonly OriginRepo[];
   clones: readonly OriginRepo[];
+  /** Repos it no longer lists that the page keeps while they have running terminals: grouped like listed ones, never listed. */
+  kept?: readonly OriginRepo[];
 }
 
 /** One repo of a group: listed by its host, or a discovered clone. */
@@ -53,14 +55,20 @@ export const repoGroups = (hosts: readonly GroupHost[]): RepoGroup[] => {
   const add = (group: Omit<RepoGroup, 'title'>, member: GroupMember): void => {
     if (!group.members.some((m) => m.host === member.host && m.repo === member.repo)) group.members.push(member);
   };
+  const own = (host: GroupHost): (OriginRepo & { listed: boolean })[] => [
+    ...host.repos.map((r) => ({ ...r, listed: true })),
+    ...(host.kept ?? []).filter((k) => !host.repos.some((r) => r.path === k.path)).map((r) => ({ ...r, listed: false })),
+  ];
   for (const host of hosts) {
-    const labels = uniqueLabels(host.repos.map((r) => r.path));
-    host.repos.forEach((repo, i) => {
+    const repos = own(host);
+    const labels = uniqueLabels(repos.map((r) => r.path));
+    repos.forEach((repo, i) => {
       const key = keyOf(host, repo);
-      const member = { host: host.idx, repo: repo.path, listed: true, name: hostPath(host, repo.path) };
+      const member = { host: host.idx, repo: repo.path, listed: repo.listed, name: hostPath(host, repo.path) };
       let group = groups.get(key);
       if (group === undefined) {
-        const label = `${host.remote ? `${host.name}:` : ''}${labels[i] ?? repo.path}`;
+        const prefix = host.remote ? `${host.name}:` : '';
+        const label = `${prefix}${labels[i] ?? repo.path}`;
         group = { key, label, host: host.idx, repo: repo.path, members: [] };
         groups.set(key, group);
       }
@@ -69,6 +77,7 @@ export const repoGroups = (hosts: readonly GroupHost[]): RepoGroup[] => {
   }
   for (const host of hosts) {
     for (const clone of host.clones) {
+      if (own(host).some((r) => r.path === clone.path)) continue;
       const group = clone.origin === null ? undefined : groups.get(`origin:${clone.origin}`);
       if (group !== undefined) add(group, { host: host.idx, repo: clone.path, listed: false, name: hostPath(host, clone.path) });
     }

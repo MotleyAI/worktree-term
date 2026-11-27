@@ -9,6 +9,8 @@ import { preparePrivateDirs, privateDir, type HostPaths } from '../files/index.j
 const KEEP_ALIVE = 'reconnect,ServerAliveInterval=15,ServerAliveCountMax=3';
 /** How long a finished program's error output may still arrive. */
 const OUTPUT_WAIT_MS = 1000;
+/** How long a mount program may run before it is stopped. */
+const MOUNT_DEADLINE_MS = 60_000;
 
 /** A remote directory to mount: the host's name, its SSH alias and the absolute path on it. */
 export interface MountTarget {
@@ -45,11 +47,13 @@ export const mountDir = (paths: Pick<HostPaths, 'runDir'>): string => join(paths
 export const mountPoint = (paths: Pick<HostPaths, 'runDir'>, target: MountTarget): string =>
   join(mountDir(paths), createHash('sha256').update(`${target.host}\0${target.alias}\0${target.path}`).digest('hex').slice(0, 32));
 
-/** The mount command line of `target`; throws naming a refused alias, or an SSH program or control path holding whitespace. */
+/** The mount command line of `target`; throws naming a refused alias, or an SSH program or control path that sshfs would split. */
 export const mountCommand = (paths: Pick<HostPaths, 'runDir'>, target: MountTarget): string[] => {
   const ssh = sshCommand(paths, target.alias, '').slice(0, -3);
   for (const part of ssh) {
-    if (/\s/.test(part)) throw new Error(`cannot pass to sshfs, holding whitespace: ${part.replace(/^ControlPath=/, '')}`);
+    if (/[\s,\\]/.test(part)) {
+      throw new Error(`cannot pass to sshfs, holding whitespace, a comma or a backslash: ${part.replace(/^ControlPath=/, '')}`);
+    }
   }
   return [
     program('WTD_SSHFS', 'sshfs'),
@@ -69,11 +73,10 @@ const lastLine = (text: string): string | null =>
   text
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .at(-1) ?? null;
+    .findLast((line) => line !== '') ?? null;
 
-/** Runs `command`, resolving to its exit status and error output; rejects with a MountError when it cannot start. */
-const run = (command: readonly string[]): Promise<{ code: number | null; stderr: string }> =>
+/** Runs `command`, resolving to its exit status and error output; rejects with a MountError when it cannot start or, killed, outlives `deadlineMs`. */
+const run = (command: readonly string[], deadlineMs: number | null = null): Promise<{ code: number | null; stderr: string }> =>
   new Promise((resolve, reject) => {
     const [file, ...args] = command;
     if (file === undefined) throw new Error('empty command');
@@ -83,7 +86,16 @@ const run = (command: readonly string[]): Promise<{ code: number | null; stderr:
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
     });
+    let timedOut = false;
+    const deadline =
+      deadlineMs === null
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGKILL');
+          }, deadlineMs);
     child.once('error', (error) => {
+      clearTimeout(deadline);
       const missing = 'code' in error && error.code === 'ENOENT';
       reject(
         missing
@@ -92,6 +104,12 @@ const run = (command: readonly string[]): Promise<{ code: number | null; stderr:
       );
     });
     child.once('exit', (code) => {
+      clearTimeout(deadline);
+      if (timedOut) {
+        child.stderr.destroy();
+        reject(new MountError('failed', 'timed out'));
+        return;
+      }
       // A daemonizing program may leave its error output open; stop waiting for it after a while.
       const timer = setTimeout(() => child.stderr.destroy(), OUTPUT_WAIT_MS);
       child.once('close', () => {
@@ -102,7 +120,7 @@ const run = (command: readonly string[]): Promise<{ code: number | null; stderr:
   });
 
 const unescapeMountinfo = (field: string): string =>
-  field.replaceAll(/\\([0-7]{3})/g, (_, octal: string) => String.fromCharCode(Number.parseInt(octal, 8)));
+  field.replaceAll(/\\([0-7]{3})/g, (_, octal: string) => String.fromCodePoint(Number.parseInt(octal, 8)));
 
 /** Every mount point the process mount table lists. */
 const mountedPoints = async (): Promise<Set<string>> => {
@@ -123,6 +141,12 @@ const removePoint = async (point: string): Promise<void> => {
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
   }
+};
+
+/** Unmounts `point` when the mount table lists it, else removes it. */
+const cleanUp = async (point: string): Promise<void> => {
+  if ((await mountedPoints()).has(point)) await unmount(point);
+  else await removePoint(point);
 };
 
 const executable = async (path: string): Promise<boolean> => {
@@ -147,7 +171,7 @@ const requireProgram = async (file: string): Promise<void> => {
 };
 
 /** Mounts `target`, once the unmount program is found, and resolves to its mount point once the mount table lists it; rejects with a MountError otherwise. */
-export const mount = async (paths: HostPaths, target: MountTarget): Promise<string> => {
+export const mount = async (paths: HostPaths, target: MountTarget, deadlineMs = MOUNT_DEADLINE_MS): Promise<string> => {
   const command = mountCommand(paths, target);
   const point = mountPoint(paths, target);
   await requireProgram(unmountCommand(point)[0] ?? '');
@@ -155,11 +179,13 @@ export const mount = async (paths: HostPaths, target: MountTarget): Promise<stri
   await privateDir(mountDir(paths));
   await privateDir(point);
   try {
-    const { code, stderr } = await run(command);
+    const { code, stderr } = await run(command, deadlineMs);
     if (code === 0 && (await mountedPoints()).has(point)) return point;
     throw new MountError('failed', lastLine(stderr) ?? 'not mounted');
   } catch (error) {
-    await removePoint(point);
+    await cleanUp(point).catch((error_: unknown) => {
+      throw error instanceof MountError ? new MountError(error.failure, error.message, error.program, { cause: error_ }) : error;
+    });
     throw error;
   }
 };

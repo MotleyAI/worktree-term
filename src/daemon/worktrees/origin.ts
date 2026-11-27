@@ -39,7 +39,7 @@ const splitHost = (authority: string): { host: string; port: string } | null => 
 const trimPath = (path: string): string => {
   let trimmed = path;
   while (trimmed.startsWith('/') || trimmed.startsWith('~/')) trimmed = trimmed.slice(trimmed.startsWith('/') ? 1 : 2);
-  trimmed = trimmed.replace(/\/+$/, '');
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
   return trimmed.endsWith('.git') ? trimmed.slice(0, -'.git'.length) : trimmed;
 };
 
@@ -48,7 +48,8 @@ const withoutUser = (text: string): string => text.slice(text.lastIndexOf('@') +
 const originOf = (host: string, port: string, path: string): string | null => {
   const trimmed = trimPath(path);
   if (trimmed === '') return null;
-  const origin = `${host}${port === '' ? '' : `:${port}`}/${trimmed}`;
+  const hostPort = port === '' ? host : `${host}:${port}`;
+  const origin = `${hostPort}/${trimmed}`;
   return origin.length > MAX_ORIGIN ? null : origin;
 };
 
@@ -63,9 +64,18 @@ const fromUrl = (scheme: string, rest: string): string | null => {
   return originOf(parts.host, port, rest.slice(slash));
 };
 
-const fromScpLike = (url: string): string | null => {
+/** The `:` ending an SCP-like URL's host, past a bracketed IPv6 host; -1 when there is none. */
+const scpSeparator = (url: string): number => {
   const colon = url.indexOf(':');
-  if (colon < 0 || url.slice(0, colon).includes('/')) return null;
+  const open = url.indexOf('[');
+  if (open < 0 || colon < open) return colon;
+  const close = url.indexOf(']', open);
+  return close >= 0 && url.charAt(close + 1) === ':' ? close + 1 : -1;
+};
+
+const fromScpLike = (url: string): string | null => {
+  const colon = scpSeparator(url);
+  if (colon < 0 || url.slice(0, url.indexOf(':')).includes('/')) return null;
   const host = withoutUser(url.slice(0, colon));
   if (host === '') return null;
   return originOf(host.toLowerCase(), '', url.slice(colon + 1));
@@ -107,16 +117,40 @@ const configValue = (raw: string): string => {
 const SECTION = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/;
 const KEY = /^([A-Za-z][A-Za-z0-9-]*)\s*(?:=(.*))?$/;
 
+/** Whether `line` ends in an unescaped `\`, continuing on the next line. */
+const continues = (line: string): boolean => {
+  let slashes = 0;
+  while (line.charAt(line.length - 1 - slashes) === '\\') slashes++;
+  return slashes % 2 === 1;
+};
+
+/** Git config text as logical lines, continued lines joined. */
+const logicalLines = (config: string): string[] => {
+  const lines: string[] = [];
+  let pending = '';
+  for (const raw of config.split('\n')) {
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+    if (continues(line)) {
+      pending += line.slice(0, -1);
+    } else {
+      lines.push(pending + line);
+      pending = '';
+    }
+  }
+  if (pending !== '') lines.push(pending);
+  return lines;
+};
+
 /** The first `url` of `[remote "origin"]` in git config text, or null. */
 const originUrl = (config: string): string | null => {
   let inOrigin = false;
-  for (const line of config.split('\n')) {
-    const text = line.trim();
+  for (const line of logicalLines(config)) {
+    let text = line.trim();
     if (text === '' || text.startsWith('#') || text.startsWith(';')) continue;
     const section = SECTION.exec(text);
     if (section !== null) {
       inOrigin = section[1]?.toLowerCase() === 'remote' && section[2] === 'origin';
-      continue;
+      text = text.slice(section[0].length).trim();
     }
     const key = KEY.exec(text);
     if (inOrigin && key?.[1]?.toLowerCase() === 'url') return configValue(key[2] ?? '');

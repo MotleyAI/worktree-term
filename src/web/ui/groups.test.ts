@@ -117,6 +117,12 @@ describe('repoGroups', () => {
     ]);
   });
 
+  it('leaves a clone its host also lists to the listed repo’s group', () => {
+    const groups = repoGroups([laptop([repo('/r/app', APP)]), box([repo('/srv/app')], [{ path: '/srv/app', origin: APP }])]);
+    expect(groups.map((g) => g.key)).toEqual([`origin:${APP}`, 'box:/srv/app']);
+    expect(groups[0]?.members.map((m) => m.name)).toEqual(['/r/app']);
+  });
+
   it('never makes a tab of a discovered clone whose origin no listed repo has', () => {
     const groups = repoGroups([laptop([repo('/r/app', APP)]), box([], [{ path: '/srv/other', origin: 'github.com/acme/other' }])]);
     expect(groups.map((g) => g.label)).toEqual(['app']);
@@ -172,6 +178,18 @@ describe('groupRemoval', () => {
         { host: 1, repo: '/srv/app' },
       ],
     });
+  });
+
+  it('keeps a repo the hub no longer lists in its tab, unlisted, never naming or removing it', () => {
+    const [group, own] = repoGroups([laptop([repo('/r/app', APP)]), { ...box([]), kept: [repo('/srv/app', APP), repo('/srv/old')] }]);
+    if (group === undefined || own === undefined) throw new Error('no group');
+    expect(group.members.map((m) => [m.name, m.listed])).toEqual([
+      ['/r/app', true],
+      ['box:/srv/app', false],
+    ]);
+    expect(own.members.map((m) => [m.name, m.listed])).toEqual([['box:/srv/old', false]]);
+    expect(own.label).toBe('box:old');
+    expect(groupRemoval(group)).toEqual({ names: ['/r/app'], members: [{ host: 0, repo: '/r/app' }] });
   });
 
   it('removes a group of one listed repo', () => {

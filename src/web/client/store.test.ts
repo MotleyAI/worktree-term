@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Layout, PrStatus, Preset, Terminal, Worktree } from '../../protocol/index.js';
+import type { HostEntry, Layout, PrStatus, Preset, Terminal, Worktree } from '../../protocol/index.js';
 import { HubStore, repoKey } from './store.js';
 
 const REPO = '/r/app';
@@ -409,6 +409,50 @@ describe('HubStore clones', () => {
     store.addClone(0, '/r/app-2', null);
     expect(store.clones.value.get(1)).toEqual([{ path: '/srv/app', origin: 'github.com/acme/app' }]);
     expect(store.clones.value.get(0)).toEqual([{ path: '/r/app-2', origin: null }]);
+  });
+
+  it('forgets the repos, origins and clones of an index once it names another host, keeping them across a daemon restart', () => {
+    const store = new HubStore();
+    const entry = (idx: number, name: string, instance: string): HostEntry => ({
+      idx,
+      name,
+      remote: idx > 0,
+      status: 'connected',
+      reason: null,
+      daemonVersion: null,
+      instance,
+      login: null,
+      repos: [],
+    });
+    store.setHosts([entry(0, 'local', 'a'), entry(1, 'box', 'b')]);
+    store.apply(0, {
+      t: 'repoState',
+      repo: '/r/app',
+      origin: 'github.com/acme/app',
+      worktrees: [],
+      terminals: [],
+      checked: [],
+      layouts: [],
+    });
+    store.apply(1, {
+      t: 'repoState',
+      repo: '/srv/app',
+      origin: 'github.com/acme/app',
+      worktrees: [],
+      terminals: [],
+      checked: [],
+      layouts: [],
+    });
+    store.addClone(1, '/srv/app-2', 'github.com/acme/app');
+    store.setHosts([entry(0, 'local', 'a'), entry(1, 'box', 'c')]);
+    expect(store.origins.value.get(repoKey(1, '/srv/app'))).toBe('github.com/acme/app');
+    expect(store.clones.value.get(1)).toHaveLength(1);
+    expect(store.repo(1, '/srv/app')).not.toBeNull();
+    store.setHosts([entry(0, 'local', 'a'), entry(1, 'vm', 'd')]);
+    expect(store.origins.value.has(repoKey(1, '/srv/app'))).toBe(false);
+    expect(store.clones.value.has(1)).toBe(false);
+    expect(store.repo(1, '/srv/app')).toBeNull();
+    expect(store.origins.value.get(repoKey(0, '/r/app'))).toBe('github.com/acme/app');
   });
 
   it('keeps a host’s clones while it is cleared, as when it reconnects', () => {

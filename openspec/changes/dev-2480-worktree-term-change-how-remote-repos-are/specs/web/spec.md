@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Clone discovery
-When its session starts, the page SHALL send `discoverRepos` once for every `connected` host, this machine included, and for every other host once, when it first becomes `connected` in the session; it SHALL NOT discover again in that session. It SHALL watch, once per (host, path), every discovered repo that its host does not list and whose origin is not null and equals the known origin of a listed repo of any host, as soon as both are known, also when that origin becomes known after the discovery reply; it SHALL NOT watch any other discovered repo. Replies to these requests SHALL be told apart from the "Add repo" dialog's by their request ids, and neither SHALL affect the other.
+When its session starts, the page SHALL send `discoverRepos` once for every `connected` host, this machine included, and for every other host once, when it first becomes `connected` in the session; a host whose discovery failed SHALL be discovered again when it next becomes `connected`; it SHALL NOT otherwise discover again in that session. It SHALL watch, once per (host, path), every discovered repo that its host does not list and whose origin is not null and equals the known origin of a listed repo of any host, as soon as both are known, also when that origin becomes known after the discovery reply; it SHALL NOT watch any other discovered repo. Replies to these requests SHALL be told apart from the "Add repo" dialog's by their request ids, and neither SHALL affect the other.
 
 #### Scenario: Remote clone found and watched
 - **WHEN** this machine lists `/r/app` with origin `github.com/acme/app`, and discovery on remote host `box` finds `/home/me/src/app` with that origin and `/home/me/src/other` with another

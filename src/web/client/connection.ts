@@ -436,7 +436,7 @@ export class HubClient {
     const connected: HostEntry[] = [];
     const following: [HostEntry, readonly string[]][] = [];
     batch(() => {
-      this.store.hosts.value = hosts;
+      this.store.setHosts(hosts);
       for (const host of hosts) {
         const before = previous.get(host.idx);
         const same = before?.status === 'connected' && host.status === 'connected' && before.instance === host.instance;
@@ -461,8 +461,9 @@ export class HubClient {
       this.store.keep(host, repo, false);
       void this.watch(host, repo);
     }
+    const clones = this.store.clones.value.get(host) ?? [];
     for (const repo of before) {
-      if (after.includes(repo)) continue;
+      if (after.includes(repo) || clones.some((c) => c.path === repo)) continue;
       if (this.store.hasRunning(host, repo)) this.store.keep(host, repo, true);
       else this.letGo(host, repo);
     }

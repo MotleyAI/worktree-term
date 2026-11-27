@@ -53,6 +53,8 @@ export class HubStore {
   readonly clones = signal<ReadonlyMap<number, readonly { path: string; origin: string | null }[]>>(new Map());
   /** Per host, repos the hub no longer lists that the page keeps while they have running terminals. */
   readonly kept = signal<ReadonlyMap<number, readonly string[]>>(new Map());
+  /** The name each host index last had. */
+  private readonly hostNames = new Map<number, string>();
   /** The layouts each repo's daemon last reported, by `repoKey` and worktree. */
   private readonly reported = new Map<string, Map<string, Layout>>();
   /** Our `setLayout` requests not yet answered, by host and worktree. */
@@ -97,6 +99,22 @@ export class HubStore {
     const next = new Map(this.kept.value);
     next.set(host, kept ? [...current, repo] : current.filter((r) => r !== repo));
     this.kept.value = next;
+  }
+
+  /** Shows `hosts`, forgetting everything known of each index that now names another host. */
+  setHosts(hosts: readonly HostEntry[]): void {
+    const moved = new Set<number>();
+    for (const { idx, name } of hosts) {
+      const before = this.hostNames.get(idx);
+      if (before !== undefined && before !== name) moved.add(idx);
+      this.hostNames.set(idx, name);
+    }
+    if (moved.size > 0) {
+      for (const idx of moved) this.clearHost(idx);
+      this.origins.value = new Map([...this.origins.value].filter(([key]) => !moved.has(Number(key.slice(0, key.indexOf(':'))))));
+      this.clones.value = new Map([...this.clones.value].filter(([idx]) => !moved.has(idx)));
+    }
+    this.hosts.value = hosts;
   }
 
   /** Watches the discovered clone `path` of `host` for the rest of the page session. */

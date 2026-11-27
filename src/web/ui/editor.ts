@@ -7,7 +7,7 @@ export const EDITOR_HINT = '{path} stands for the worktree path; without it, the
 const MAX_COMMAND = 4096;
 const HOME_ONLY = "Open the editor from this machine's page";
 /** Programs the hub runs to open a remote worktree. */
-const MOUNT_PROGRAMS: readonly string[] = ['sshfs', 'fusermount3'];
+const MOUNT_PROGRAMS: ReadonlySet<string> = new Set(['sshfs', 'fusermount3']);
 
 /** What decides whether the "Open in editor" control is usable. */
 export interface EditorState {
@@ -39,7 +39,7 @@ export type EditorFailure = { t: 'missing'; program: string } | { t: 'failed'; m
 
 export const editorFailure = (code: string | null, message: string, command: string | null): EditorFailure => {
   if (code !== 'editor-missing') return { t: 'failed', message };
-  if (MOUNT_PROGRAMS.includes(message)) return { t: 'missing', program: message };
+  if (MOUNT_PROGRAMS.has(message)) return { t: 'missing', program: message };
   return { t: 'missing', program: (command === null ? null : editorWords(command)?.[0]) ?? message };
 };
 

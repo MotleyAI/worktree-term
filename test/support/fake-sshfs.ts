@@ -13,7 +13,7 @@ export type SshfsEnv = Readonly<Record<'WTD_SSHFS' | 'WTD_FUSERMOUNT' | 'WTD_MOU
 
 /** Octal escapes `/proc/self/mountinfo` uses for a path field. */
 export const mountinfoEscape = (path: string): string =>
-  path.replaceAll(/[\\ \t\n]/g, (c) => `\\${c.charCodeAt(0).toString(8).padStart(3, '0')}`);
+  path.replaceAll(/[\\ \t\n]/g, (c) => `\\${(c.codePointAt(0) ?? 0).toString(8).padStart(3, '0')}`);
 
 const mountinfoLine = (point: string, source: string): string =>
   `100 1 0:99 / ${mountinfoEscape(point)} rw,nosuid,nodev,relatime - fuse.sshfs ${mountinfoEscape(source)} rw,user_id=1000,group_id=1000\n`;
@@ -84,7 +84,7 @@ export class FakeSshfs {
         .slice(0, -1);
       calls.push({ program: match[1], args, at: match[2] ?? '' });
     }
-    return calls.sort((a, b) => a.at.localeCompare(b.at)).map(({ program: p, args }) => ({ program: p, args }));
+    return calls.toSorted((a, b) => a.at.localeCompare(b.at)).map(({ program: p, args }) => ({ program: p, args }));
   }
 
   /** Mount points the fake mount table lists, unescaped. */
@@ -93,7 +93,7 @@ export class FakeSshfs {
       .split('\n')
       .map((line) => line.split(' '))
       .filter((fields) => fields[fields.indexOf('-') + 1] === 'fuse.sshfs')
-      .map((fields) => (fields[4] ?? '').replaceAll(/\\([0-7]{3})/g, (_, o: string) => String.fromCharCode(Number.parseInt(o, 8))));
+      .map((fields) => (fields[4] ?? '').replaceAll(/\\([0-7]{3})/g, (_, o: string) => String.fromCodePoint(Number.parseInt(o, 8))));
   }
 
   /** Lists `point` as mounted without running anything, as a mount left by a killed hub. */

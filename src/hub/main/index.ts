@@ -156,7 +156,10 @@ export const runHub = async ({ version, paths, wtd, webDir, home, env }: HubRun)
       webDir,
       openSession: (channel) => router.open(channel),
       shutdown: stop,
-      beforeListen: () => placeHub(paths.stateDir, report),
+      beforeListen: async () => {
+        await placeHub(paths.stateDir, report);
+        router.start();
+      },
     });
     const sampler = sampleMemory(paths.hubMemoryLog, env, { version, instance, daemonCommand }, report);
     await stopped;

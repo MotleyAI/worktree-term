@@ -138,6 +138,9 @@ export const hubError = (req: number | null, host: number | null, code: ErrorCod
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
+/** The name of host `idx`, or `host <idx>` without one. */
+const hostName = (host: HostLink | undefined, idx: number): string => host?.host.name ?? `host ${String(idx)}`;
+
 /** One host's daemon link of one session, with the host's status. */
 class HostLink {
   state: HostState = initialHostState;
@@ -620,7 +623,7 @@ export class Session {
   /** The member's host once it is connected and its daemon lists no terminal of the repo; throws MemberError otherwise. */
   private async checkMember({ host: idx, repo }: RepoMember): Promise<HostLink> {
     const host = this.hosts[idx];
-    const at = `${host?.host.name ?? `host ${String(idx)}`}:${repo}`;
+    const at = `${hostName(host, idx)}:${repo}`;
     if (host === undefined) throw new MemberError(idx, 'unknown-host', `no host ${String(idx)}; cannot remove ${at}`);
     const { status } = host.state;
     if (status !== 'connected') {
@@ -675,7 +678,7 @@ export class Session {
     const host = this.hosts[idx];
     const repo = [...(this.listed.get(idx) ?? [])].find(([, paths]) => paths.includes(worktree))?.[0];
     if (host === undefined || repo === undefined) {
-      this.error(req, null, 'not-a-worktree', `not a worktree of ${host?.host.name ?? `host ${String(idx)}`}: ${worktree}`);
+      this.error(req, null, 'not-a-worktree', `not a worktree of ${hostName(host, idx)}: ${worktree}`);
       return;
     }
     const alias = host.host.ssh;

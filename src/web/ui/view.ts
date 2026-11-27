@@ -253,10 +253,8 @@ export class View {
     return repoGroups(
       this.client.store.hosts.value.map((h) => ({
         ...h,
-        repos: [...h.repos, ...(kept.value.get(h.idx) ?? []).filter((r) => !h.repos.includes(r))].map((path) => ({
-          path,
-          origin: originOf(h.idx, path),
-        })),
+        repos: h.repos.map((path) => ({ path, origin: originOf(h.idx, path) })),
+        kept: (kept.value.get(h.idx) ?? []).map((path) => ({ path, origin: originOf(h.idx, path) })),
         clones: (clones.value.get(h.idx) ?? []).map((c) => ({
           path: c.path,
           origin: origins.value.has(repoKey(h.idx, c.path)) ? originOf(h.idx, c.path) : c.origin,
@@ -275,13 +273,29 @@ export class View {
       dialog.filter,
     );
   });
-  /** The selected tab: the stored one, else the one holding the row last shown selected, else the first. */
-  readonly tab = computed<RepoGroup | null>(() => {
+  /**
+   * The selected tab: the stored one, unless the row last shown there left it; else the tab now holding the stored
+   * repo of its own or that row; else the first. `followed` marks a tab reached through that repo or row.
+   */
+  private readonly tabChoice = computed<{ tab: RepoGroup | null; followed: boolean }>(() => {
     const tabs = this.tabs.value;
     const anchor = this.anchor.value;
-    const holding = anchor === null ? undefined : tabs.find((t) => t.members.some((m) => m.host === anchor.host && m.repo === anchor.repo));
-    return tabs.find((t) => t.key === this.selectedRepo.value) ?? holding ?? tabs[0] ?? null;
+    const holding = (host: number, repo: string): RepoGroup | undefined =>
+      tabs.find((t) => t.members.some((m) => m.host === host && m.repo === repo));
+    const moved = anchor === null ? undefined : holding(anchor.host, anchor.repo);
+    const selected = tabs.find((t) => t.key === this.selectedRepo.value);
+    if (selected !== undefined) {
+      const left = anchor !== null && anchor.key === selected.key && moved !== undefined && moved !== selected;
+      return left ? { tab: moved, followed: true } : { tab: selected, followed: false };
+    }
+    const own = this.decodeRow(this.selectedRepo.value ?? undefined);
+    const owning = own === null ? undefined : holding(own.host, own.path);
+    if (owning !== undefined) return { tab: owning, followed: true };
+    // The selected tab's group merged away: follow the row last shown there.
+    if (moved !== undefined && anchor?.key === this.selectedRepo.value) return { tab: moved, followed: true };
+    return { tab: moved ?? tabs[0] ?? null, followed: false };
   });
+  readonly tab = computed<RepoGroup | null>(() => this.tabChoice.value.tab);
   /** The selected tab's members that the page has a state of. */
   readonly memberStates = computed<{ member: GroupMember; host: number; state: RepoState }[]>(() => {
     const repos = this.client.store.repos.value;
@@ -312,6 +326,10 @@ export class View {
     const { key } = tab;
     const rows = this.rows.value;
     const isRow = (row: RowId | null | undefined): boolean => row != null && rows.some((r) => sameRow(r, row));
+    // The row shown in another tab now belongs to this one: its group merged or split.
+    const anchor = this.anchor.value;
+    if (anchor !== null && anchor.key !== '' && anchor.key !== key && isRow(anchor))
+      return { key, row: { host: anchor.host, path: anchor.path }, derived: false };
     // A held default is newer than the stored selection: selecting a worktree releases it.
     const held = this.heldDefaults.value[key];
     if (held !== undefined && isRow(held)) return { key, row: held, derived: false };
@@ -320,9 +338,8 @@ export class View {
     // The stored row's host has no rows yet, as while it connects: show a default without holding it.
     if (stored !== null && !rows.some((r) => r.host === stored.host))
       return { key, row: defaultRow(rows, this.filter.value), derived: false };
-    // The row shown in another tab now belongs to this one: its group merged or split.
-    const anchor = this.anchor.value;
-    if (anchor !== null && anchor.key !== key && isRow(anchor))
+    // The repo just added: its main worktree.
+    if (anchor !== null && anchor.key === '' && isRow(anchor))
       return { key, row: { host: anchor.host, path: anchor.path }, derived: false };
     return { key, row: defaultRow(rows, this.filter.value), derived: true };
   });
@@ -478,6 +495,9 @@ export class View {
       this.followSelection();
     });
     effect(() => {
+      this.followTab();
+    });
+    effect(() => {
       this.discoverClones();
     });
     manager.onFocus((host, termId) => {
@@ -530,7 +550,33 @@ export class View {
     if (selection === null || row === null || current?.host !== row.host) return;
     const anchor = this.anchor.peek();
     if (anchor !== null && sameRow(anchor, row) && anchor.repo === current.repo && anchor.key === selection.key) return;
-    this.anchor.value = { ...row, repo: current.repo, key: selection.key };
+    const migrated = anchor !== null && anchor.key !== '' && anchor.key !== selection.key && sameRow(anchor, row);
+    batch(() => {
+      this.followTab();
+      // Keep a row that moved in with its repo selected in its new tab.
+      if (migrated) this.keepSelection(selection.key, row);
+      this.anchor.value = { ...row, repo: current.repo, key: selection.key };
+    });
+  }
+
+  /** Stores `row` as group `key`'s selection, releasing its held default. */
+  private keepSelection(key: string, row: RowId): void {
+    const encoded = this.encodeRow(row);
+    if (encoded === null) return;
+    const selections = { ...this.selections.peek(), [key]: encoded };
+    this.selections.value = selections;
+    this.releaseDefault(key);
+    this.store(WORKTREES_KEY, JSON.stringify(selections));
+  }
+
+  /** Stores the tab reached through the stored repo of its own or the row last shown, as when groups merge or split. */
+  private followTab(): void {
+    const { tab, followed } = this.tabChoice.value;
+    if (followed && tab !== null) {
+      untracked(() => {
+        this.selectRepo(tab);
+      });
+    }
   }
 
   /** Feeds the hosts and listed repos' origins to clone discovery, running its effects. */
@@ -559,12 +605,14 @@ export class View {
         continue;
       }
       const { host } = effect;
+      const name = state.names.get(host) ?? '';
       this.client.discoverRepos(host).then(
         (repos) => {
-          this.cloneStep({ t: 'discovered', host, repos });
+          this.cloneStep({ t: 'discovered', host, name, repos });
         },
         (error: unknown) => {
           console.warn(`discovering clones on host ${String(host)} failed`, error);
+          this.cloneStep({ t: 'failed', host, name });
         },
       );
     }
@@ -858,6 +906,7 @@ export class View {
       return;
     }
     if (confirmation.t === 'removeRepo') {
+      if (confirmation.members.length === 0) return;
       this.client.removeRepos(confirmation.members).catch((error: unknown) => {
         this.notice.value =
           error instanceof RequestError && error.code === 'busy'

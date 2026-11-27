@@ -188,6 +188,11 @@ export class Router {
     return read;
   }
 
+  /** Starts removing an earlier hub's mounts; call once this hub owns its state directory. */
+  start(): void {
+    this.mounts.start();
+  }
+
   /** Unmounts every remote worktree mount. */
   close(): Promise<void> {
     return this.mounts.close();

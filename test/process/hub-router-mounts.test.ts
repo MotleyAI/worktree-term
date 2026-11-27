@@ -242,4 +242,15 @@ describe('remote worktree mounts', () => {
     expect(mx.sshfs.mounted()).toEqual([elsewhere]);
     expect(mountDirEntries()).toEqual([]);
   });
+
+  it('leaves the running hub’s mounts when a second hub is refused', async () => {
+    const editor = recorder(fx.host.dir);
+    const { remoteRepo, remoteWt } = await boxWithWorktree(editor.command);
+    const client = await watchingBox(remoteRepo);
+    expect((await openEditor(client, 1, remoteWt)).m).toEqual({ t: 'done', req: 2 });
+    const second = fx.host.wtd(['hub'], { ...mx.sshfs.env });
+    expect((await second.exited).code).toBe(1);
+    expect(unmounted()).toEqual([]);
+    expect(mx.sshfs.mounted()).toEqual([mountPoint('box', 'box', remoteWt)]);
+  });
 });

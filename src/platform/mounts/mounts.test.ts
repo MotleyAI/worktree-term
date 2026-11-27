@@ -146,14 +146,20 @@ describe('mountCommand', () => {
   it.each([
     ['a space', '/opt/fake ssh'],
     ['a tab', '/opt/fake\tssh'],
+    ['a comma', '/opt/fake,ssh'],
+    ['a backslash', '/opt/fake\\ssh'],
   ])('refuses an SSH program holding %s, naming it', (_name, program) => {
     vi.stubEnv('WTD_SSH', program);
     expect(() => mountCommand(paths, BOX_A)).toThrow(program);
   });
 
-  it('refuses a control path holding whitespace, naming it', () => {
-    const spaced = hostPaths({ env: { XDG_STATE_HOME: join(dir, 'a b') }, home: '/nonexistent', host: 'box' });
-    expect(() => mountCommand(spaced, BOX_A)).toThrow(sshControlPath(spaced));
+  it.each([
+    ['whitespace', 'a b'],
+    ['a comma', 'a,b'],
+    ['a backslash', 'a\\b'],
+  ])('refuses a control path holding %s, naming it', (_name, state) => {
+    const odd = hostPaths({ env: { XDG_STATE_HOME: join(dir, state) }, home: '/nonexistent', host: 'box' });
+    expect(() => mountCommand(odd, BOX_A)).toThrow(sshControlPath(odd));
   });
 });
 
@@ -286,6 +292,35 @@ describe('mount', () => {
     expect(fake.calls()).toEqual([]);
     expect(entries(mountDir(spaced))).toEqual([]);
   });
+
+  it('stops a mount program outliving its deadline, failing with timed out and leaving no mount point', async () => {
+    fake.hold();
+    const error = await failure(mount(paths, BOX_A, 300));
+    expect(error.message).toBe('timed out');
+    expect(fake.calls('fusermount3')).toEqual([]);
+    expect(entries(mountDir(paths))).toEqual([]);
+  });
+
+  it('fails with timed out when unmounting after the deadline fails too, keeping that failure as its cause', async () => {
+    const point = mountPoint(paths, BOX_A);
+    fake.hold();
+    fake.addMount(point);
+    vi.stubEnv('WTD_FUSERMOUNT', script('fusermount-fails', 'echo "fusermount3: busy" >&2; exit 1'));
+    const error = await failure(mount(paths, BOX_A, 300));
+    expect(error.message).toBe('timed out');
+    expect(error.cause).toBeInstanceOf(MountError);
+  });
+
+  it('unmounts what a mount program outliving its deadline mounted', async () => {
+    const point = mountPoint(paths, BOX_A);
+    fake.hold();
+    fake.addMount(point);
+    const error = await failure(mount(paths, BOX_A, 300));
+    expect(error.message).toBe('timed out');
+    expect(fake.calls('fusermount3')).toEqual([{ program: 'fusermount3', args: ['-u', '-z', point] }]);
+    expect(fake.mounted()).toEqual([]);
+    expect(entries(mountDir(paths))).toEqual([]);
+  });
 });
 
 describe('unmount', () => {
@@ -340,7 +375,9 @@ describe('listMounts', () => {
 
   it('unescapes the mount table, finding a mount point under a state directory holding a backslash', async () => {
     const odd = hostPaths({ env: { XDG_STATE_HOME: join(dir, 'a\\b') }, home: '/nonexistent', host: 'box' });
-    const point = await mount(odd, BOX_A);
+    const point = mountPoint(odd, BOX_A);
+    mkdirSync(point, { recursive: true });
+    fake.addMount(point);
     await expect(listMounts(odd)).resolves.toEqual([point]);
   });
 

@@ -26,18 +26,31 @@ const outcomeOf = (error: unknown): MountOutcome => {
 /** The hub's mounts of remote worktrees, shared by every session; each made once and unmounted lazily. */
 export class MountRegistry {
   private readonly entries = new Map<string, Entry>();
-  /** Settles once stale mounts and leftover mount points of an earlier hub are gone. */
+  /** Settles once `start` removed the stale mounts and leftover mount points of an earlier hub. */
   private readonly cleaned: Promise<void>;
+  private markCleaned: () => void = () => undefined;
+  private started = false;
   /** Settles once every queued unmount ran; unmounts run one at a time. */
   private unmounting: Promise<void>;
+  /** Per mount point, settles once its queued unmount ran; a remount waits for it. */
+  private readonly releasing = new Map<string, Promise<void>>();
 
   constructor(
     private readonly paths: MountPaths,
     /** Reports a failed unmount or cleanup. */
     private readonly report: (error: unknown) => void,
   ) {
-    this.cleaned = this.cleanStale().catch(report);
+    this.cleaned = new Promise((resolve) => {
+      this.markCleaned = resolve;
+    });
     this.unmounting = this.cleaned;
+  }
+
+  /** Starts removing an earlier hub's mounts; call once this hub owns its state directory. Mounts wait for it. */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    void this.cleanStale().catch(this.report).then(this.markCleaned);
   }
 
   /** The mount point of `target`, mounting it unless a mount exists or is being made. */
@@ -45,12 +58,12 @@ export class MountRegistry {
     const point = mountPoint(this.paths, target);
     const existing = this.entries.get(point);
     if (existing !== undefined) return existing.mounted;
-    const mounted = this.cleaned
+    const mounted = (this.releasing.get(point) ?? this.cleaned)
       .then(() => mount(this.paths, target))
       .then(
         (at): MountOutcome => ({ kind: 'mounted', point: at }),
         (error: unknown) => {
-          this.entries.delete(point);
+          if (this.entries.get(point)?.mounted === mounted) this.entries.delete(point);
           return outcomeOf(error);
         },
       );
@@ -68,10 +81,10 @@ export class MountRegistry {
     this.drop(({ target }) => !hosts.some((h) => h.name === target.host && h.alias === target.alias));
   }
 
-  /** Unmounts every mount, waiting for unmounts already queued. */
+  /** Unmounts every mount, waiting for unmounts already queued; a registry never started has none. */
   async close(): Promise<void> {
     this.drop(() => true);
-    await this.unmounting;
+    if (this.started) await this.unmounting;
   }
 
   private drop(matches: (entry: Entry) => boolean): void {
@@ -83,10 +96,13 @@ export class MountRegistry {
     const entry = this.entries.get(point);
     if (entry === undefined) return;
     this.entries.delete(point);
-    this.unmounting = this.unmounting.then(async () => {
+    const released = this.unmounting.then(async () => {
       const outcome = await entry.mounted;
       if (outcome.kind === 'mounted') await unmount(outcome.point).catch(this.report);
+      if (this.releasing.get(point) === released) this.releasing.delete(point);
     });
+    this.unmounting = released;
+    this.releasing.set(point, released);
   }
 
   /** Unmounts every mount under the mount directory and removes every leftover mount point. */

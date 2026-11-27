@@ -49,6 +49,7 @@ describe('normalizeOrigin', () => {
     ['with a port', 'ssh://git@[FE80::1]:2222/srv/app.git', '[fe80::1]:2222/srv/app'],
     ['with the default port', 'ssh://[::1]:22/x', '[::1]/x'],
     ['without a port', 'https://[2001:DB8::1]/x', '[2001:db8::1]/x'],
+    ['in the scp-like form', 'git@[2001:DB8::1]:org/app.git', '[2001:db8::1]/org/app'],
   ])('keeps an IPv6 host bracketed and lowercased, %s', (_name, url, origin) => {
     expect(normalizeOrigin(url)).toBe(origin);
   });
@@ -190,9 +191,16 @@ describe('readOrigin', () => {
     ['a quoted value', '\turl = "https://quoted.example/x"\n', 'quoted.example/x'],
     ['a comment after the value', '\turl = https://commented.example/x ; mirror\n', 'commented.example/x'],
     ['comment lines before the key', '\t# the main remote\n\t; really\n\turl = https://after.example/x\n', 'after.example/x'],
+    ['a value continued on the next line', '\turl = https://cont.example/org/\\\napp.git\n', 'cont.example/org/app'],
+    ['an escaped backslash ending a line', '\turl = https://esc.example/x\\\\\n\tpushurl = y\n', 'esc.example/x\\'],
   ])('reads %s', async (_name, body, origin) => {
     const repo = repoWithConfig('r', `[remote "origin"]\n${body}`);
     expect(await readOrigin(repo)).toBe(origin);
+  });
+
+  it('reads a url on the line of its section header', async () => {
+    const repo = repoWithConfig('r', '[core]\n\tbare = false\n[remote "origin"] url = https://inline.example/x\n');
+    expect(await readOrigin(repo)).toBe('inline.example/x');
   });
 
   it('ignores included files', async () => {

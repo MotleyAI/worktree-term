@@ -248,6 +248,7 @@ test.describe('clone discovery', () => {
 
     release();
     await expect.poll(() => discoveriesSent(wire, BOX), REMOTE_TIMEOUT).toBe(1);
+    await expect.poll(() => discoveredOn(wire, BOX), REMOTE_TIMEOUT).toBe(true);
     const from = wire.markReceived();
     dropLinks(ssh, 'box');
     await hostBecomes(wire, BOX, 'reconnecting', from);

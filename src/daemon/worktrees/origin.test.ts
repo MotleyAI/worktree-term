@@ -25,6 +25,11 @@ describe('normalizeOrigin', () => {
     ['ssh+git://git@host:22/x', 'host/x'],
     ['git+ssh://host:2222/x', 'host:2222/x'],
     ['ssh+git://host/x', 'host/x'],
+    ['ssh://host:0022/x', 'host/x'],
+    ['ssh://host:02222/x', 'host:2222/x'],
+    ['ssh://host:00/x', 'host:0/x'],
+    ['ssh://host:100000000000000000001/x', 'host:100000000000000000001/x'],
+    ['ssh://host:100000000000000000002/x', 'host:100000000000000000002/x'],
   ])('keeps the port of %s only when it is not the scheme default', (url, origin) => {
     expect(normalizeOrigin(url)).toBe(origin);
   });

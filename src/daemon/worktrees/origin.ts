@@ -60,7 +60,8 @@ const fromUrl = (scheme: string, rest: string): string | null => {
   if (slash < 0) return null;
   const parts = splitHost(withoutUser(rest.slice(0, slash)));
   if (parts === null) return null;
-  const port = parts.port === '' || Number(parts.port) === defaultPort ? '' : String(Number(parts.port));
+  const digits = parts.port.replace(/^0+(?=\d)/, '');
+  const port = digits === String(defaultPort) ? '' : digits;
   return originOf(parts.host, port, rest.slice(slash));
 };
 

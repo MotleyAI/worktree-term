@@ -4,8 +4,7 @@ import { availableParallelism } from 'node:os';
 export default defineConfig({
   testDir: 'test/e2e',
   globalSetup: './test/e2e/global-setup.ts',
-  // Each worker runs a Chrome, a hub and a daemon; more than 8 exhausts the default 128 inotify instances per user.
-  // CI uses every CPU; local runs leave half for the rest of the machine.
+  // Over 8 workers (each a Chrome, hub and daemon) exhaust the default 128 inotify instances; local runs use half the CPUs.
   workers: Math.min(8, process.env['CI'] ? availableParallelism() : Math.max(1, Math.floor(availableParallelism() / 2))),
   timeout: 60_000,
   use: {
@@ -15,7 +14,6 @@ export default defineConfig({
     launchOptions: { args: ['--enable-gpu', '--use-angle=vulkan'] },
   },
   projects: [
-    // Every test has its own hub, so tests within a file run in parallel too.
     { name: 'e2e', testIgnore: /perf\.spec\.ts$/, fullyParallel: true },
     // Timed after the rest and in one worker, so neither e2e workers nor other perf copies skew the budgets.
     { name: 'perf', testMatch: /perf\.spec\.ts$/, dependencies: ['e2e'], workers: 1 },

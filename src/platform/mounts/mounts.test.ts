@@ -323,6 +323,19 @@ describe('mount', () => {
     expect(codes).toEqual(['ENOENT', 'ENOENT']);
   });
 
+  it('keeps a failed start’s own cause beside a failed cleanup', async () => {
+    vi.stubEnv('WTD_SSHFS', join(dir, 'no-such-sshfs'));
+    vi.stubEnv('WTD_MOUNTINFO', join(dir, 'no-such-mountinfo'));
+    const error = await failure(mount(paths, BOX_A));
+    expect(error.failure).toBe('missing-program');
+    expect(error.cause).toBeInstanceOf(AggregateError);
+    const paths_ =
+      error.cause instanceof AggregateError
+        ? error.cause.errors.map((e: unknown) => (e instanceof Error && 'path' in e ? e.path : null))
+        : [];
+    expect(paths_).toEqual([join(dir, 'no-such-sshfs'), join(dir, 'no-such-mountinfo')]);
+  });
+
   it('unmounts what a mount program outliving its deadline mounted', async () => {
     const point = mountPoint(paths, BOX_A);
     fake.hold();

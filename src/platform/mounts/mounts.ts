@@ -184,7 +184,10 @@ export const mount = async (paths: HostPaths, target: MountTarget, deadlineMs = 
     throw new MountError('failed', lastLine(stderr) ?? 'not mounted');
   } catch (error) {
     await cleanUp(point).catch((error_: unknown) => {
-      if (error instanceof MountError) throw new MountError(error.failure, error.message, error.program, { cause: error_ });
+      if (error instanceof MountError) {
+        const cause = error.cause === undefined ? error_ : new AggregateError([error.cause, error_], 'cleaning up failed too');
+        throw new MountError(error.failure, error.message, error.program, { cause });
+      }
       const message = error instanceof Error ? error.message : 'mounting failed';
       throw new AggregateError([error, error_], message);
     });

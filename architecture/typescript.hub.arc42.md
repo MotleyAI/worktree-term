@@ -2,7 +2,7 @@
 
 ## Purpose & context
 
-Local-only gateway. Serves the web bundle and one WebSocket per browser session; per session, holds one link per configured host (local socket or `ssh <host> wtd connect`). Owns `config.json`. Forwards a stable loopback port per remote host to that host's hub.
+Local-only gateway. Serves the web bundle and one WebSocket per browser session; per session, holds one link per configured host (local socket or `ssh <host> wtd connect`). Owns `config.json`. Forwards a stable loopback port per remote host to that host's hub. Mounts remote worktrees for the editor; the mounts are the hub's, not a session's.
 
 ## Building blocks
 
@@ -19,6 +19,7 @@ flowchart TD
     platform__install["Install"]
     platform__memory["Memory"]
     platform__scopes["Scopes"]
+    platform__mounts["Mounts"]
   end
   subgraph hub["Hub"]
     hub__server["Server"]
@@ -34,6 +35,7 @@ flowchart TD
   hub__links --> platform__dialer
   hub__links --> platform__install
   hub__links --> platform__scopes
+  hub__links --> platform__mounts
   hub__main --> hub__server
   hub__main --> hub__router
   hub__main --> hub__links
@@ -44,7 +46,7 @@ flowchart TD
   hub__router --> hub__config
   cli --> hub__main
   classDef leaf fill:none;
-  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,hub__server,hub__links,hub__config,hub__router,hub__main,cli leaf;
+  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,platform__mounts,hub__server,hub__links,hub__config,hub__router,hub__main,cli leaf;
 ```
 <!-- /likec4:hub -->
 

@@ -129,7 +129,9 @@ test.describe('outdated host', () => {
       await confirmAction(page);
       await fake.closed;
       expect(fake.shutdowns).toBe(1);
-      await expect.poll(() => hubRequests(wire, mark)).toEqual([{ t: 'restartDaemon', host: LOCAL }]);
+      await expect
+        .poll(() => hubRequests(wire, mark).filter((m) => m.t !== 'discoverRepos'))
+        .toEqual([{ t: 'restartDaemon', host: LOCAL }]);
       await expect(page.locator(hostBanner(LOCAL))).toHaveCount(0, { timeout: 15_000 });
       await expect(page.locator(worktreeEntry(repo))).toBeVisible();
       await oneDaemon(hub);

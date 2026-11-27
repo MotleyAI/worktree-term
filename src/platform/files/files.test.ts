@@ -33,6 +33,7 @@ import {
   ownedEntry,
   pathExists,
   preparePrivateDirs,
+  privateDir,
   readFileIfExists,
   readPrivateFile,
   readTree,
@@ -322,6 +323,22 @@ describe('private directories', () => {
     hooks.foreignOwner = target.runDir;
     const preparing = preparePrivateDirs(target);
     await expect(preparing).rejects.toThrow(target.runDir);
+  });
+
+  it('creates a single directory owner-only and tightens a loose one', async () => {
+    const fresh = join(dir, 'fresh');
+    await privateDir(fresh);
+    expect(modeOf(fresh)).toBe(0o700);
+    const loose = join(dir, 'loose');
+    mkdirSync(loose, { mode: 0o755 });
+    await privateDir(loose);
+    expect(modeOf(loose)).toBe(0o700);
+  });
+
+  it('refuses a path that is not a directory, naming it', async () => {
+    const file = join(dir, 'file');
+    writeFileSync(file, '');
+    await expect(privateDir(file)).rejects.toThrow(file);
   });
 });
 

@@ -6,6 +6,7 @@ import { installRemote, type InstalledRemote } from '../../platform/install/inde
 import { editorUnit, enterScope, findUserManager, hostScopeRoots, hubUnit, lowerOomScoreAdj } from '../../platform/scopes/index.js';
 import { editorArgs, ProtocolError, StreamDecoder, type Frame } from '../../protocol/index.js';
 
+export { MountRegistry, type MountOutcome, type WorktreeMount } from './mounts.js';
 export { forwardToHub, HubOpener, PRINT_CODE_COMMAND, type HubForward, type HubOpening, type HubOpenResult } from './hub.js';
 
 /** The host files a local link needs. */

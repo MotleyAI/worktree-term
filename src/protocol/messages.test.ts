@@ -21,6 +21,7 @@ import {
   MESSAGE_TYPES,
   OPENED_URL,
   openPr,
+  ORIGIN,
   raw,
   REPO,
   samples,
@@ -250,7 +251,15 @@ describe('attention state', () => {
     expectRejected('daemonToClient', raw(created({ ...liveTerminal, bell: false })));
     expectRejected(
       'daemonToClient',
-      raw({ t: 'repoState', repo: REPO, worktrees: [], terminals: [{ ...withoutState, bell: false }], checked: [], layouts: [] }),
+      raw({
+        t: 'repoState',
+        repo: REPO,
+        origin: null,
+        worktrees: [],
+        terminals: [{ ...withoutState, bell: false }],
+        checked: [],
+        layouts: [],
+      }),
     );
   });
 
@@ -287,7 +296,7 @@ describe('request correlation', () => {
     ['browserToHub', { t: 'movePreset', req: 1, name: 'p', to: 0 }],
     ['browserToHub', { t: 'openHub', req: 1, host: 1 }],
     ['browserToHub', { t: 'installHub', req: 1, host: 1 }],
-    ['browserToHub', { t: 'openEditor', req: 1, worktree: WT }],
+    ['browserToHub', { t: 'openEditor', req: 1, host: 0, worktree: WT }],
     ['browserToHub', { t: 'setEditor', req: 1, command: 'kate' }],
     ['browserToHub', { t: 'setEditor', req: 1, command: null }],
     ['hubToBrowser', { t: 'hubLogin', req: 1, login: 'https://login.tailscale.com/a/abc123' }],
@@ -375,6 +384,7 @@ describe('value limits', () => {
   const repoState = (fields: Record<string, unknown>): unknown => ({
     t: 'repoState',
     repo: REPO,
+    origin: null,
     worktrees: [],
     terminals: [],
     checked: [],
@@ -386,6 +396,7 @@ describe('value limits', () => {
   const presets = (n: number): unknown[] => range(n).map((i) => ({ name: `p${String(i)}`, command: null }));
   const preset = (name: unknown, command: unknown): unknown => ({ t: 'presets', presets: [{ name, command }] });
   const layouts = (n: number): unknown[] => paths(n).map((worktree) => ({ worktree, layout: { tabs: [], active: 0 } }));
+  const discoveredRepos = (n: number): unknown[] => paths(n).map((path) => ({ path, origin: null }));
 
   const ERROR_CODES = [
     'bad-message',
@@ -484,9 +495,9 @@ describe('value limits', () => {
     ['home-relative createTerm worktree', 'clientToDaemon', { ...create('shell', null), worktree: '~/w' }, false],
     ['1024-char host reason', 'hubToBrowser', { t: 'hosts', hosts: [{ ...hosts[0], status: 'down', reason: 'r'.repeat(1024) }] }, true],
     ['1025-char host reason', 'hubToBrowser', { t: 'hosts', hosts: [{ ...hosts[0], status: 'down', reason: 'r'.repeat(1025) }] }, false],
-    ['4096 discovered repos', 'daemonToClient', { t: 'reposDiscovered', req: 1, repos: paths(4096) }, true],
-    ['4097 discovered repos', 'daemonToClient', { t: 'reposDiscovered', req: 1, repos: paths(4097) }, false],
-    ['4097 discovered repos via hub', 'hubToBrowser', { t: 'reposDiscovered', req: 1, host: 0, repos: paths(4097) }, false],
+    ['4096 discovered repos', 'daemonToClient', { t: 'reposDiscovered', req: 1, repos: discoveredRepos(4096) }, true],
+    ['4097 discovered repos', 'daemonToClient', { t: 'reposDiscovered', req: 1, repos: discoveredRepos(4097) }, false],
+    ['4097 discovered repos via hub', 'hubToBrowser', { t: 'reposDiscovered', req: 1, host: 0, repos: discoveredRepos(4097) }, false],
     ['4096 visible terminals', 'clientToDaemon', { t: 'setVisible', termIds: range(4096) }, true],
     ['4097 visible terminals', 'clientToDaemon', { t: 'setVisible', termIds: range(4097) }, false],
     ['64 hosts', 'hubToBrowser', { t: 'hosts', hosts: hostEntries(64) }, true],
@@ -926,7 +937,7 @@ describe('editor messages', () => {
   });
 
   it.each([
-    ['openEditor', { t: 'openEditor', req: 1, worktree: WT }],
+    ['openEditor', { t: 'openEditor', req: 1, host: 0, worktree: WT }],
     ['setEditor', { t: 'setEditor', req: 1, command: 'code {path}' }],
   ])('accepts %s only from the browser', (_name, message) => {
     expect(decodes('browserToHub', message)).toBe(true);
@@ -949,10 +960,10 @@ describe('editor messages', () => {
   });
 
   it.each([
-    ['a relative path', { t: 'openEditor', req: 1, worktree: 'repo/a' }],
-    ['a home-relative path', { t: 'openEditor', req: 1, worktree: '~/a' }],
-    ['a path with NUL', { t: 'openEditor', req: 1, worktree: '/a\u0000b' }],
-    ['a host', { t: 'openEditor', req: 1, host: 0, worktree: WT }],
+    ['a relative path', { t: 'openEditor', req: 1, host: 0, worktree: 'repo/a' }],
+    ['a home-relative path', { t: 'openEditor', req: 1, host: 0, worktree: '~/a' }],
+    ['a path with NUL', { t: 'openEditor', req: 1, host: 0, worktree: '/a\u0000b' }],
+    ['no host', { t: 'openEditor', req: 1, worktree: WT }],
     ['no worktree', { t: 'openEditor', req: 1 }],
     ['no command', { t: 'setEditor', req: 1 }],
     ['an empty command', { t: 'setEditor', req: 1, command: '' }],
@@ -1110,6 +1121,7 @@ describe('out-of-memory exits', () => {
       raw({
         t: 'repoState',
         repo: REPO,
+        origin: null,
         worktrees: [],
         terminals: [{ ...liveTerminal, exit: { code: 1, signal: null } }],
         checked: [],
@@ -1209,5 +1221,269 @@ describe('pull request status', () => {
 
   it.each(bounded)('encodes and decodes %s alike: %s', (_name, value, ok) => {
     expect(bothValid(value)).toBe(ok);
+  });
+});
+
+/** Whether `message` both encodes and decodes in `dir`; throws when only one of them accepts it. */
+const validAlike = <D extends Direction>(dir: D, message: MessageOf<D>): boolean => {
+  const decoded = decodes(dir, message);
+  let encoded = true;
+  try {
+    encodeMessage(dir, message);
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProtocolError);
+    encoded = false;
+  }
+  expect(encoded).toBe(decoded);
+  return decoded;
+};
+
+const without = (value: Record<string, unknown>, field: string): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => key !== field));
+
+describe('repo origins', () => {
+  type RepoState = Extract<MessageOf<'daemonToClient'>, { t: 'repoState' }>;
+  const STATE: RepoState = { t: 'repoState', repo: REPO, origin: ORIGIN, worktrees: [], terminals: [], checked: [], layouts: [] };
+  const state = (origin: unknown): Record<string, unknown> => ({ ...STATE, origin });
+  const discovered = (origin: unknown): unknown => ({ t: 'reposDiscovered', req: 1, repos: [{ path: '/r/a', origin }] });
+
+  it.each([ORIGIN, null])('round-trip in a repoState carrying origin %s', (origin) => {
+    const message: RepoState = { ...STATE, origin };
+    expect(decodeMessage('daemonToClient', encodeMessage('daemonToClient', message))).toEqual(message);
+    const enveloped: MessageOf<'hubToBrowser'> = { t: 'host', host: 1, m: message };
+    expect(decodeMessage('hubToBrowser', encodeMessage('hubToBrowser', enveloped))).toEqual(enveloped);
+  });
+
+  it('are required in a repoState', () => {
+    expect(decodes('daemonToClient', STATE)).toBe(true);
+    expectRejected('daemonToClient', raw(without(STATE, 'origin')));
+    expectRejected('hubToBrowser', raw({ t: 'host', host: 0, m: without(STATE, 'origin') }));
+  });
+
+  it.each([
+    ['a host and path', 'github.com/acme/app'],
+    ['a kept port and path case', 'gitlab.example.com:2222/Group/Sub/Proj'],
+    ['a bracketed IPv6 host', '[2001:db8::1]:2222/acme/app'],
+    ['non-ASCII letters', 'git.example.com/ü/репо'],
+    ['one character', 'x'],
+    ['4096 characters', 'o'.repeat(4096)],
+  ])('accept an origin with %s', (_name, origin) => {
+    expect(decodes('daemonToClient', state(origin))).toBe(true);
+    expect(decodes('daemonToClient', discovered(origin))).toBe(true);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['holding a space', 'github.com/acme app'],
+    ['holding a newline', 'github.com/acme/app\n'],
+    ['holding a tab', 'github.com/\tacme/app'],
+    ['holding a no-break space', 'github.com/acme app'],
+    ['holding NUL', 'github.com/acme\u0000/app'],
+    ['holding DEL', 'github.com/acme\u007f/app'],
+    ['holding a C1 control', 'github.com/acme\u0085/app'],
+    ['4097 characters long', 'o'.repeat(4097)],
+    ['a number', 1],
+  ])('reject an origin that is %s where a normalized one decodes', (_name, origin) => {
+    expect(decodes('daemonToClient', state(ORIGIN))).toBe(true);
+    expect(decodes('daemonToClient', state(origin))).toBe(false);
+    expect(decodes('daemonToClient', discovered(ORIGIN))).toBe(true);
+    expect(decodes('daemonToClient', discovered(origin))).toBe(false);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['holding a space', 'a b'],
+    ['4097 characters long', 'o'.repeat(4097)],
+  ])('are refused by the encoder when %s', (_name, origin) => {
+    expect(validAlike('daemonToClient', STATE)).toBe(true);
+    expect(validAlike('daemonToClient', { ...STATE, origin })).toBe(false);
+  });
+
+  it('are sent only by a daemon', () => {
+    expect(decodes('daemonToClient', STATE)).toBe(true);
+    expectRejected('clientToDaemon', raw(STATE));
+    expectRejected('browserToHub', raw({ t: 'host', host: 0, m: STATE }));
+  });
+});
+
+describe('discovered repos', () => {
+  type Discovered = Extract<MessageOf<'daemonToClient'>, { t: 'reposDiscovered' }>;
+  type HubDiscovered = Extract<MessageOf<'hubToBrowser'>, { t: 'reposDiscovered' }>;
+  type Repo = Discovered['repos'][number];
+  const REPOS: Repo[] = [
+    { path: '/r/a', origin: 'github.com/acme/a' },
+    { path: '/r/b', origin: null },
+  ];
+  const entries = (n: number): Repo[] => paths(n).map((path) => ({ path, origin: null }));
+  const daemon = (repos: unknown): Record<string, unknown> => ({ t: 'reposDiscovered', req: 1, repos });
+  const hub = (repos: unknown): Record<string, unknown> => ({ t: 'reposDiscovered', req: 1, host: 0, repos });
+
+  it('round-trip with their origins from a daemon and through the hub', () => {
+    const message: Discovered = { t: 'reposDiscovered', req: 1, repos: REPOS };
+    expect(decodeMessage('daemonToClient', encodeMessage('daemonToClient', message))).toEqual(message);
+    const relayed: HubDiscovered = { t: 'reposDiscovered', req: 1, host: 2, repos: REPOS };
+    expect(decodeMessage('hubToBrowser', encodeMessage('hubToBrowser', relayed))).toEqual(relayed);
+  });
+
+  it.each([
+    ['none', []],
+    ['one origin shared by two paths', [REPOS[0], { path: '/r/c', origin: 'github.com/acme/a' }]],
+    ['4096 entries', entries(4096)],
+  ])('decode with %s', (_name, repos) => {
+    expect(decodes('daemonToClient', daemon(repos))).toBe(true);
+    expect(decodes('hubToBrowser', hub(repos))).toBe(true);
+  });
+
+  it.each([
+    ['bare paths', ['/r/a']],
+    ['a path listed twice', [REPOS[0], { path: '/r/a', origin: null }]],
+    ['an entry listed twice', [REPOS[1], REPOS[1]]],
+    ['a relative path', [{ path: 'r/a', origin: null }]],
+    ['a home-relative path', [{ path: '~/a', origin: null }]],
+    ['an entry without origin', [{ path: '/r/a' }]],
+    ['an entry without path', [{ origin: ORIGIN }]],
+    ['an extra entry field', [{ path: '/r/a', origin: null, name: 'a' }]],
+    ['4097 entries', entries(4097)],
+  ])('reject %s where origin entries decode', (_name, repos) => {
+    expect(decodes('daemonToClient', daemon(REPOS))).toBe(true);
+    expect(decodes('daemonToClient', daemon(repos))).toBe(false);
+    expect(decodes('hubToBrowser', hub(REPOS))).toBe(true);
+    expect(decodes('hubToBrowser', hub(repos))).toBe(false);
+  });
+
+  it('refuse to encode a path listed twice', () => {
+    const twice: Discovered = { t: 'reposDiscovered', req: 1, repos: [...REPOS, { path: '/r/a', origin: null }] };
+    expect(validAlike('daemonToClient', { t: 'reposDiscovered', req: 1, repos: REPOS })).toBe(true);
+    expect(validAlike('daemonToClient', twice)).toBe(false);
+    expect(validAlike('hubToBrowser', { ...twice, host: 0 })).toBe(false);
+  });
+});
+
+describe('group removal', () => {
+  type RemoveRepos = Extract<MessageOf<'browserToHub'>, { t: 'removeRepos' }>;
+  type Member = RemoveRepos['members'][number];
+  const MEMBERS: Member[] = [
+    { host: 0, repo: '/r/app' },
+    { host: 1, repo: '/srv/app' },
+  ];
+  const REMOVE: RemoveRepos = { t: 'removeRepos', req: 1, members: MEMBERS };
+  const remove = (members: unknown): Record<string, unknown> => ({ t: 'removeRepos', req: 1, members });
+  const members = (n: number): Member[] => paths(n).map((repo) => ({ host: 0, repo }));
+
+  it('round-trips distinct members', () => {
+    expect(decodeMessage('browserToHub', encodeMessage('browserToHub', REMOVE))).toEqual(REMOVE);
+  });
+
+  it.each([
+    ['one path on two hosts', [MEMBERS[0], { host: 1, repo: '/r/app' }]],
+    ['two repos on one host', [MEMBERS[0], { host: 0, repo: '/r/other' }]],
+    ['one member', [MEMBERS[1]]],
+    ['1024 members', members(1024)],
+  ])('accepts %s', (_name, value) => {
+    expect(decodes('browserToHub', remove(value))).toBe(true);
+  });
+
+  it.each([
+    ['no members', []],
+    ['a member listed twice', [MEMBERS[0], { host: 0, repo: '/r/app' }]],
+    ['1025 members', members(1025)],
+    ['a relative repo', [{ host: 0, repo: 'r/app' }]],
+    ['a home-relative repo', [{ host: 0, repo: '~/app' }]],
+    ['a host index above 65535', [{ host: 65536, repo: '/r/app' }]],
+    ['a negative host index', [{ host: -1, repo: '/r/app' }]],
+    ['a member without host', [{ repo: '/r/app' }]],
+    ['a member without repo', [{ host: 0 }]],
+    ['an extra member field', [{ host: 0, repo: '/r/app', force: true }]],
+    ['a single member object', { host: 0, repo: '/r/app' }],
+    ['bare paths', ['/r/app']],
+  ])('rejects %s where distinct members decode', (_name, value) => {
+    expect(decodes('browserToHub', REMOVE)).toBe(true);
+    expect(decodes('browserToHub', remove(value))).toBe(false);
+  });
+
+  it('rejects a removeRepos without members', () => {
+    expect(decodes('browserToHub', REMOVE)).toBe(true);
+    expectRejected('browserToHub', raw({ t: 'removeRepos', req: 1 }));
+  });
+
+  it('requires req bounded to 1..2^32-1', () => {
+    expect(decodes('browserToHub', { ...REMOVE, req: 4294967295 })).toBe(true);
+    for (const req of [undefined, 0, 4294967296, 1.5, null]) {
+      expect(decodes('browserToHub', { ...REMOVE, req }), String(req)).toBe(false);
+    }
+  });
+
+  it.each([
+    ['no members', []],
+    [
+      'a member listed twice',
+      [
+        { host: 0, repo: '/r/app' },
+        { host: 0, repo: '/r/app' },
+      ],
+    ],
+    ['1025 members', members(1025)],
+  ] satisfies [string, Member[]][])('refuses to encode %s', (_name, value) => {
+    expect(validAlike('browserToHub', REMOVE)).toBe(true);
+    expect(validAlike('browserToHub', { ...REMOVE, members: value })).toBe(false);
+  });
+
+  it('is accepted only from the browser', () => {
+    expect(decodes('browserToHub', REMOVE)).toBe(true);
+    expectRejected('hubToBrowser', raw(REMOVE));
+    expectRejected('clientToDaemon', raw(REMOVE));
+    expectRejected('daemonToClient', raw(REMOVE));
+    expectRejected('browserToHub', raw({ t: 'host', host: 0, m: REMOVE }));
+  });
+});
+
+describe('editor requests name their host', () => {
+  type OpenEditor = Extract<MessageOf<'browserToHub'>, { t: 'openEditor' }>;
+  const OPEN: OpenEditor = { t: 'openEditor', req: 1, host: 1, worktree: '/srv/app' };
+
+  it('round-trips an openEditor with host 1', () => {
+    expect(decodeMessage('browserToHub', encodeMessage('browserToHub', OPEN))).toEqual(OPEN);
+  });
+
+  it('accepts the local host and the last host index', () => {
+    expect(decodes('browserToHub', { ...OPEN, host: 0 })).toBe(true);
+    expect(decodes('browserToHub', { ...OPEN, host: 65535 })).toBe(true);
+  });
+
+  it.each([
+    ['no host', without(OPEN, 'host')],
+    ['a null host', { ...OPEN, host: null }],
+    ['a host index above 65535', { ...OPEN, host: 65536 }],
+    ['a negative host index', { ...OPEN, host: -1 }],
+    ['a fractional host index', { ...OPEN, host: 0.5 }],
+    ['a host name', { ...OPEN, host: 'devbox' }],
+    ['a relative worktree', { ...OPEN, worktree: 'repo/a' }],
+    ['a home-relative worktree', { ...OPEN, worktree: '~/a' }],
+    ['no worktree', without(OPEN, 'worktree')],
+    ['no req', without(OPEN, 'req')],
+    ['an extra field', { ...OPEN, repo: '/srv' }],
+  ])('rejects an openEditor with %s where one naming its host decodes', (_name, message) => {
+    expect(decodes('browserToHub', OPEN)).toBe(true);
+    expect(decodes('browserToHub', message)).toBe(false);
+  });
+
+  it('accepts an openEditor naming its host only from the browser', () => {
+    expect(decodes('browserToHub', OPEN)).toBe(true);
+    expectRejected('hubToBrowser', raw(OPEN));
+    expectRejected('clientToDaemon', raw(OPEN));
+    expectRejected('browserToHub', raw({ t: 'host', host: 1, m: OPEN }));
+  });
+});
+
+describe('not-a-worktree error code', () => {
+  it('decodes from the hub, with or without a host', () => {
+    expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 1, code: 'not-a-worktree', message: 'x' })).toBe(true);
+    expect(decodes('hubToBrowser', { t: 'error', req: null, host: null, code: 'not-a-worktree', message: 'x' })).toBe(true);
+  });
+
+  it('is refused from a daemon where the hub sends it', () => {
+    expect(decodes('hubToBrowser', { t: 'error', req: 1, host: 1, code: 'not-a-worktree', message: 'x' })).toBe(true);
+    expectRejected('daemonToClient', raw({ t: 'error', req: 1, code: 'not-a-worktree', message: 'x' }));
+    expectRejected('hubToBrowser', raw({ t: 'host', host: 1, m: { t: 'error', req: 1, code: 'not-a-worktree', message: 'x' } }));
   });
 });

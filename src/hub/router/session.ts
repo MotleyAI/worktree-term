@@ -10,9 +10,10 @@ import {
   type HostEntry,
   type MessageOf,
   type Preset,
+  type RepoMember,
 } from '../../protocol/index.js';
 import { ConfigError, effectivePresets, type ConfigSnapshot, type EditorEdit, type PresetEdit, type RepoEdit } from '../config/index.js';
-import type { DaemonEndpoint, EditorOutcome, Link } from '../links/index.js';
+import type { DaemonEndpoint, EditorOutcome, Link, WorktreeMount } from '../links/index.js';
 import type { HostCoordinator } from './coordinator.js';
 import { hostKey, hostTransition, initialHostState, retryDelay, type HostEvent, type HostState } from './hosts.js';
 import { OneShotError, requestOnce } from './oneshot.js';
@@ -45,6 +46,30 @@ export type HubOpenOutcome =
   | { kind: 'opened'; url: string }
   | { kind: 'error'; code: Extract<ErrorCode, 'unknown-host' | 'hub-outdated' | 'hub-failed' | 'internal'>; message: string };
 
+/** A host and its repos after an edit. */
+export interface HostRepos {
+  host: SessionHost;
+  repos: string[];
+}
+
+/** The outcome of a group removal: whether the configuration changed, and each member host's repos afterwards. */
+export interface RepoGroupEdit {
+  changed: boolean;
+  hosts: HostRepos[];
+}
+
+/** A group removal member that failed its check, answered with its host. */
+class MemberError extends Error {
+  override readonly name = 'MemberError';
+  constructor(
+    readonly host: number,
+    readonly code: ErrorCode,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** The configuration no longer lists the session's host. */
 export class HostGoneError extends Error {
   override readonly name = 'HostGoneError';
@@ -61,8 +86,10 @@ export interface SessionContext {
   listsRepo: (host: SessionHost, repo: string) => Promise<boolean>;
   /** Adds or removes a repo of `host` in the configuration. */
   editRepos: (host: SessionHost, change: 'add' | 'remove', repo: string) => Promise<RepoEdit>;
-  /** Shows the host's repos after an edit to every session listing it. */
-  reposEdited: (host: SessionHost, repos: string[]) => void;
+  /** Removes each member's repo from its host's repos in one configuration edit. */
+  removeRepoGroup: (members: { host: SessionHost; repo: string }[]) => Promise<RepoGroupEdit>;
+  /** Shows the hosts' repos after an edit to every session listing them. */
+  reposEdited: (edits: HostRepos[]) => void;
   /** Adds or removes a preset in the configuration. */
   editPresets: (
     edit: { t: 'add'; preset: Preset } | { t: 'remove'; name: string } | { t: 'move'; name: string; to: number },
@@ -75,6 +102,10 @@ export interface SessionContext {
   editorEdited: (command: string) => void;
   /** Starts editor `command` for `worktree` on this machine. */
   openEditor: (command: string, worktree: string) => Promise<EditorOutcome>;
+  /** Mounts the remote worktree `target`, then starts editor `command` on its mount point. */
+  openRemoteEditor: (command: string, target: WorktreeMount) => Promise<EditorOutcome>;
+  /** The daemon of `host` sent `worktrees` for `repo` on a session's link. */
+  worktreesListed: (host: SessionHost, repo: string, worktrees: string[]) => void;
   /** A link of session `from` to `host` exchanged hello: redials the other sessions' links to it that need login. */
   greeted?: (host: SessionHost, from: Session) => void;
   /** Opens the hub of the remote host named `name`, read afresh from the configuration; `cancel` ends it silently. */
@@ -106,6 +137,9 @@ export const hubError = (req: number | null, host: number | null, code: ErrorCod
 });
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/** The name of host `idx`, or `host <idx>` without one. */
+const hostName = (host: HostLink | undefined, idx: number): string => host?.host.name ?? `host ${String(idx)}`;
 
 /** One host's daemon link of one session, with the host's status. */
 class HostLink {
@@ -187,6 +221,7 @@ class HostLink {
       return;
     }
     this.link?.send(controlFrame(this.hello));
+    this.session.linked(this.idx);
     this.transition({ kind: 'hello', protocol: hello.protocol, version: hello.version, instance: hello.instance });
     this.session.greeted(this.host);
   }
@@ -198,6 +233,7 @@ class HostLink {
         this.fail('the daemon sent an invalid message');
         return;
       }
+      this.session.daemonSent(this.host, message);
       this.session.forwardText(this.idx, utf8.decode(frame.payload));
       return;
     }
@@ -256,6 +292,8 @@ class HostLink {
 /** One browser session: its configuration snapshot, its daemon links and its routing. */
 export class Session {
   private readonly hosts: HostLink[];
+  /** The latest worktree paths each host's daemon sent per watched repo, by host index. */
+  private readonly listed = new Map<number, Map<string, string[]>>();
   /** The hub opening in progress, at most one. */
   private opening: { cancel: () => void } | null = null;
   /** The editor command this session's page shows. */
@@ -310,6 +348,9 @@ export class Session {
       case 'removeRepo':
         this.removeRepo(message.req, message.host, message.repo);
         return;
+      case 'removeRepos':
+        this.removeRepos(message.req, message.members);
+        return;
       case 'addPreset':
         this.editPresets(message.req, { t: 'add', preset: message.preset });
         return;
@@ -323,7 +364,7 @@ export class Session {
         this.setEditor(message.req, message.command);
         return;
       case 'openEditor':
-        this.openEditor(message.req, message.worktree);
+        this.openEditor(message.req, message.host, message.worktree);
         return;
     }
   }
@@ -341,12 +382,35 @@ export class Session {
     if (!this.closed) this.message({ t: 'presets', presets: effectivePresets({ presets, terminalMemory }) });
   }
 
-  /** Replaces the repos of the session's matching host after an edit and sends `hosts`. */
-  showRepos(host: SessionHost, repos: string[]): void {
-    const target = this.hosts.find((h) => (host.ssh === null ? h.host.ssh === null : h.host.ssh !== null && h.host.name === host.name));
-    if (target === undefined || this.closed) return;
-    target.host.repos = repos;
-    this.hostsChanged();
+  /** Replaces the repos of the session's matching hosts after an edit and sends `hosts` once. */
+  showRepos(edits: readonly HostRepos[]): void {
+    if (this.closed) return;
+    let shown = false;
+    for (const { host, repos } of edits) {
+      const target = this.hosts.find((h) => (host.ssh === null ? h.host.ssh === null : h.host.ssh !== null && h.host.name === host.name));
+      if (target === undefined) continue;
+      target.host.repos = repos;
+      shown = true;
+    }
+    if (shown) this.hostsChanged();
+  }
+
+  /** A new link to host `idx` greeted: forgets the worktree lists earlier links sent, which it lists again. */
+  linked(idx: number): void {
+    this.listed.delete(idx);
+  }
+
+  /** Keeps the latest worktree list a daemon sent for each repo, sharing it with the hub. */
+  daemonSent(host: SessionHost, message: MessageOf<'daemonToClient'>): void {
+    if (message.t !== 'repoState' && message.t !== 'worktreesChanged') return;
+    const paths = message.worktrees.map((w) => w.path);
+    let repos = this.listed.get(host.idx);
+    if (repos === undefined) {
+      repos = new Map();
+      this.listed.set(host.idx, repos);
+    }
+    repos.set(message.repo, paths);
+    this.context.worktreesListed(host, message.repo, paths);
   }
 
   /** Routes browser input for a terminal of `host`. */
@@ -419,6 +483,7 @@ export class Session {
       this.error(req, idx, 'unknown-host', `no host ${String(idx)}`);
       return;
     }
+    if (m.t === 'unwatchRepo') this.listed.get(idx)?.delete(m.repo);
     const { status } = host.state;
     if (status === 'connected') host.send(controlFrame(m));
     else if (req !== null) {
@@ -545,6 +610,47 @@ export class Session {
     });
   }
 
+  /** Removes every member, all or none: each is checked as `removeRepo` does, then one configuration edit. */
+  private removeRepos(req: number, members: readonly RepoMember[]): void {
+    const run = async (): Promise<void> => {
+      const checked: { host: SessionHost; repo: string }[] = [];
+      for (const member of members) checked.push({ host: (await this.checkMember(member)).host, repo: member.repo }); // NOSONAR(S9382) — the first failing member answers
+      const edit = await this.context.removeRepoGroup(checked);
+      this.message({ t: 'done', req });
+      if (edit.changed) this.context.reposEdited(edit.hosts);
+    };
+    run().catch((error: unknown) => {
+      if (error instanceof MemberError) this.error(req, error.host, error.code, error.message);
+      else if (error instanceof ConfigError) this.error(req, null, 'internal', `cannot edit the configuration: ${error.message}`);
+      else this.error(req, null, 'internal', error instanceof Error ? error.message : String(error));
+    });
+  }
+
+  /** The member's host once it is connected and its daemon lists no terminal of the repo; throws MemberError otherwise. */
+  private async checkMember({ host: idx, repo }: RepoMember): Promise<HostLink> {
+    const host = this.hosts[idx];
+    const at = `${hostName(host, idx)}:${repo}`;
+    if (host === undefined) throw new MemberError(idx, 'unknown-host', `no host ${String(idx)}; cannot remove ${at}`);
+    const { status } = host.state;
+    if (status !== 'connected') {
+      throw new MemberError(
+        idx,
+        status === 'outdated' ? 'version-mismatch' : 'host-unavailable',
+        `${host.host.name} is ${status}; cannot remove ${at}`,
+      );
+    }
+    try {
+      const { before } = await requestOnce(host.daemon, this.context.hello, { t: 'watchRepo', req: ONE_SHOT_REQ, repo });
+      const state = before.find((m) => m.t === 'repoState' && m.repo === repo);
+      if (state?.t === 'repoState' && state.terminals.length > 0)
+        throw new MemberError(idx, 'busy', `${at} has terminals; close them first`);
+    } catch (error) {
+      if (error instanceof OneShotError && error.code !== 'not-a-repo') throw new MemberError(idx, error.code, `${at}: ${error.message}`);
+      if (!(error instanceof OneShotError)) throw error;
+    }
+    return host;
+  }
+
   /** Edits the presets, answering `done` and showing the result to every session, or `internal` naming the refusal. */
   private editPresets(req: number, edit: Parameters<SessionContext['editPresets']>[0]): void {
     this.context.editPresets(edit).then(
@@ -573,8 +679,26 @@ export class Session {
     );
   }
 
-  private openEditor(req: number, worktree: string): void {
-    this.context.openEditor(this.editor, worktree).then(
+  /** Opens a worktree that `idx`'s daemon listed to this session: locally, or on its mount for a connected remote host. */
+  private openEditor(req: number, idx: number, worktree: string): void {
+    const host = this.hosts[idx];
+    const repo = [...(this.listed.get(idx) ?? [])].find(([, paths]) => paths.includes(worktree))?.[0];
+    if (host === undefined || repo === undefined) {
+      this.error(req, null, 'not-a-worktree', `not a worktree of ${hostName(host, idx)}: ${worktree}`);
+      return;
+    }
+    const alias = host.host.ssh;
+    if (alias === null) {
+      this.launched(req, this.context.openEditor(this.editor, worktree));
+      return;
+    }
+    if (this.connectedHost(req, idx) === null) return;
+    this.launched(req, this.context.openRemoteEditor(this.editor, { host: host.host.name, alias, path: worktree, repo }));
+  }
+
+  /** Answers `done` once the editor started, else its error. */
+  private launched(req: number, launch: Promise<EditorOutcome>): void {
+    launch.then(
       (outcome) => {
         if (outcome.kind === 'started') this.message({ t: 'done', req });
         else this.error(req, null, outcome.code, outcome.message);
@@ -588,7 +712,7 @@ export class Session {
   /** Answers `done` for an edit, then shows its repos to every session listing the host. */
   private edited(req: number, host: SessionHost, edit: RepoEdit): void {
     this.message({ t: 'done', req });
-    if (edit.changed) this.context.reposEdited(host, edit.repos);
+    if (edit.changed) this.context.reposEdited([{ host, repos: edit.repos }]);
   }
 
   /** Runs a hub-level request, answering its failure with the daemon's code or `internal`. */

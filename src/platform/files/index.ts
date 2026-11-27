@@ -86,7 +86,8 @@ export const sshControlPath = (paths: Pick<HostPaths, 'runDir'>): string => {
 /** Paths of the current process's user and host. */
 export const currentHostPaths = (): HostPaths => hostPaths({ env: process.env, home: homedir(), host: hostname() });
 
-const privateDir = async (path: string): Promise<void> => {
+/** Creates the directory `path` owner-only, or tightens an existing one of this user to owner-only. */
+export const privateDir = async (path: string): Promise<void> => {
   try {
     await mkdir(path, { mode: 0o700 });
   } catch (error) {

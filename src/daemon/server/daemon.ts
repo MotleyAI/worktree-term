@@ -12,6 +12,7 @@ import {
 import {
   NotARepoError,
   type discoverRepos,
+  type readOrigin,
   type listWorktrees,
   type removeWorktree,
   type watchWorktrees,
@@ -99,6 +100,7 @@ export interface DaemonServices {
   watchWorktrees: typeof watchWorktrees;
   listWorktrees: typeof listWorktrees;
   discoverRepos: typeof discoverRepos;
+  readOrigin: typeof readOrigin;
   worktreeRisks: typeof worktreeRisks;
   removeWorktree: typeof removeWorktree;
   spawnTerminal: (spec: TerminalSpec, events: TerminalEvents) => Promise<TerminalProcess>;
@@ -310,6 +312,11 @@ export class Daemon {
   // Repos and worktrees.
 
   private async watchRepo(peer: Peer, repo: string): Promise<void> {
+    // A failed origin read counts only once the watch shows the path is a repository.
+    const read = await this.options.services.readOrigin(repo).then(
+      (origin) => ({ origin }),
+      (error: unknown) => ({ error }),
+    );
     let entry = this.repos.get(repo);
     if (entry === undefined) {
       increment(this.waiting, repo);
@@ -319,6 +326,11 @@ export class Daemon {
         decrement(this.waiting, repo);
       }
     }
+    if ('error' in read) {
+      if (entry.watchers.size === 0 && !this.waiting.has(repo)) this.stopWatch(repo);
+      throw read.error;
+    }
+    const { origin } = read;
     if (peer.closed) {
       if (entry.watchers.size === 0 && !this.waiting.has(repo)) this.stopWatch(repo);
       return;
@@ -328,6 +340,7 @@ export class Daemon {
     peer.send({
       t: 'repoState',
       repo,
+      origin,
       worktrees: entry.watch.worktrees,
       terminals: this.terminalsOf(repo).map(describe),
       checked: this.options.store.checked(repo),

@@ -108,7 +108,18 @@ describe('repo discovery through the hub', () => {
     const client = await fx.host.session();
     await connected(client);
     const reply = await client.hubRequest({ t: 'discoverRepos', host: 0 });
-    expect(reply).toEqual({ from: 'hub', m: { t: 'reposDiscovered', req: 1, host: 0, repos: [deep, one] } });
+    expect(reply).toEqual({
+      from: 'hub',
+      m: {
+        t: 'reposDiscovered',
+        req: 1,
+        host: 0,
+        repos: [
+          { path: deep, origin: null },
+          { path: one, origin: null },
+        ],
+      },
+    });
   });
 
   it('discovers below the home directory by default', async () => {
@@ -116,7 +127,7 @@ describe('repo discovery through the hub', () => {
     const client = await fx.host.session();
     await connected(client);
     const reply = await client.hubRequest({ t: 'discoverRepos', host: 0 });
-    expect(reply.m.t === 'reposDiscovered' ? reply.m.repos : []).toContain(mine);
+    expect(reply.m.t === 'reposDiscovered' ? reply.m.repos : []).toContainEqual({ path: mine, origin: null });
   });
 
   it('discovers on a remote host against the remote home', async () => {
@@ -127,7 +138,7 @@ describe('repo discovery through the hub', () => {
     const client = await fx.host.session();
     await connectedHost(client, 1);
     const reply = await client.hubRequest({ t: 'discoverRepos', host: 1 });
-    expect(reply).toEqual({ from: 'hub', m: { t: 'reposDiscovered', req: 1, host: 1, repos: [found] } });
+    expect(reply).toEqual({ from: 'hub', m: { t: 'reposDiscovered', req: 1, host: 1, repos: [{ path: found, origin: null }] } });
   });
 
   it('keeps a hub-level request apart from a daemon request with the same id', async () => {

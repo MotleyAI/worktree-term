@@ -4,7 +4,7 @@ import { DAEMON_PROTOCOL_VERSION } from '../../src/protocol/index.js';
 import { makeRepo, waitUntil } from '../support/daemon-host.js';
 import { FakeDaemon } from '../support/fake-daemon.js';
 import { installRemote } from '../support/fake-ssh.js';
-import { byTestId, hostBanner, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
+import { byTestId, groupTab, hostBanner, repoTab, terminalBox, TID, worktreeEntry } from './contract.js';
 import {
   confirmAction,
   expect,
@@ -22,7 +22,6 @@ import {
   refuseBrowserDialogs,
   REMOTE,
   screenOf,
-  selectRepo,
   selectWorktree,
   stopHub,
   test,
@@ -31,6 +30,7 @@ import {
   writeHubConfig,
   xtermOf,
 } from './fixture.js';
+import { selectGroup } from './origins.js';
 
 const RESOLVE_ERROR = 'ssh: Could not resolve hostname box';
 
@@ -42,7 +42,7 @@ test.describe('host status on repo tabs', () => {
     const app = join(remote.home, 'srv', 'app');
     writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: [app] }] });
     await openUi(hub, page);
-    const tab = page.locator(repoTab(app));
+    const tab = page.locator(groupTab(`box:${app}`));
     await expect(tab).toContainText('box:app');
     await expect(tab.locator(byTestId(TID.hostStatus))).toHaveText('reconnecting', { timeout: 10_000 });
     await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0);
@@ -67,7 +67,7 @@ test.describe('host banners', () => {
     await expect(banner).toContainText('box');
     await expect(banner).toContainText(RESOLVE_ERROR);
     await expect(banner.locator(byTestId(TID.hostAction))).toHaveText('Install');
-    await expect(page.locator(repoTab('/srv/app')).locator(byTestId(TID.hostStatus))).toHaveText('down');
+    await expect(page.locator(groupTab('box:/srv/app')).locator(byTestId(TID.hostStatus))).toHaveText('down');
   });
 
   test('the banner disappears once the down host is connected', async ({ hub, page, ssh }) => {
@@ -80,7 +80,7 @@ test.describe('host banners', () => {
     nodeRemote(ssh, 'box');
     await installRemote(hub, ssh, 'box');
     await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.locator(repoTab('/srv/app')).locator(byTestId(TID.hostStatus))).toHaveCount(0);
+    await expect(page.locator(groupTab('box:/srv/app')).locator(byTestId(TID.hostStatus))).toHaveCount(0);
   });
 });
 
@@ -102,7 +102,7 @@ test.describe('Tailscale login', () => {
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', /\bnoopener\b/);
     await expect(link).toHaveAttribute('rel', /\bnoreferrer\b/);
-    const tab = page.locator(repoTab('/srv/app'));
+    const tab = page.locator(groupTab('box:/srv/app'));
     await expect(tab).toContainText('box:app');
     await expect(tab.locator(byTestId(TID.hostStatus))).toHaveText('needs login');
 
@@ -203,13 +203,16 @@ test.describe('host actions', () => {
       const mark = wire.markSent();
       await openHostAction(page, REMOTE, 'Reinstall & restart');
       await expect(page.locator(byTestId(TID.confirmDialog))).toContainText(/every running terminal/i);
-      expect(hubRequests(wire, mark)).toEqual([]);
+      // This machine's session discovery may still go out once it connects.
+      expect(hubRequests(wire, mark).filter((m) => m.t !== 'discoverRepos')).toEqual([]);
       await confirmAction(page);
-      await expect.poll(() => hubRequests(wire, mark)).toEqual([{ t: 'reinstallDaemon', host: REMOTE }]);
+      await expect
+        .poll(() => hubRequests(wire, mark).filter((m) => m.t !== 'discoverRepos'))
+        .toEqual([{ t: 'reinstallDaemon', host: REMOTE }]);
       await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0, { timeout: 120_000 });
       expect(fake.shutdowns).toBeGreaterThanOrEqual(1);
       expect(remote.current()).not.toBe(before);
-      await selectRepo(page, app);
+      await selectGroup(page, `box:${app}`);
       await expect(page.locator(worktreeEntry(app))).toBeVisible({ timeout: 15_000 });
       expect(browserDialogs).toEqual([]);
     } finally {
@@ -227,10 +230,12 @@ test.describe('host actions', () => {
     const mark = wire.markSent();
     await openHostAction(page, REMOTE, 'Install');
     await confirmAction(page);
-    await expect.poll(() => hubRequests(wire, mark)).toEqual([{ t: 'reinstallDaemon', host: REMOTE }]);
+    await expect
+      .poll(() => hubRequests(wire, mark).filter((m) => m.t !== 'discoverRepos'))
+      .toEqual([{ t: 'reinstallDaemon', host: REMOTE }]);
     await expect(page.locator(hostBanner(REMOTE))).toHaveCount(0, { timeout: 120_000 });
     expect(remote.current()).not.toBeNull();
-    await selectRepo(page, app);
+    await selectGroup(page, `box:${app}`);
     await expect(page.locator(worktreeEntry(app))).toBeVisible({ timeout: 15_000 });
   });
 
@@ -263,7 +268,7 @@ test.describe('remote reconnect', () => {
     await installRemote(hub, ssh, 'box');
     writeHubConfig(hub, { hosts: [{ name: 'box', ssh: 'box', repos: [app] }] });
     await openUi(hub, page);
-    await selectRepo(page, app);
+    await selectGroup(page, `box:${app}`);
     await expect(page.locator(worktreeEntry(app))).toBeVisible({ timeout: 15_000 });
     const term = await newTerminal(page, 'shell', REMOTE);
     await ready(page, term, REMOTE);

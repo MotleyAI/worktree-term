@@ -433,7 +433,7 @@ test.describe('editing presets', () => {
     await expect.poll(() => createsSent(wire, mark).map((m) => m.preset)).toEqual([CAT.name]);
   });
 
-  test('two quick Alt+Down presses only ever move the highlighted preset', async ({ hub, page }) => {
+  test('two quick Alt+Down presses only ever move the highlighted preset', async ({ hub, page, wire }) => {
     const third = { name: 'third', command: 'echo THIRD' };
     hub.presets = [...PRESETS, third];
     const { repo } = makeRepoWith(hub, 'app', []);
@@ -447,7 +447,17 @@ test.describe('editing presets', () => {
     await page.keyboard.press('Alt+ArrowDown');
     await page.keyboard.press('Alt+ArrowDown');
     await expect(options.nth(0)).toHaveText(CAT.name);
-    // The second press either waited for the first move or moved the same preset again.
+    // The second press is either dropped while the first move is pending or moves the same preset again: both presses
+    // were handled once CAT shows first, so wait for an answer to every move they sent.
+    await expect
+      .poll(() => {
+        const moves = wire.sentMessages().flatMap((m) => (m.t === 'movePreset' ? [m.req] : []));
+        const answered = wire
+          .receivedMessages()
+          .filter((m) => (m.t === 'done' || m.t === 'error') && m.req !== null && moves.includes(m.req));
+        return moves.length > 0 && answered.length === moves.length;
+      })
+      .toBe(true);
     const order = await options.allTextContents();
     expect([
       [CAT.name, SHELL.name, third.name],

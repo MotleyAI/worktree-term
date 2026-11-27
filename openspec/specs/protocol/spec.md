@@ -6,7 +6,7 @@ The wire contract between the browser UI, the hub and every daemon: which messag
 ## Requirements
 
 ### Requirement: Protocol version and frozen handshake messages
-The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 12, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 16, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
+The protocol SHALL define two integer versions: `DAEMON_PROTOCOL_VERSION`, equal to 13, for the daemon link (client ↔ daemon), and `BROWSER_PROTOCOL_VERSION`, equal to 17, for the browser link (browser ↔ hub). A change to the messages of one link SHALL raise that link's version; a change to the shared constants SHALL raise both. The `hello` message SHALL be `{t: "hello", protocol, version, instance}` where `protocol` is an integer ≥ 1 carrying the sender's version of the link it is sent on, `version` is a string of 1–64 characters, and `instance` is a string of 1–64 characters from `[A-Za-z0-9_-]`. The `shutdown` message SHALL be `{t: "shutdown"}`. The shapes of `hello` and `shutdown` and the stream frame header SHALL be identical in every version of either link, so that peers of different versions can always exchange them. The print-code line and the page fragments, exchanged between `wtd` installations of any versions, SHALL likewise never change shape.
 
 #### Scenario: Hello round-trips
 - **WHEN** a `hello` with `protocol` 1, `version` "0.1.0" and `instance` "a1B2_c3" is encoded and decoded
@@ -57,9 +57,9 @@ A control message SHALL be one UTF-8 JSON object whose `t` names a message of th
 
 ### Requirement: Daemon-link message catalogue
 Client-to-daemon messages SHALL be exactly: `hello`; `shutdown`; `watchRepo{req, repo}`; `unwatchRepo{req, repo}`; `discoverRepos{req, roots, depth}`; `createTerm{req, worktree, preset, command, cols, rows, memory}`; `attach{req, termId}`; `detach{req, termId}`; `resize{termId, cols, rows}`; `closeTerm{req, termId}`; `ack{termId, offset}`; `setVisible{termIds}`; `setChecked{req, worktree, checked}`; `setLayout{req, worktree, layout}`; `removeWorktree{req, worktree, force}` with `force` a boolean.
-Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}` with `req` a request id or null; `termExited{termId, code, signal, oom}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, state}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}`; `worktreeAtRisk{req, worktree, bases, ahead, fetchFailed, changes, running}` where `bases` is a list of at most 4 distinct strings of 1–4096 characters, `ahead` is null or an integer from 0 to 2^32−1 and is null exactly when `bases` is empty, `fetchFailed` is a list of at most 2 `{ref, reason}` with distinct `ref`s, each `ref` of 1–4096 characters and `reason` at most 1024 characters, `changes` is an integer from 0 to 2^32−1 and `running` is at most 1024 terminal ids; `prStatus{repo, prs}` where `prs` is a list of at most 1024 PR statuses with distinct `branch`es.
+Daemon-to-client messages SHALL be exactly: `hello`; `done{req}`; `error{req, code, message}`; `repoState{repo, origin, worktrees, terminals, checked, layouts}`; `worktreesChanged{repo, worktrees}`; `termCreated{req, term}` with `req` a request id or null; `termExited{termId, code, signal, oom}`; `termClosed{termId}`; `detached{termId, reason}`; `activity{termId, unseen, state}`; `checkedChanged{worktree, checked}`; `layoutChanged{worktree, layout}`; `reposDiscovered{req, repos}` where `repos` is a list of `{path, origin}` with distinct `path`s; `worktreeAtRisk{req, worktree, bases, ahead, fetchFailed, changes, running}` where `bases` is a list of at most 4 distinct strings of 1–4096 characters, `ahead` is null or an integer from 0 to 2^32−1 and is null exactly when `bases` is empty, `fetchFailed` is a list of at most 2 `{ref, reason}` with distinct `ref`s, each `ref` of 1–4096 characters and `reason` at most 1024 characters, `changes` is an integer from 0 to 2^32−1 and `running` is at most 1024 terminal ids; `prStatus{repo, prs}` where `prs` is a list of at most 1024 PR statuses with distinct `branch`es.
 A PR status SHALL be `{branch, number, url, state, checks, conflicts, review}` where `branch` is a string of 1–4096 characters, `number` is an integer from 1 to 2^32−1, `url` is an `https:` URL of at most 2048 characters, `state` is one of `open`, `draft`, `merged`, `closed`, `checks` is one of `passing`, `failing`, `pending`, `none`, `conflicts` is a boolean, and `review` is null or one of `approved`, `changes-requested`, `review-required`.
-A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main}`; a terminal SHALL be `{termId, worktree, preset, cols, rows, exit, unseen, state}` where `exit` is null or `{code, signal, oom}`; `state` SHALL be one of `working`, `idle`, `input`; a `layouts` entry SHALL be `{worktree, layout}`; `reason` SHALL be `"lagging"`; `detached`, `locked`, `prunable`, `bare`, `main`, `checked`, `unseen`, `oom` and a host entry's `remote` SHALL be booleans; `code` SHALL be an integer; `error.req` SHALL be a request id or null; `memory` SHALL be memory limits: an object with optional keys `high`, `max` and `swapMax`, each a memory size, and no other key.
+A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main}`; every `origin` SHALL be null or a normalized origin; a terminal SHALL be `{termId, worktree, preset, cols, rows, exit, unseen, state}` where `exit` is null or `{code, signal, oom}`; `state` SHALL be one of `working`, `idle`, `input`; a `layouts` entry SHALL be `{worktree, layout}`; `reason` SHALL be `"lagging"`; `detached`, `locked`, `prunable`, `bare`, `main`, `checked`, `unseen`, `oom` and a host entry's `remote` SHALL be booleans; `code` SHALL be an integer; `error.req` SHALL be a request id or null; `memory` SHALL be memory limits: an object with optional keys `high`, `max` and `swapMax`, each a memory size, and no other key.
 
 #### Scenario: Broadcast termCreated carries a null req
 - **WHEN** a `termCreated` with `req` null is decoded as a daemon-to-client message
@@ -145,9 +145,25 @@ A worktree SHALL be `{path, head, branch, detached, locked, prunable, bare, main
 - **WHEN** a `prStatus` whose `prs` has two entries with `branch` "main", an entry with an empty `branch`, or 1025 entries is encoded or decoded
 - **THEN** it fails with a protocol error
 
+#### Scenario: Repo state carries its origin
+- **WHEN** a `repoState` with `origin` "github.com/acme/app", and one with `origin` null, is encoded and decoded
+- **THEN** each decoded value equals its original
+
+#### Scenario: Origin required in repo state
+- **WHEN** a `repoState` without `origin` is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Discovered repos carry origins
+- **WHEN** a `reposDiscovered` with `repos` [`{path: "/r/a", origin: "github.com/acme/a"}`, `{path: "/r/b", origin: null}`] is encoded and decoded
+- **THEN** the decoded value equals the original
+
+#### Scenario: Discovered repos as bare paths rejected
+- **WHEN** a `reposDiscovered` whose `repos` is ["/r/a"], or lists `path` "/r/a" twice, is decoded
+- **THEN** decoding fails with a protocol error
+
 ### Requirement: Browser-link message catalogue
-Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `openHub{req, host}`; `installHub{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63; `openEditor{req, worktree}` where `worktree` is a path; `setEditor{req, command}` where `command` is an editor command or null.
-Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `editor{command}` where `command` is an editor command; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable and `code` a hub error code; `reposDiscovered{req, host, repos}`; `hubLogin{req, login}` with `login` a login URL as in a host entry; `hubOpened{req, url}`.
+Browser-to-hub messages SHALL be exactly: `hello`; `host{host, m}` where `m` is any client-to-daemon message except `hello` and `shutdown`; `addRepo{req, host, repo}`; `removeRepo{req, host, repo}`; `removeRepos{req, members}` where `members` is a list of 1–1024 distinct `{host, repo}` with `repo` a path; `discoverRepos{req, host}`; `restartDaemon{req, host}`; `reinstallDaemon{req, host}`; `openHub{req, host}`; `installHub{req, host}`; `addPreset{req, preset}`; `removePreset{req, name}` where `name` is a preset name; `movePreset{req, name, to}` where `name` is a preset name and `to` an integer from 0 to 63; `openEditor{req, host, worktree}` where `host` is a host index and `worktree` is a path; `setEditor{req, command}` where `command` is an editor command or null.
+Hub-to-browser messages SHALL be exactly: `hello`; `token{token}`; `host{host, m}` where `m` is any daemon-to-client message except `hello`; `hosts{hosts}`; `presets{presets}`; `editor{command}` where `command` is an editor command; `done{req}`; `error{req, host, code, message}` with `req` and `host` each nullable and `code` a hub error code; `reposDiscovered{req, host, repos}` with `repos` as in the daemon's `reposDiscovered`; `hubLogin{req, login}` with `login` a login URL as in a host entry; `hubOpened{req, url}`.
 A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instance, login, repos}` with `status` one of `connecting`, `connected`, `reconnecting`, `down`, `outdated`, `needs-login`, and `reason`, `daemonVersion`, `instance` and `login` nullable; `instance` SHALL be the `hello.instance` of the daemon the host is `connected` to or found `outdated`, and null in every other status. `login` SHALL be a string of at most 1024 characters starting with `https://login.tailscale.com/`, non-null exactly when `status` is `needs-login`; decoding SHALL reject any other `login`. A preset SHALL be `{name, command, memory}` with `command` nullable and `memory` optional memory limits. A `hubOpened` `url` SHALL be `http://127.0.0.1:<port>/#` with `<port>` from 1024 to 65535 without leading zeros, followed by a remote page fragment; decoding SHALL reject any other `url`.
 
 #### Scenario: Envelope cannot carry a handshake message
@@ -230,6 +246,22 @@ A host entry SHALL be `{idx, name, remote, status, reason, daemonVersion, instan
 - **WHEN** an `openEditor` whose `worktree` is "repo/a" is decoded
 - **THEN** decoding fails with a protocol error
 
+#### Scenario: Open request names its host
+- **WHEN** an `openEditor` with `host` 1 and `worktree` "/srv/app" is encoded and decoded, and an `openEditor` without `host` is decoded
+- **THEN** the first decoded value equals its original and the second decoding fails with a protocol error
+
+#### Scenario: Group removal names distinct members
+- **WHEN** a `removeRepos` with `members` [`{host: 0, repo: "/r/app"}`, `{host: 1, repo: "/srv/app"}`] is encoded and decoded
+- **THEN** the decoded value equals the original
+
+#### Scenario: Group removal bounded and distinct
+- **WHEN** a `removeRepos` whose `members` is empty, lists `{host: 0, repo: "/r/app"}` twice, holds 1025 members, or has a relative `repo`, is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Group removal only from the browser
+- **WHEN** a `removeRepos` is decoded as a hub-to-browser or client-to-daemon message
+- **THEN** decoding fails with a protocol error
+
 ### Requirement: Request correlation
 Every message that asks a peer to act and can fail SHALL carry `req`, an integer from 1 to 2^32−1, and its outcome SHALL be correlated by that `req`: `termCreated` for `createTerm`, `reposDiscovered` for `discoverRepos`, `worktreeAtRisk` or `done` for `removeWorktree`, `done` for every other request, `error` for any failed request. A `termCreated` or `error` with `req` null SHALL correlate with no request. `resize`, `ack`, `setVisible`, input frames, `hello` and `shutdown` SHALL carry no `req`.
 
@@ -250,7 +282,7 @@ Every message that asks a peer to act and can fail SHALL carry `req`, an integer
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Value limits
-Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; discovery roots are absolute paths, `~`, or `~/` followed by at least one character, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names and tab ids are 1–64 characters; preset names are 1–64 characters with at least one non-whitespace character; `branch` and `command` are null or at most 4096 characters, and a preset's `command` is null or 1–4096 characters; an editor command is 1–4096 characters forming a valid editor command; `signal` is null or at most 32 characters; a memory size is a positive integer of at most 16 digits without a leading zero, optionally followed by `K`, `M`, `G` or `T`, or an integer from 1 to 100 followed by `%`, and a `swapMax` may also be `0`; `version` is 1–64 characters; tokens and one-time codes are exactly 64 lowercase hex digits; error messages and host reasons are at most 1024 characters; daemon error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `not-a-repo`, `host-unavailable`, `internal`; hub error codes, used only by the hub-to-browser `error`, are the daemon error codes and `hub-outdated`, `hub-failed`, `editor-missing` and `editor-failed`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
+Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters, without NUL; discovery roots are absolute paths, `~`, or `~/` followed by at least one character, at most 4096 characters, without NUL; terminal ids are integers from 1 to 2^32−1; offsets are integers from 0 to 2^53−1; `cols` and `rows` are integers from 1 to 1000; host indices are integers from 0 to 65535; `depth` is 1–6; `head` is null or 40 or 64 lowercase hex digits; host names and tab ids are 1–64 characters; preset names are 1–64 characters with at least one non-whitespace character; `branch` and `command` are null or at most 4096 characters, and a preset's `command` is null or 1–4096 characters; an editor command is 1–4096 characters forming a valid editor command; `signal` is null or at most 32 characters; a memory size is a positive integer of at most 16 digits without a leading zero, optionally followed by `K`, `M`, `G` or `T`, or an integer from 1 to 100 followed by `%`, and a `swapMax` may also be `0`; `version` is 1–64 characters; tokens and one-time codes are exactly 64 lowercase hex digits; error messages and host reasons are at most 1024 characters; a normalized origin is 1–4096 characters without whitespace or control characters; daemon error codes are one of `bad-message`, `unknown-host`, `unknown-term`, `unknown-worktree`, `not-watched`, `busy`, `spawn-failed`, `version-mismatch`, `not-a-repo`, `host-unavailable`, `internal`; hub error codes, used only by the hub-to-browser `error`, are the daemon error codes and `hub-outdated`, `hub-failed`, `editor-missing`, `editor-failed` and `not-a-worktree`. Collections SHALL hold at most: 1024 worktrees, terminals, checked paths or layout entries per message; 32 discovery roots (at least 1); 4096 discovered repos; 4096 visible terminal ids; 64 hosts; 256 repos per host; 64 presets.
 
 #### Scenario: Relative path rejected
 - **WHEN** a `watchRepo` whose `repo` is "repo/a" is decoded
@@ -315,6 +347,14 @@ Decoding and encoding SHALL enforce: paths are absolute, at most 4096 characters
 #### Scenario: Invalid editor commands rejected
 - **WHEN** an `editor` message whose `command` is "", "   ", `code "{path}`, `code \` or 4097 characters long is decoded
 - **THEN** decoding fails with a protocol error
+
+#### Scenario: Origin bounded and without whitespace
+- **WHEN** a `repoState` whose `origin` is empty, holds a space or a newline, or has 4097 characters is decoded
+- **THEN** decoding fails with a protocol error
+
+#### Scenario: Not-a-worktree is a hub code only
+- **WHEN** a hub `error` with code "not-a-worktree" is decoded, and a daemon `error` with that code is decoded
+- **THEN** the hub error decodes and the daemon error fails with a protocol error
 
 ### Requirement: Layout validity
 A layout SHALL be `{tabs, active}` with at most 64 tabs, each `{id, root}` with an optional `name` of 1–64 characters containing at least one non-whitespace character. A pane SHALL be either `{term}` or `{split, ratio, a, b}` with `split` one of `right` or `down` and `ratio` from 0.05 to 0.95. Pane nesting SHALL be at most 16 levels deep, a lone terminal pane counting as one level, a tab SHALL hold at most 8 terminal panes, each terminal id SHALL appear at most once in a layout, tab ids SHALL be unique, and `active` SHALL index an existing tab, or be 0 when there are no tabs.
@@ -394,7 +434,7 @@ On a stream, an output or snapshot payload SHALL be a 4-byte terminal id, an 8-b
 - **THEN** decoding fails with a protocol error
 
 ### Requirement: Shared constants
-The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 11; `BROWSER_PROTOCOL_VERSION` = 15; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
+The protocol SHALL export: `DAEMON_PROTOCOL_VERSION` = 13; `BROWSER_PROTOCOL_VERSION` = 17; `MAX_FRAME` = 16 MiB; `MAX_INPUT` = 64 KiB; `FLOW_HIGH` = 512 KiB; `FLOW_LOW` = 128 KiB; `ACK_EVERY` = 64 KiB; `LAG_EVICT_MS` = 2000.
 
 #### Scenario: Constants hold their values
 - **WHEN** the exported constants are read

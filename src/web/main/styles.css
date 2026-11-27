@@ -402,6 +402,34 @@ input:focus-visible,
   text-overflow: ellipsis;
 }
 
+.host-pill {
+  flex: none;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid hsl(var(--pill-hue) 55% 55%);
+  border-radius: 9px;
+  background: hsl(var(--pill-hue) 45% 22%);
+  color: hsl(var(--pill-hue) 80% 82%);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.host-pill.muted {
+  border-color: hsl(var(--pill-hue) 12% 42%);
+  background: transparent;
+  color: var(--muted);
+}
+
+.host-pill.look-dimmed {
+  opacity: 0.45;
+}
+
+.host-pill.look-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .worktree-star {
   appearance: none;
   display: grid;
@@ -860,6 +888,11 @@ dialog.add-repo-dialog {
   border-radius: 5px;
   border: 1px solid transparent;
   cursor: pointer;
+}
+
+/* Wide enough that a short label, not the remove button, holds the tab's centre. */
+.repo-tab-label {
+  min-width: 4em;
 }
 
 .repo-tab .close,

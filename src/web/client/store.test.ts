@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Layout, PrStatus, Preset, Terminal, Worktree } from '../../protocol/index.js';
-import { HubStore } from './store.js';
+import type { HostEntry, Layout, PrStatus, Preset, Terminal, Worktree } from '../../protocol/index.js';
+import { HubStore, repoKey } from './store.js';
 
 const REPO = '/r/app';
 const WT = '/r/app.worktrees/feat';
@@ -34,6 +34,7 @@ const watched = (): HubStore => {
   store.apply(0, {
     t: 'repoState',
     repo: REPO,
+    origin: null,
     worktrees: [worktree(REPO), worktree(WT)],
     terminals: [terminal(1)],
     checked: [],
@@ -97,7 +98,7 @@ describe('HubStore', () => {
     const store = new HubStore();
     store.repoError(0, '/plain', { code: 'not-a-repo', message: 'no' });
     expect(store.repo(0, '/plain')?.error).toEqual({ code: 'not-a-repo', message: 'no' });
-    store.apply(0, { t: 'repoState', repo: '/plain', worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(0, { t: 'repoState', repo: '/plain', origin: null, worktrees: [], terminals: [], checked: [], layouts: [] });
     expect(store.repo(0, '/plain')?.error).toBeNull();
   });
 
@@ -142,6 +143,7 @@ describe('HubStore', () => {
     store.apply(0, {
       t: 'repoState',
       repo: REPO,
+      origin: null,
       worktrees: [worktree(REPO), worktree(WT)],
       terminals: [terminal(1)],
       checked: [],
@@ -195,6 +197,7 @@ describe('HubStore', () => {
     store.apply(0, {
       t: 'repoState',
       repo: REPO,
+      origin: null,
       worktrees: [worktree(REPO), worktree(WT)],
       terminals: [terminal(1)],
       checked: [],
@@ -213,7 +216,7 @@ describe('HubStore', () => {
     ];
     store.setPresets(presets);
     expect(store.presets.value).toEqual(presets);
-    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(0, { t: 'repoState', repo: REPO, origin: null, worktrees: [], terminals: [], checked: [], layouts: [] });
     expect(store.presets.value).toEqual(presets);
     store.sessionClosed();
     expect(store.presets.value).toBeNull();
@@ -225,7 +228,7 @@ describe('HubStore', () => {
     store.setEditor('kate');
     store.setEditor('code {path}');
     expect(store.editor.value).toBe('code {path}');
-    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(0, { t: 'repoState', repo: REPO, origin: null, worktrees: [], terminals: [], checked: [], layouts: [] });
     expect(store.editor.value).toBe('code {path}');
     store.sessionClosed();
     expect(store.editor.value).toBeNull();
@@ -233,7 +236,7 @@ describe('HubStore', () => {
 
   it('forgets only the repos of a cleared host', () => {
     const store = watched();
-    store.apply(1, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(1, { t: 'repoState', repo: REPO, origin: null, worktrees: [], terminals: [], checked: [], layouts: [] });
     store.clearHost(0);
     expect(store.repo(0, REPO)).toBeNull();
     expect(store.repo(1, REPO)).not.toBeNull();
@@ -251,7 +254,15 @@ describe('HubStore', () => {
     const store = new HubStore();
     const gone = '/r/app.worktrees/gone';
     const terminals = [terminal(1), { ...terminal(2, REPO), preset: 'claude' }, terminal(3, gone)];
-    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [worktree(REPO), worktree(WT)], terminals, checked: [], layouts: [] });
+    store.apply(0, {
+      t: 'repoState',
+      repo: REPO,
+      origin: null,
+      worktrees: [worktree(REPO), worktree(WT)],
+      terminals,
+      checked: [],
+      layouts: [],
+    });
     store.apply(0, { t: 'termExited', termId: 1, code: 0, signal: null, oom: false });
     expect(store.running(0)).toEqual([
       { worktree: 'b', preset: 'claude' },
@@ -276,7 +287,7 @@ describe('HubStore', () => {
 
   it('drops one repo’s state and stops keeping it', () => {
     const store = watched();
-    store.apply(0, { t: 'repoState', repo: '/r/b', worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(0, { t: 'repoState', repo: '/r/b', origin: null, worktrees: [], terminals: [], checked: [], layouts: [] });
     store.keep(0, REPO, true);
     store.dropRepo(0, REPO);
     expect(store.repo(0, REPO)).toBeNull();
@@ -316,13 +327,13 @@ describe('HubStore pull request statuses', () => {
     store.apply(0, prStatus([PR]));
     store.apply(0, { t: 'worktreesChanged', repo: REPO, worktrees: [worktree(REPO)] });
     expect(store.repo(0, REPO)?.prs).toEqual([PR]);
-    store.apply(0, { t: 'repoState', repo: REPO, worktrees: [worktree(REPO)], terminals: [], checked: [], layouts: [] });
+    store.apply(0, { t: 'repoState', repo: REPO, origin: null, worktrees: [worktree(REPO)], terminals: [], checked: [], layouts: [] });
     expect(store.repo(0, REPO)?.prs).toEqual([]);
   });
 
   it('keeps statuses per host', () => {
     const store = watched();
-    store.apply(1, { t: 'repoState', repo: REPO, worktrees: [], terminals: [], checked: [], layouts: [] });
+    store.apply(1, { t: 'repoState', repo: REPO, origin: null, worktrees: [], terminals: [], checked: [], layouts: [] });
     store.apply(1, prStatus([PR]));
     expect(store.repo(0, REPO)?.prs).toEqual([]);
     expect(store.repo(1, REPO)?.prs).toEqual([PR]);
@@ -350,5 +361,104 @@ describe('HubStore pull request statuses', () => {
     store.clearHost(0);
     store.apply(0, prStatus([PR]));
     expect(store.repo(0, REPO)).toBeNull();
+  });
+});
+
+describe('HubStore origins', () => {
+  const APP = 'github.com/acme/app';
+  const SRV = '/srv/app';
+  const stated = (store: HubStore, host: number, repo: string, origin: string | null): void => {
+    store.apply(host, { t: 'repoState', repo, origin, worktrees: [], terminals: [], checked: [], layouts: [] });
+  };
+
+  it('knows no origin of a repo before its repoState', () => {
+    expect(new HubStore().origins.value.has(repoKey(1, SRV))).toBe(false);
+  });
+
+  it('knows a repo’s origin from its latest repoState, a null one included', () => {
+    const store = new HubStore();
+    stated(store, 1, SRV, APP);
+    expect(store.origins.value.get(repoKey(1, SRV))).toBe(APP);
+    stated(store, 1, SRV, null);
+    expect(store.origins.value.has(repoKey(1, SRV))).toBe(true);
+    expect(store.origins.value.get(repoKey(1, SRV))).toBeNull();
+  });
+
+  it('keeps origins per host', () => {
+    const store = new HubStore();
+    stated(store, 0, SRV, APP);
+    stated(store, 1, SRV, 'github.com/acme/fork');
+    expect(store.origins.value.get(repoKey(0, SRV))).toBe(APP);
+    expect(store.origins.value.get(repoKey(1, SRV))).toBe('github.com/acme/fork');
+  });
+
+  it('keeps a host’s origins while it is cleared, as when it reconnects', () => {
+    const store = new HubStore();
+    stated(store, 1, SRV, APP);
+    store.clearHost(1);
+    expect(store.repo(1, SRV)).toBeNull();
+    expect(store.origins.value.get(repoKey(1, SRV))).toBe(APP);
+  });
+});
+
+describe('HubStore clones', () => {
+  it('keeps each watched clone of a host once, with its discovered origin', () => {
+    const store = new HubStore();
+    store.addClone(1, '/srv/app', 'github.com/acme/app');
+    store.addClone(1, '/srv/app', 'github.com/acme/app');
+    store.addClone(0, '/r/app-2', null);
+    expect(store.clones.value.get(1)).toEqual([{ path: '/srv/app', origin: 'github.com/acme/app' }]);
+    expect(store.clones.value.get(0)).toEqual([{ path: '/r/app-2', origin: null }]);
+  });
+
+  it('forgets the repos, origins and clones of an index once it names another host, keeping them across a daemon restart', () => {
+    const store = new HubStore();
+    const entry = (idx: number, name: string, instance: string): HostEntry => ({
+      idx,
+      name,
+      remote: idx > 0,
+      status: 'connected',
+      reason: null,
+      daemonVersion: null,
+      instance,
+      login: null,
+      repos: [],
+    });
+    store.setHosts([entry(0, 'local', 'a'), entry(1, 'box', 'b')]);
+    store.apply(0, {
+      t: 'repoState',
+      repo: '/r/app',
+      origin: 'github.com/acme/app',
+      worktrees: [],
+      terminals: [],
+      checked: [],
+      layouts: [],
+    });
+    store.apply(1, {
+      t: 'repoState',
+      repo: '/srv/app',
+      origin: 'github.com/acme/app',
+      worktrees: [],
+      terminals: [],
+      checked: [],
+      layouts: [],
+    });
+    store.addClone(1, '/srv/app-2', 'github.com/acme/app');
+    store.setHosts([entry(0, 'local', 'a'), entry(1, 'box', 'c')]);
+    expect(store.origins.value.get(repoKey(1, '/srv/app'))).toBe('github.com/acme/app');
+    expect(store.clones.value.get(1)).toHaveLength(1);
+    expect(store.repo(1, '/srv/app')).not.toBeNull();
+    store.setHosts([entry(0, 'local', 'a'), entry(1, 'vm', 'd')]);
+    expect(store.origins.value.has(repoKey(1, '/srv/app'))).toBe(false);
+    expect(store.clones.value.has(1)).toBe(false);
+    expect(store.repo(1, '/srv/app')).toBeNull();
+    expect(store.origins.value.get(repoKey(0, '/r/app'))).toBe('github.com/acme/app');
+  });
+
+  it('keeps a host’s clones while it is cleared, as when it reconnects', () => {
+    const store = new HubStore();
+    store.addClone(1, '/srv/app', null);
+    store.clearHost(1);
+    expect(store.clones.value.get(1)).toEqual([{ path: '/srv/app', origin: null }]);
   });
 });

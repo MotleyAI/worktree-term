@@ -19,6 +19,7 @@ flowchart TD
     platform__install["Install"]
     platform__memory["Memory"]
     platform__scopes["Scopes"]
+    platform__mounts["Mounts"]
   end
   subgraph daemon["Daemon"]
     daemon__worktrees["Worktrees"]
@@ -47,6 +48,8 @@ flowchart TD
   platform__install --> platform__files
   platform__install --> platform__dialer
   platform__memory --> platform__files
+  platform__mounts --> platform__files
+  platform__mounts --> platform__dialer
   daemon --> protocol
   daemon --> platform__files
   daemon__main --> daemon__server
@@ -65,6 +68,7 @@ flowchart TD
   hub__links --> platform__dialer
   hub__links --> platform__install
   hub__links --> platform__scopes
+  hub__links --> platform__mounts
   hub__main --> hub__server
   hub__main --> hub__router
   hub__main --> hub__links
@@ -88,7 +92,7 @@ flowchart TD
   web__ui --> web__layout
   web__terminals --> web__client
   classDef leaf fill:none;
-  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,daemon__worktrees,daemon__terminals,daemon__state,daemon__prs,daemon__server,daemon__main,hub__server,hub__links,hub__config,hub__router,hub__main,cli,web__client,web__terminals,web__layout,web__ui,web__main leaf;
+  class protocol,platform__files,platform__dialer,platform__install,platform__memory,platform__scopes,platform__mounts,daemon__worktrees,daemon__terminals,daemon__state,daemon__prs,daemon__server,daemon__main,hub__server,hub__links,hub__config,hub__router,hub__main,cli,web__client,web__terminals,web__layout,web__ui,web__main leaf;
 ```
 <!-- /likec4:system -->
 

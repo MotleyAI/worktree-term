@@ -38,6 +38,10 @@ export const hubsMenu = (
   ];
 };
 
+/** The hub button's label: the page's own hub, the local host as the hub lists it on a home page. */
+export const hubButtonLabel = (remote: RemotePage | null, hosts: readonly { name: string; remote: boolean }[]): string =>
+  remote?.host ?? hosts.find((h) => !h.remote)?.name ?? 'Hubs';
+
 /** The status line of the latest hub opening. */
 export type HubLine =
   | { kind: 'opening'; name: string }

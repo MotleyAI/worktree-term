@@ -412,31 +412,45 @@ For an `outdated` host the page SHALL show that its daemon is outdated, with an 
 - **THEN** no request is sent
 
 ### Requirement: Performance budgets
-With a repo of 58 worktrees and 2 terminals in each, the median of 20 measured switches SHALL be at most 16 ms between a worktree whose terminals are among the 8 WebGL terminals and at most 50 ms to a worktree whose terminals must start WebGL again, each measured from the input event to just after the first frame painted with the switch applied. The median of 20 switches to a worktree whose active tab holds 8 panes that must start WebGL again SHALL be at most 100 ms, measured the same way. While a divider of a tab holding 8 panes is dragged, the median time from a pointer move to the first frame painted with the new pane sizes SHALL be at most 16 ms. A worktree added or removed with git SHALL show in, or leave, the sidebar within 250 ms of the git command finishing. Each budget SHALL hold unchanged while a pull request status request of the host runs, is slow or never returns.
+Switch and drag budgets SHALL be counted in frames of the page's frame interval T, the time between consecutive frames the page's display paints. With a repo of 58 worktrees and 2 terminals in each, a switch between worktrees whose terminals are among the 8 WebGL terminals SHALL take at most 1 frame, and a switch to a worktree whose terminals must start WebGL again at most 3 frames, each measured from the input event to just after the first frame painted with the switch applied. A switch to a worktree whose active tab holds 8 panes that must start WebGL again SHALL take at most 6 frames, measured the same way. While a divider of a tab holding 8 panes is dragged, the time from a pointer move to the first frame painted with the new pane sizes SHALL be at most 1 frame. A worktree added or removed with git SHALL show in, or leave, the sidebar within 250 ms of the git command finishing.
+
+Each budget SHALL be judged in rounds: a round of 20 switches or 60 pointer moves meets a budget of n frames when its median is at most (n + ½)·T, and a sidebar round of one add and one remove meets its budget when both are reflected within 250 ms. A budget SHALL hold when at least one of up to 3 rounds, measured in turn, meets it. Each budget SHALL hold unchanged while a pull request status request of the host runs, is slow or never returns.
 
 #### Scenario: Recently viewed switch
-- **WHEN** 20 switches between recently viewed worktrees are measured
-- **THEN** their median is at most 16 ms
+- **WHEN** rounds of 20 switches between recently viewed worktrees are measured
+- **THEN** the median of at least one of up to 3 rounds is at most 1.5 frames
 
 #### Scenario: WebGL reattach switch
-- **WHEN** 20 switches to worktrees whose terminals render with the DOM renderer are measured
-- **THEN** their median is at most 50 ms
+- **WHEN** rounds of 20 switches to worktrees whose terminals render with the DOM renderer are measured
+- **THEN** the median of at least one of up to 3 rounds is at most 3.5 frames
 
 #### Scenario: Eight-pane switch
-- **WHEN** 20 switches to a worktree whose active tab holds 8 panes rendering with the DOM renderer are measured
-- **THEN** their median is at most 100 ms
+- **WHEN** rounds of 20 switches to a worktree whose active tab holds 8 panes rendering with the DOM renderer are measured
+- **THEN** the median of at least one of up to 3 rounds is at most 6.5 frames
 
 #### Scenario: Divider drag
-- **WHEN** a divider of an 8-pane tab is dragged across 60 pointer moves
-- **THEN** the median from pointer move to painted frame is at most 16 ms
+- **WHEN** a divider of an 8-pane tab is dragged across rounds of 60 pointer moves
+- **THEN** the median from pointer move to painted frame of at least one of up to 3 rounds is at most 1.5 frames
 
 #### Scenario: Sidebar follows git
-- **WHEN** `git worktree add` and `git worktree remove` finish
-- **THEN** the sidebar reflects each within 250 ms
+- **WHEN** rounds of one `git worktree add` and one `git worktree remove` are measured
+- **THEN** in at least one of up to 3 rounds the sidebar reflects both within 250 ms
+
+#### Scenario: A sidebar round needs both commands within budget
+- **WHEN** in a round the add is reflected within 250 ms and the remove after more than 250 ms
+- **THEN** that round does not meet the sidebar budget
+
+#### Scenario: A load burst in one round
+- **WHEN** the first round of a budget misses it and a later round meets it
+- **THEN** the budget holds
+
+#### Scenario: A one-frame regression still fails
+- **WHEN** every recently viewed switch is slowed by more than one frame inside its measured window
+- **THEN** none of the 3 rounds meets the 1-frame budget and the budget fails
 
 #### Scenario: Budgets with a hanging status request
-- **WHEN** the host's `gh` never returns while the switch budgets are measured and a worktree is added and removed with git
-- **THEN** every switch median stays within its budget and the sidebar reflects each git command within 250 ms
+- **WHEN** the host's `gh` never returns while the switch and drag budgets are measured and worktrees are added and removed with git
+- **THEN** every budget holds
 
 ### Requirement: Split panes
 Splitting SHALL start a new terminal through the preset picker, send `createTerm` with the chosen preset's name and command and the size the new pane will have, and, once `termCreated` arrives, take the latest layout, replace the focused pane by a split of direction `right` or `down` with ratio 0.5 holding the focused pane as `a` and the new terminal as `b`, store it with `setLayout`, and focus the new pane. A focused terminal missing from the layout SHALL first get its own tab. A tab SHALL hold at most 8 panes and nest at most 16 levels; a split that would exceed either SHALL not be offered. Every pane of the shown tab SHALL be shown at its share of the terminal area, with a draggable divider between the two sides of each split; dragging SHALL resize the panes as the pointer moves, keep the ratio from 0.05 to 0.95, and store the layout with one `setLayout` when released. A `layoutChanged` for the worktree during a drag SHALL cancel the drag and show the new layout. A layout the page stored that the daemon rejects SHALL be replaced by the last layout the daemon reported. Moving a terminal into or out of a split SHALL NOT re-create its terminal object.

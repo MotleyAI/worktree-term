@@ -221,6 +221,7 @@ class HostLink {
       return;
     }
     this.link?.send(controlFrame(this.hello));
+    this.session.linked(this.idx);
     this.transition({ kind: 'hello', protocol: hello.protocol, version: hello.version, instance: hello.instance });
     this.session.greeted(this.host);
   }
@@ -392,6 +393,11 @@ export class Session {
       shown = true;
     }
     if (shown) this.hostsChanged();
+  }
+
+  /** A new link to host `idx` greeted: forgets the worktree lists earlier links sent, which it lists again. */
+  linked(idx: number): void {
+    this.listed.delete(idx);
   }
 
   /** Keeps the latest worktree list a daemon sent for each repo, sharing it with the hub. */

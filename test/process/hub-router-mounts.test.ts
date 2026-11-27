@@ -47,6 +47,22 @@ describe('opening a remote worktree in an editor', () => {
     expect(editor.launches()).toEqual([]);
   });
 
+  it('answers not-a-worktree once the host reconnected until its new link lists the worktree again', async () => {
+    const editor = recorder(fx.host.dir);
+    const { remoteRepo, remoteWt } = await boxWithWorktree(editor.command);
+    const client = await watchingBox(remoteRepo);
+    const from = client.mark();
+    for (const pid of fx.ssh.livePids('box')) process.kill(pid, 'SIGKILL');
+    await client.waitHost(1, (h) => h.status === 'reconnecting', { from });
+    await client.waitHost(1, (h) => h.status === 'connected', { from, timeout: 30_000 });
+    expect(await openEditor(client, 1, remoteWt)).toMatchObject({
+      from: 'hub',
+      m: { t: 'error', req: 2, host: null, code: 'not-a-worktree' },
+    });
+    await client.watch(1, remoteRepo);
+    expect(await openEditor(client, 1, remoteWt)).toEqual({ from: 'hub', m: { t: 'done', req: 4 } });
+  });
+
   it('answers host-unavailable for a worktree of a host that is reconnecting, mounting nothing', async () => {
     const editor = recorder(fx.host.dir);
     const { remoteRepo, remoteWt } = await boxWithWorktree(editor.command);

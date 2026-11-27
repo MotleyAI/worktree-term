@@ -50,5 +50,5 @@
 
 ## 3. Gates
 
-- [ ] 3.1 Run the local test scope (`la-affected-tests --base main`, plus `test/process/daemon-prs.test.ts`); all green.
+- [x] 3.1 Run the local test scope (`la-affected-tests --base main`, plus `test/process/daemon-prs.test.ts`); all green.
 - [x] 3.2 Enforcement bundle: `la-arch-check`, LikeC4 validation, `la-typecheck`, `pnpm lint`; all green.

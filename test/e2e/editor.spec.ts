@@ -206,6 +206,9 @@ test.describe('open in editor', () => {
     writeHubConfig(hub, { repos: [repo], hosts: [{ name: 'box', ssh: 'box', repos: [remoteRepo] }] });
     await openUi(hub, page);
     await expect(control(page)).toBeEnabled();
+    // The tab shrinks when its host status goes; a click before that can miss it.
+    await expect(page.locator(repoTab(remoteRepo))).toBeVisible();
+    await expect(page.locator(repoTab(remoteRepo)).locator(byTestId(TID.hostStatus))).toHaveCount(0, { timeout: 20_000 });
     await selectRepo(page, remoteRepo);
     await expect(page.locator(worktreeEntry(remoteRepo))).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
     await expect(control(page)).toBeDisabled();

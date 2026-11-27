@@ -727,7 +727,7 @@ The repo tab bar SHALL end with an "Add repo" control opening a dialog with a ho
 - **THEN** the dialog shows the `not-a-repo` error and stays open
 
 ### Requirement: Remove repo
-Each repo tab SHALL offer a "Remove repo" action that asks for confirmation in the page, naming every listed repo of its group, prefixed `<host>:` for a remote host, and then sends `removeRepos` with every listed repo of its group. A `busy` reply SHALL tell the user to close the terminals of the repo it names first; any other error SHALL be shown with its message; on `done` the tab SHALL disappear once the hub no longer lists any of them.
+Each repo tab SHALL offer a "Remove repo" action that asks for confirmation in the page, naming every listed repo of its group, prefixed `<host>:` for a remote host, and then sends `removeRepos` with every listed repo of its group. A tab whose group holds no listed repo SHALL instead say in the page "<label> is no longer configured; its tab goes once its terminals close.", `<label>` being the tab's label, with only a Close control, and SHALL send nothing. A `busy` reply SHALL tell the user to close the terminals of the repo it names first; any other error SHALL be shown with its message; on `done` the tab SHALL disappear once the hub no longer lists any of them.
 
 #### Scenario: Repo removed
 - **WHEN** the user removes a repo without terminals and confirms

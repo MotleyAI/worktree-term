@@ -850,10 +850,15 @@ describe('View', () => {
       client.store.keep(1, '/srv/gone', true);
       const removeRepos = vi.spyOn(client, 'removeRepos').mockResolvedValue(undefined);
       view.requestRemoveRepo(tabLabelled('app'));
-      expect(view.confirmation.value).toMatchObject({ t: 'removeRepo', names: ['/r/app'] });
+      expect(view.confirmation.value).toMatchObject({ t: 'removeRepo', names: ['/r/app'], note: null });
       view.confirm();
       expect(removeRepos).toHaveBeenCalledWith([{ host: 0, repo: '/r/app' }]);
       view.requestRemoveRepo(tabLabelled('box:gone'));
+      expect(view.confirmation.value).toMatchObject({
+        t: 'removeRepo',
+        names: [],
+        note: 'box:gone is no longer configured; its tab goes once its terminals close.',
+      });
       view.confirm();
       expect(removeRepos).toHaveBeenCalledTimes(1);
     });

@@ -255,6 +255,7 @@ const dialogKeys =
 /** What a confirmation asks, and what it lists. */
 const ConfirmBody = ({ confirmation }: { confirmation: Confirmation }) => {
   if (confirmation.t === 'removeRepo') {
+    if (confirmation.note !== null) return <p data-testid="confirm-note">{confirmation.note}</p>;
     return (
       <>
         <div class="title">Remove {confirmation.label} from the repo tabs?</div>
@@ -331,6 +332,7 @@ const ConfirmDialog = ({ view, confirmation }: { view: View; confirmation: Confi
   const cancel = (): void => {
     view.cancelConfirmation();
   };
+  const noteOnly = confirmation.t === 'removeRepo' && confirmation.note !== null;
   return (
     <dialog
       open
@@ -339,15 +341,17 @@ const ConfirmDialog = ({ view, confirmation }: { view: View; confirmation: Confi
       aria-label="Confirm"
       tabIndex={-1}
       ref={dialog}
-      onKeyDown={dialogKeys(confirm, cancel)}
+      onKeyDown={dialogKeys(noteOnly ? null : confirm, cancel)}
     >
       <ConfirmBody confirmation={confirmation} />
       <div class="buttons">
-        <button type="button" data-testid="confirm-ok" onClick={confirm}>
-          {confirmLabel(confirmation)}
-        </button>
+        {!noteOnly && (
+          <button type="button" data-testid="confirm-ok" onClick={confirm}>
+            {confirmLabel(confirmation)}
+          </button>
+        )}
         <button type="button" data-testid="confirm-cancel" onClick={cancel}>
-          Cancel
+          {noteOnly ? 'Close' : 'Cancel'}
         </button>
       </div>
     </dialog>

@@ -187,7 +187,14 @@ interface Picker {
 /** What the in-page confirmation asks about. */
 export type Confirmation =
   | { t: 'host'; host: HostEntry; action: HostAction; recalled: Recalled | null }
-  | { t: 'removeRepo'; label: string; names: readonly string[]; members: readonly { host: number; repo: string }[] }
+  | {
+      t: 'removeRepo';
+      label: string;
+      names: readonly string[];
+      members: readonly { host: number; repo: string }[];
+      /** Said instead of asking, for a group holding no listed repo; null otherwise. */
+      note: string | null;
+    }
   | { t: 'removeWorktree'; host: number; worktree: string; label: string; reasons: readonly string[]; note: string };
 
 /** The worktree context menu, at its viewport position. */
@@ -823,7 +830,9 @@ export class View {
 
   /** Asks to confirm removing every listed repo of `tab`'s group. */
   requestRemoveRepo(tab: RepoGroup): void {
-    this.confirmation.value = { t: 'removeRepo', label: tab.label, ...groupRemoval(tab) };
+    const removal = groupRemoval(tab);
+    const note = removal.members.length === 0 ? `${tab.label} is no longer configured; its tab goes once its terminals close.` : null;
+    this.confirmation.value = { t: 'removeRepo', label: tab.label, ...removal, note };
   }
 
   cancelConfirmation(): void {

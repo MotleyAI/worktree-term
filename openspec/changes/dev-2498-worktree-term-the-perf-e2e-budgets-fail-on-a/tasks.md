@@ -1,6 +1,6 @@
 ## 1. Tests first (pr-tests)
 
-- [ ] 1.1 `test/e2e/budget.spec.ts` (e2e project, no browser fixture): pure tests of the verdict helper's intended API (design D6–D8). Cases:
+- [x] 1.1 `test/e2e/budget.spec.ts` (e2e project, no browser fixture): pure tests of the verdict helper's intended API (design D6–D8). Cases:
   - phase jitter just under one frame meets 1 frame;
   - one-frame regression in every round fails all 3 rounds;
   - burst in round 1, then a passing round 2 → holds, and round 3 is not run;
@@ -12,14 +12,14 @@
   - ms verdict by maximum: add 120 / remove 300 misses 250, 120 / 240 meets it.
 
   Verify they fail (the helper does not exist yet).
-- [ ] 1.2 `test/e2e/perf.spec.ts`: rewrite every budget test against the spec delta, with frame budgets via the best-of-3 runner and per-round preconditions (design D9):
+- [x] 1.2 `test/e2e/perf.spec.ts`: rewrite every budget test against the spec delta, with frame budgets via the best-of-3 runner and per-round preconditions (design D9):
   - titles state the frame budgets;
   - the sidebar round needs both commands within 250 ms;
   - the hanging-`gh` test uses the same round functions;
   - add the injected-slowdown test (design D3: wrap `performance.mark`, busy-wait 2·T right after `wtd:switch-start`, assert all 3 recently viewed rounds miss the budget).
 
   Verify they fail or don't compile until `budget.ts` exists.
-- [ ] 1.3 Codex review of the tests against the spec delta and design
+- [x] 1.3 Codex review of the tests against the spec delta and design
 
 ## 2. Verdict helper
 

@@ -84,6 +84,15 @@ it('keeps tracking a remount when the dropped mount it replaced fails', async ()
   expect(fake.calls).toEqual(['list', 'mount wt', 'mount wt', 'unmount /m/wt']);
 });
 
+it('refuses to mount once closing has begun', async () => {
+  const registry = new MountRegistry(paths, () => undefined);
+  registry.start();
+  const closed = registry.close();
+  await expect(registry.mount(WT)).resolves.toMatchObject({ kind: 'error', code: 'editor-failed' });
+  await closed;
+  expect(fake.calls).toEqual(['list']);
+});
+
 it('touches no mount before it is started, then cleans up before mounting', async () => {
   const registry = new MountRegistry(paths, () => undefined);
   const mounted = registry.mount(WT);

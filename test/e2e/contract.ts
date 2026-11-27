@@ -198,17 +198,20 @@ export const hostBanner = (host: number): string => `${byTestId(TID.hostBanner)}
 export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[data-path="${path}"]`;
 
 /** The repo tab whose `title` holds `entry` on a line of its own: one line per repo of its group, `<host>:<path>` for a remote host's. */
-export const groupTab = (entry: string): string =>
-  `xpath=//*[@data-testid="${TID.repoTab}" and contains(concat("\n", @title, "\n"), ${xpathLiteral(`\n${entry}\n`)})]`;
+export const groupTab = (entry: string): string => {
+  const line = xpathLiteral('\n' + entry + '\n');
+  return `xpath=//*[@data-testid="${TID.repoTab}" and contains(concat("\n", @title, "\n"), ${line})]`;
+};
 
 /** `text` as an XPath string expression: quoted, or a `concat()` of quoted parts when it holds both quote types. */
 export const xpathLiteral = (text: string): string => {
   if (!text.includes('"')) return `"${text}"`;
   if (!text.includes("'")) return `'${text}'`;
-  return `concat(${text
+  const parts = text
     .split('"')
     .map((part) => `"${part}"`)
-    .join(`, '"', `)})`;
+    .join(`, '"', `);
+  return `concat(${parts})`;
 };
 
 /** The sidebar row of `host`'s worktree at `path`: every row carries `data-host` = its host index. */

@@ -30,6 +30,7 @@ export class MountRegistry {
   private readonly cleaned: Promise<void>;
   private markCleaned: () => void = () => undefined;
   private started = false;
+  private closing = false;
   /** Settles once every queued unmount ran; unmounts run one at a time. */
   private unmounting: Promise<void>;
   /** Per mount point, settles once its queued unmount ran; a remount waits for it. */
@@ -53,8 +54,9 @@ export class MountRegistry {
     void this.cleanStale().catch(this.report).then(this.markCleaned);
   }
 
-  /** The mount point of `target`, mounting it unless a mount exists or is being made. */
+  /** The mount point of `target`, mounting it unless a mount exists or is being made; refused once closing began. */
   mount(target: WorktreeMount): Promise<MountOutcome> {
+    if (this.closing) return Promise.resolve({ kind: 'error', code: 'editor-failed', message: 'the hub is shutting down' });
     const point = mountPoint(this.paths, target);
     const existing = this.entries.get(point);
     if (existing !== undefined) return existing.mounted;
@@ -83,6 +85,7 @@ export class MountRegistry {
 
   /** Unmounts every mount, waiting for unmounts already queued; a registry never started has none. */
   async close(): Promise<void> {
+    this.closing = true;
     this.drop(() => true);
     if (this.started) await this.unmounting;
   }

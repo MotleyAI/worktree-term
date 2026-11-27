@@ -203,7 +203,8 @@ test.describe('host actions', () => {
       const mark = wire.markSent();
       await openHostAction(page, REMOTE, 'Reinstall & restart');
       await expect(page.locator(byTestId(TID.confirmDialog))).toContainText(/every running terminal/i);
-      expect(hubRequests(wire, mark)).toEqual([]);
+      // This machine's session discovery may still go out once it connects.
+      expect(hubRequests(wire, mark).filter((m) => m.t !== 'discoverRepos')).toEqual([]);
       await confirmAction(page);
       await expect
         .poll(() => hubRequests(wire, mark).filter((m) => m.t !== 'discoverRepos'))

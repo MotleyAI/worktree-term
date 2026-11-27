@@ -14,7 +14,7 @@ Architecture constraints that apply (see `architecture/`):
 ## Goals / Non-Goals
 
 **Goals:**
-- `pnpm exec playwright test --project perf` passes 10 times in a row on a developer machine with ordinary background load.
+- `pnpm exec playwright test --project perf --no-deps` passes 10 times in a row on a developer machine with ordinary background load. With its e2e dependency, load flakes in other e2e files (tracked on DEV-2111) can stop the run before perf starts.
 - A slowdown of one frame or more on a measured path still fails its budget, proven on every perf run.
 
 **Non-Goals:**

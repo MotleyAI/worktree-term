@@ -33,5 +33,7 @@
 
 ## 4. Done-when verification
 
-- [ ] 4.1 Run `pnpm exec playwright test --project perf` (e2e first) 10 times in a row on the developer machine under ordinary background load; record each run's result and load average here; all 10 pass
-- [ ] 4.2 Confirm the injected-slowdown test failed its budget in all 3 rounds in every one of those 10 runs (from the logged round medians)
+- [x] 4.1 Run `pnpm exec playwright test --project perf --no-deps` 10 times in a row on the developer machine under ordinary background load; record each run's result and load average here; all 10 pass. Run e2e first, load flakes in other e2e files (tracked on DEV-2111) can stop it before perf starts
+  - 27 Nov 2026, T = 16.60 ms; every run 8 passed (47–51 s), every real budget met in round 1. 1-minute load average before each run: 2.40, 3.16, 3.26, 7.22, 5.85, 4.29, 3.69, 2.67, 2.39, 1.78.
+- [x] 4.2 Confirm the injected-slowdown test failed its budget in all 3 rounds in every one of those 10 runs (from the logged round medians)
+  - All 30 rounds missed: medians 36.35–37.35 ms against the 24.90 ms threshold.

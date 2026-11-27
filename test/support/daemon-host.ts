@@ -276,7 +276,22 @@ export class DaemonHost {
     // Shells hung up with the daemon would otherwise go on writing their history into HOME.
     killAll(this.homePids());
     await waitUntil(() => this.homePids().length === 0, 'processes using HOME to exit').catch(() => undefined);
-    rmSync(this.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    // rmSync empties a directory once and then retries only removing it, so a file written meanwhile fails it
+    // for good: retry the whole removal, killing processes that started using HOME since.
+    await waitUntil(
+      () => {
+        killAll(this.homePids());
+        try {
+          rmSync(this.dir, { recursive: true, force: true });
+          return true;
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOTEMPTY') return false;
+          throw error;
+        }
+      },
+      'the host directory to go',
+      10_000,
+    );
   }
 
   /** Whether the socket file exists. */

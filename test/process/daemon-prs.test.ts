@@ -83,6 +83,18 @@ describe('pull request status', () => {
     expect(gh.calls()[0]?.args).toEqual(['api', 'graphql', '--hostname', 'github.com', '--input', '-']);
   });
 
+  it("asks for a branch created from origin/main with tracking by its own name, listing no pull request of main's for it", async () => {
+    git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(repo, 'branch', '--track', 'feature/y', 'origin/main');
+    git(repo, 'worktree', 'add', '-q', join(host.dir, 'wt'), 'feature/y');
+    gh.behave({ kind: 'answer', prs: { main: { number: 7, state: 'MERGED' } } });
+    await start();
+    const client = await host.client();
+    await client.watch(repo);
+    expect((await prStatus(client, 0)).prs).toEqual([openPr('main', 7, { state: 'merged' })]);
+    expect(gh.calls()[0]?.branches).toEqual(['feature/y', 'main']);
+  });
+
   it('runs gh once per refresh for 58 worktrees', async () => {
     const branches = branchWorktrees(57);
     await start({ WTD_PR_INTERVAL_MS: '1500' });

@@ -36,6 +36,21 @@ export interface PortAssignment {
   port: number;
 }
 
+/** One repo of a group removal: the local host (`host` null) or a named remote host, and the repo. */
+export interface RepoMemberEdit {
+  host: string | null;
+  repo: string;
+}
+
+/** The outcome of a group removal: whether the file changed, and each member host's repos afterwards, `~/` expanded. */
+export interface RepoGroupEdit {
+  changed: boolean;
+  hosts: { host: string | null; repos: string[] }[];
+}
+
+/** Changes the file's object in place, reporting whether it did and the value to answer with. */
+type RawEdit<V> = (raw: JsonObject, config: HubConfig) => { changed: boolean; value: V };
+
 /** Returned by a field edit's `change` to remove the key. */
 const REMOVE: unique symbol = Symbol('remove');
 
@@ -88,6 +103,26 @@ export class ConfigEditor {
       const kept = repos.filter((entry) => !this.names(host, entry, repo));
       return kept.length === repos.length ? null : kept;
     });
+  }
+
+  /** Removes every entry naming each member's repo, as given or by a `~/` form, from its host's repos, in one write. */
+  async removeRepoGroup(members: readonly RepoMemberEdit[]): Promise<RepoGroupEdit> {
+    const hosts = [...new Set(members.map((m) => m.host))];
+    const { changed, value } = await this.editRaw((raw) => {
+      let edited = false;
+      const after = hosts.map((host) => {
+        const owner = this.ownerOf(raw, host);
+        const repos = stringsOf(owner['repos']);
+        const kept = repos.filter((entry) => !members.some((m) => m.host === host && this.names(host, entry, m.repo)));
+        if (kept.length !== repos.length) {
+          owner['repos'] = kept;
+          edited = true;
+        }
+        return { host, repos: host === null ? kept.map((repo) => expandHome(repo, this.home)) : kept };
+      });
+      return { changed: edited, value: after };
+    });
+    return { changed, hosts: value };
   }
 
   /** Appends `preset` to the presets, the defaults when the file has none; refuses a taken name. */
@@ -175,34 +210,40 @@ export class ConfigEditor {
   }
 
   private edit<T, R extends T | typeof REMOVE = T>(field: FieldEdit<T, R>): Promise<{ changed: boolean; value: T | R }> {
-    const run = this.queue.then(() => this.attempt(field, 1));
+    return this.editRaw<T | R>((raw, config) => {
+      const owner = field.owner(raw);
+      const current = field.current(config, owner);
+      const next = field.change(current, config);
+      if (next === null) return { changed: false, value: current };
+      if (next === REMOVE) Reflect.deleteProperty(owner, field.key);
+      else owner[field.key] = next;
+      return { changed: true, value: next };
+    });
+  }
+
+  /** Runs `change` on the file's object, queued after earlier edits; writes the object when `change` reports a change. */
+  private editRaw<V>(change: RawEdit<V>): Promise<{ changed: boolean; value: V }> {
+    const run = this.queue.then(() => this.attempt(change, 1));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async attempt<T, R extends T | typeof REMOVE>(
-    field: FieldEdit<T, R>,
-    attempt: number,
-  ): Promise<{ changed: boolean; value: T | R }> {
+  private async attempt<V>(change: RawEdit<V>, attempt: number): Promise<{ changed: boolean; value: V }> {
     const identity = await fileIdentity(this.path);
     const text = await readFileIfExists(this.path);
     const config = parseConfig(text, this.home);
     const raw: unknown = text === null ? {} : JSON.parse(text);
     if (!isObject(raw)) throw new ConfigError('the configuration is not an object');
-    const owner = field.owner(raw);
-    const current = field.current(config, owner);
-    const next = field.change(current, config);
-    if (next === null) return { changed: false, value: current };
-    if (next === REMOVE) Reflect.deleteProperty(owner, field.key);
-    else owner[field.key] = next;
+    const result = change(raw, config);
+    if (!result.changed) return result;
     await this.hooks.beforeReplace?.(attempt);
     if ((await fileIdentity(this.path)) !== identity || (await readFileIfExists(this.path)) !== text) {
       if (attempt >= ATTEMPTS) throw new ConfigError(`${this.path} kept changing while being edited`);
-      return this.attempt(field, attempt + 1);
+      return this.attempt(change, attempt + 1);
     }
     if (text === null) await makePrivateDirs(dirname(this.path));
     await writeFileAtomic(this.path, `${JSON.stringify(raw, null, 2)}\n`);
-    return { changed: true, value: next };
+    return result;
   }
 
   /** The object holding the edited host's `repos`: the configuration itself, or the named host's entry. */

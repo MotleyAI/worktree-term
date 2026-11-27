@@ -20,11 +20,11 @@ export const TID = {
   outdatedUi: 'outdated-ui',
   /** Visible while the WebSocket is closed and the page reconnects. */
   reconnecting: 'reconnecting',
-  /** One per repo, in hub order; text starts with the label (`<host>:` prefixed for a remote host), `title` = full path, `aria-selected="true"` when selected. */
+  /** One per repo group, in the order of each group's first listed member; text starts with that member's label (`<host>:` prefixed for a remote host); `title` = one line per repo of the group, `<host>:<path>` for a remote host's; `aria-selected="true"` when selected. */
   repoTab: 'repo-tab',
   /** Inside the repo tab of a host that is not `connected`: text = the host's status; absent while connected. */
   hostStatus: 'host-status',
-  /** Button inside each repo tab; opens the confirmation dialog, then sends `removeRepo` for that tab's host and repo. */
+  /** Button inside each repo tab; opens the confirmation dialog naming every listed repo of the tab's group (`<host>:` prefixed for a remote host), then sends one `removeRepos` with all of them. */
   removeRepo: 'remove-repo',
   /** In the selected repo's area when its watch failed; text holds the error code and the path. */
   repoError: 'repo-error',
@@ -58,7 +58,7 @@ export const TID = {
   addRepoPath: 'add-repo-path',
   /** In the add-repo dialog after a failed `addRepo`; text holds the error code. */
   addRepoError: 'add-repo-error',
-  /** Sidebar entry; `data-path` = path, `title` = path then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting, except on the main worktree, which has none. */
+  /** Sidebar entry, identified by host and path: `data-host` = host index, `data-path` = path, `title` = path (`<host>:<path>` for a remote host's worktree) then `<preset> <id>: <status>` per terminal (or "no terminals"), `aria-selected`, `data-prunable="true"`, `data-gone="true"`; holds a checkbox input unless gone, toggling which sends `setChecked` to its host; a primary click anywhere in it but on the checkbox selects it; right-click opens the worktree menu without selecting, except on the main worktree, which has none. */
   worktree: 'worktree',
   /** The label inside a sidebar entry; Enter or Space on it selects the worktree. */
   worktreeLabel: 'worktree-label',
@@ -92,7 +92,7 @@ export const TID = {
   splitRight: 'split-right',
   /** Tab-bar button: split the focused pane down; `title` names Ctrl+Shift+E; `disabled` when not possible. */
   splitDown: 'split-down',
-  /** Tab-bar button, the bar's last control, after `splitDown`; `title` = "Open in editor (right-click to change the command)" while enabled, else the reason it is `disabled`; a click sends `openEditor` for the selected worktree; a right-click on it, enabled or disabled, opens `editorForm` except on a remote page. */
+  /** Tab-bar button, the bar's last control, after `splitDown`; `title` = "Open in editor (right-click to change the command)" while enabled, else the reason it is `disabled`; shows a code-window SVG icon in `currentColor` and no text; a click sends `openEditor` with the selected worktree's host and path; disabled while the selected worktree's host is not `connected` and on a remote page; a right-click on it, enabled or disabled, opens `editorForm` except on a remote page. */
   openEditor: 'open-editor',
   /** Dialog after a failed `openEditor`; text says what failed, markup shown as text. */
   editorDialog: 'editor-dialog',
@@ -158,7 +158,7 @@ export const TID = {
   notice: 'notice',
   /** Terminal container, `data-host` and `data-term`; holds the `.xterm` element; hidden ones are not visible. */
   terminal: 'terminal',
-  /** Header button "Hubs", present only while there is a remote host; opens the list of `hubsEntry`; coloured like the selected repo tab, hovered or not. */
+  /** Header button labelled with the page's own hub: the local host's name as the hub lists it on a home page, its `host` on a remote page; present only while there is a remote host; opens the list of `hubsEntry`; coloured like the selected repo tab, hovered or not. */
   hubsMenu: 'hubs-menu',
   /** The open Hubs menu holding the `hubsEntry` items, with a thin border; Escape or a pointer press outside it and the Hubs button closes it. */
   hubsList: 'hubs-list',
@@ -172,6 +172,8 @@ export const TID = {
   hubReinstall: 'hub-reinstall',
   /** × inside the status line of a failed opening; clears the line. */
   hubDismiss: 'hub-dismiss',
+  /** Pill after a worktree row's label: text `<host>`, `<host> · <clone>`, or `<clone>` on a local row of a tab with several local clones; absent on a local row otherwise; `title` = `<host name>: <status>`; opacity below 1 while its host is connecting or reconnecting; `--danger` as its colour, background or border colour while down, outdated or needs-login; its background, colour and border colour depend only on the host name otherwise. */
+  hostPill: 'host-pill',
 } as const;
 
 /** Mark names in rank order, as `data-mark` values. */
@@ -194,6 +196,26 @@ export const repoTab = (path: string): string => `${byTestId(TID.repoTab)}[title
 export const hostBanner = (host: number): string => `${byTestId(TID.hostBanner)}[data-host="${String(host)}"]`;
 
 export const worktreeEntry = (path: string): string => `${byTestId(TID.worktree)}[data-path="${path}"]`;
+
+/** The repo tab whose `title` holds `entry` on a line of its own: one line per repo of its group, `<host>:<path>` for a remote host's. */
+export const groupTab = (entry: string): string => {
+  const line = xpathLiteral('\n' + entry + '\n');
+  return `xpath=//*[@data-testid="${TID.repoTab}" and contains(concat("\n", @title, "\n"), ${line})]`;
+};
+
+/** `text` as an XPath string expression: quoted, or a `concat()` of quoted parts when it holds both quote types. */
+export const xpathLiteral = (text: string): string => {
+  if (!text.includes('"')) return `"${text}"`;
+  if (!text.includes("'")) return `'${text}'`;
+  const parts = text
+    .split('"')
+    .map((part) => `"${part}"`)
+    .join(`, '"', `);
+  return `concat(${parts})`;
+};
+
+/** The sidebar row of `host`'s worktree at `path`: every row carries `data-host` = its host index. */
+export const worktreeAt = (host: number, path: string): string => `${worktreeEntry(path)}[data-host="${String(host)}"]`;
 
 export const termTab = (termId: number): string => `${byTestId(TID.termTab)}[data-term="${String(termId)}"]`;
 

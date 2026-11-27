@@ -19,6 +19,12 @@ export const path = z.string().max(4096).regex(ABSOLUTE_WITHOUT_NUL);
 const ROOT = /^(?:\/[^\u0000]*|~|~\/[^\u0000]+)$/;
 /** A discovery root: an absolute path, `~`, or `~/` and a rest, expanded by the daemon. */
 export const root = z.string().max(4096).regex(ROOT);
+/** A normalized `origin` URL: host, optional port and path, without whitespace or control characters. */
+export const origin = z
+  .string()
+  .min(1)
+  .max(4096)
+  .regex(/^[^\s\p{Cc}]+$/u);
 export const head = z
   .string()
   .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
@@ -65,8 +71,15 @@ export const errorCode = z.enum([
   'host-unavailable',
   'internal',
 ]);
-/** Error codes of the hub-to-browser `error`: the daemon's, the hub opening's and the editor launch's. */
-export const hubErrorCode = z.enum([...errorCode.options, 'hub-outdated', 'hub-failed', 'editor-missing', 'editor-failed']);
+/** Error codes of the hub-to-browser `error`: the daemon's, the hub opening's and the editor's. */
+export const hubErrorCode = z.enum([
+  ...errorCode.options,
+  'hub-outdated',
+  'hub-failed',
+  'editor-missing',
+  'editor-failed',
+  'not-a-worktree',
+]);
 /** A remote host's name, safe in a URL fragment without encoding. */
 export const hostName = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
 /** A port a hub or tunnel may listen on. */

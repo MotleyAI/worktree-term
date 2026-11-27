@@ -57,6 +57,12 @@ describe('buildQuery', () => {
     expect(query).toContain('parent {');
     expect(query).toContain('headRepository');
   });
+
+  it("asks for each pull request's repository and the parent's name", () => {
+    const { query } = buildQuery('acme', 'app', ['main']);
+    expect(query.slice(query.indexOf('fragment P on PullRequest'))).toMatch(/\srepository \{ nameWithOwner \}/);
+    expect(query).toMatch(/parent \{\s*nameWithOwner\s/);
+  });
 });
 
 const graphqlBody = z.object({ query: z.string(), variables: z.record(z.string(), z.string()) });
@@ -81,6 +87,8 @@ interface PrNode {
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
   headRepository: { nameWithOwner: string } | null;
+  /** The repository the pull request belongs to. */
+  repository?: { nameWithOwner: string };
   commits: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] };
 }
 
@@ -100,9 +108,14 @@ const pr = (number: number, fields: Partial<PrNode> = {}): PrNode => ({
   mergeable: 'MERGEABLE',
   reviewDecision: null,
   headRepository: { nameWithOwner: 'acme/app' },
+  repository: { nameWithOwner: 'acme/app' },
   commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
   ...fields,
 });
+
+/** A pull request of origin's branch into the parent, `upstream/app`. */
+const intoParent = (number: number, fields: Partial<PrNode> = {}): PrNode =>
+  pr(number, { url: `https://github.com/upstream/app/pull/${String(number)}`, repository: { nameWithOwner: 'upstream/app' }, ...fields });
 
 const withChecks = (state: string | null): Partial<PrNode> => ({
   commits: { nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }] },
@@ -120,9 +133,9 @@ const page = (prs: readonly PrNode[], openOnly: boolean): { nodes: PrNode[] } =>
 
 /** A gh reply answering each asked branch from `github`, as GitHub's GraphQL API does. */
 const answer =
-  (github: Readonly<Record<string, BranchOnGitHub>>, { parent = true, nameWithOwner = 'acme/app' } = {}) =>
+  (github: Readonly<Record<string, BranchOnGitHub>>, { parent = true, nameWithOwner = 'acme/app', parentName = 'upstream/app' } = {}) =>
   (body: GraphqlBody): RunOutcome => {
-    const parentRepo: Record<string, unknown> = {};
+    const parentRepo: Record<string, unknown> = { nameWithOwner: parentName };
     const repository: Record<string, unknown> = { nameWithOwner, parent: parent ? parentRepo : null };
     for (const [key, branch] of Object.entries(body.variables)) {
       const i = /^b(\d+)$/.exec(key)?.[1];
@@ -143,9 +156,16 @@ let repo: string;
 let calls: Call[];
 let ghReply: Reply;
 let sshReply: RunOutcome;
+/** Overrides a git run's outcome; undefined runs the real git. */
+let gitReply: (args: readonly string[]) => RunOutcome | undefined;
+
+const isForEachRef = (args: readonly string[]): boolean => args.includes('for-each-ref');
+const isConfigRead = (args: readonly string[]): boolean => args[0] === 'config' && args.includes('--get-regexp');
 
 const run: Runner = (command, args, options) => {
   calls.push({ command, args, options });
+  const faked = command === 'git' ? gitReply(args) : undefined;
+  if (faked !== undefined) return Promise.resolve(faked);
   if (command === 'gh') {
     const reply = ghReply;
     if (typeof reply !== 'function') return Promise.resolve(reply);
@@ -196,6 +216,7 @@ beforeEach(() => {
   calls = [];
   ghReply = answer({});
   sshReply = exit(255, '', 'ssh: unexpected');
+  gitReply = () => undefined;
 });
 
 afterEach(() => {
@@ -248,7 +269,9 @@ describe('githubFetcher: the request', () => {
     expect(ghCalls().map((c) => c.args[3])).toEqual(['github.com', 'github.com']);
   });
 
-  it('asks for the origin branch a local branch tracks, and keys its status by the local branch', async () => {
+  it('asks under push.default upstream for the origin branch a local branch tracks, and keys its status by the local branch', async () => {
+    git(repo, 'config', 'push.default', 'upstream');
+    git(repo, 'branch', 'wip');
     git(repo, 'config', 'branch.wip.remote', 'origin');
     git(repo, 'config', 'branch.wip.merge', 'refs/heads/feature/x');
     ghReply = answer({ 'feature/x': { ref: [pr(12)] } });
@@ -256,8 +279,10 @@ describe('githubFetcher: the request', () => {
     expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
   });
 
-  it('asks once for an origin branch two local branches track, and lists both', async () => {
+  it('asks under push.default upstream once for an origin branch two local branches track, and lists both', async () => {
+    git(repo, 'config', 'push.default', 'upstream');
     for (const local of ['a', 'b']) {
+      git(repo, 'branch', local);
       git(repo, 'config', `branch.${local}.remote`, 'origin');
       git(repo, 'config', `branch.${local}.merge`, 'refs/heads/feature/x');
     }
@@ -268,20 +293,155 @@ describe('githubFetcher: the request', () => {
     expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
   });
 
-  it('asks for no branch that tracks another remote or several branches', async () => {
+  it('asks for no branch that tracks another remote, and for its own name of one tracking several branches', async () => {
+    git(repo, 'config', 'push.default', 'upstream');
+    git(repo, 'branch', 'up');
+    git(repo, 'branch', 'multi');
     git(repo, 'config', 'branch.up.remote', 'upstream');
     git(repo, 'config', 'branch.up.merge', 'refs/heads/up');
     git(repo, 'config', 'branch.multi.remote', 'origin');
     git(repo, 'config', 'branch.multi.merge', 'refs/heads/one');
     git(repo, 'config', '--add', 'branch.multi.merge', 'refs/heads/two');
     ghReply = answer({ up: { ref: [pr(1)] }, multi: { ref: [pr(2)] }, one: { ref: [pr(3)] }, plain: { ref: [pr(4)] } });
-    expect(await fetchOnce([worktree('up'), worktree('multi'), worktree('plain')])).toEqual({ ok: true, prs: [status('plain', 4)] });
-    expect(askedBranches(ghCalls()[0])).toEqual(['plain']);
+    const outcome = await fetchOnce([worktree('up'), worktree('multi'), worktree('plain')]);
+    expect(outcome.ok ? sorted(outcome.prs) : outcome).toEqual([status('multi', 2), status('plain', 4)]);
+    expect(askedBranches(ghCalls()[0])).toEqual(['multi', 'plain']);
   });
 
   it('lists no status for a detached or bare worktree', async () => {
     ghReply = answer({ main: { ref: [pr(1)] } });
     expect(await fetchOnce([worktree(null), { ...worktree(null, repo), bare: true, detached: false }])).toEqual({ ok: true, prs: [] });
+  });
+});
+
+describe('githubFetcher: the branch on origin', () => {
+  const mainMerged = { main: { ref: [pr(7, { state: 'MERGED' })] } };
+
+  /** Creates `branch` from `origin/main` with tracking, as `git branch --track` does. */
+  const trackOriginMain = (branch: string): void => {
+    git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(repo, 'branch', '--track', branch, 'origin/main');
+  };
+
+  /** Creates `branch` with `branch.<branch>.*` set from `config`. */
+  const branchWith = (branch: string, config: Readonly<Record<string, string>>): void => {
+    git(repo, 'branch', branch);
+    for (const [key, value] of Object.entries(config)) git(repo, 'config', `branch.${branch}.${key}`, value);
+  };
+
+  const addUpstreamRemote = (): void => {
+    git(repo, 'remote', 'add', 'upstream', 'https://github.com/upstream/app.git');
+  };
+
+  it.each(['unset', 'simple', 'current', 'matching', 'nothing'])(
+    'looks a branch tracking origin/main up by its own name with push.default %s',
+    async (pushDefault) => {
+      if (pushDefault !== 'unset') git(repo, 'config', 'push.default', pushDefault);
+      trackOriginMain('feature/y');
+      ghReply = answer(mainMerged);
+      expect(await fetchOnce([worktree('feature/y')])).toEqual({ ok: true, prs: [] });
+      expect(askedBranches(ghCalls()[0])).toEqual(['feature/y']);
+    },
+  );
+
+  it.each(['upstream', 'tracking'])(
+    "looks a branch tracking origin/main up by its upstream's name with push.default %s, keyed by the local branch",
+    async (pushDefault) => {
+      git(repo, 'config', 'push.default', pushDefault);
+      trackOriginMain('feature/y');
+      ghReply = answer(mainMerged);
+      expect(await fetchOnce([worktree('feature/y')])).toEqual({ ok: true, prs: [status('feature/y', 7, { state: 'merged' })] });
+      expect(askedBranches(ghCalls()[0])).toEqual(['main']);
+    },
+  );
+
+  it("looks a branch up by its upstream's name with push.default upstream when origin's fetch refspec omits that branch", async () => {
+    git(repo, 'config', 'remote.origin.fetch', '+refs/heads/main:refs/remotes/origin/main');
+    git(repo, 'config', 'push.default', 'upstream');
+    branchWith('wip', { remote: 'origin', merge: 'refs/heads/feature/x' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] }, wip: { ref: [pr(3)] } });
+    expect(await fetchOnce([worktree('wip')])).toEqual({ ok: true, prs: [status('wip', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
+  });
+
+  it('looks a branch with two upstream branches up by its own name with push.default upstream', async () => {
+    git(repo, 'config', 'push.default', 'upstream');
+    branchWith('multi', { remote: 'origin', merge: 'refs/heads/one' });
+    git(repo, 'config', '--add', 'branch.multi.merge', 'refs/heads/two');
+    ghReply = answer({ multi: { ref: [pr(2)] }, one: { ref: [pr(3)] }, two: { ref: [pr(4)] } });
+    expect(await fetchOnce([worktree('multi')])).toEqual({ ok: true, prs: [status('multi', 2)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['multi']);
+  });
+
+  it('looks a branch up by its own name with push.default upstream when its upstream is on another remote and it pushes to origin', async () => {
+    addUpstreamRemote();
+    git(repo, 'config', 'push.default', 'upstream');
+    branchWith('feature/x', { remote: 'upstream', merge: 'refs/heads/main', pushRemote: 'origin' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] }, main: { ref: [pr(7)] } });
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: true, prs: [status('feature/x', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
+  });
+
+  it.each([['branch.feature/x.pushRemote'], ['remote.pushDefault']])(
+    'looks a branch tracking upstream/main up by its own name when %s is origin',
+    async (key) => {
+      addUpstreamRemote();
+      branchWith('feature/x', { remote: 'upstream', merge: 'refs/heads/main' });
+      git(repo, 'config', key, 'origin');
+      ghReply = answer({ 'feature/x': { ref: [pr(12)] }, main: { ref: [pr(7)] } });
+      expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: true, prs: [status('feature/x', 12)] });
+      expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
+    },
+  );
+
+  it.each(['simple', 'nothing'])('asks for no branch whose pushRemote is another remote, with push.default %s', async (pushDefault) => {
+    addUpstreamRemote();
+    git(repo, 'config', 'push.default', pushDefault);
+    branchWith('feature/x', { remote: 'origin', merge: 'refs/heads/feature/x', pushRemote: 'upstream' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] }, main: { ref: [pr(1)] } });
+    expect(await fetchOnce([worktree('main', repo), worktree('feature/x')])).toEqual({ ok: true, prs: [status('main', 1)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['main']);
+  });
+
+  it('lets branch.<b>.pushRemote origin win over remote.pushDefault', async () => {
+    addUpstreamRemote();
+    git(repo, 'config', 'remote.pushDefault', 'upstream');
+    branchWith('feature/x', { remote: 'upstream', merge: 'refs/heads/main', pushRemote: 'origin' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] } });
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: true, prs: [status('feature/x', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
+  });
+
+  it('looks a branch whose one upstream is no branch up by its own name with push.default upstream', async () => {
+    git(repo, 'config', 'push.default', 'upstream');
+    branchWith('feature/x', { remote: 'origin', merge: 'refs/tags/v1' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] } });
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: true, prs: [status('feature/x', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
+  });
+
+  it('asks for no branch when remote.pushDefault is another remote', async () => {
+    addUpstreamRemote();
+    git(repo, 'config', 'remote.pushDefault', 'upstream');
+    branchWith('feature/x', { remote: 'origin', merge: 'refs/heads/feature/x' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] } });
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: true, prs: [] });
+    expect(ghCalls()).toHaveLength(0);
+  });
+
+  it('asks for no branch tracking upstream/feature/x without a push remote', async () => {
+    addUpstreamRemote();
+    branchWith('feature/x', { remote: 'upstream', merge: 'refs/heads/feature/x' });
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] }, main: { ref: [pr(1)] } });
+    expect(await fetchOnce([worktree('main', repo), worktree('feature/x')])).toEqual({ ok: true, prs: [status('main', 1)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['main']);
+  });
+
+  it('looks a branch without any configuration up by its own name', async () => {
+    git(repo, 'branch', 'feature/x');
+    ghReply = answer({ 'feature/x': { ref: [pr(12)] } });
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: true, prs: [status('feature/x', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/x']);
   });
 });
 
@@ -325,6 +485,57 @@ describe('githubFetcher: outcomes', () => {
     expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: false, failure });
   });
 
+  it.each([
+    ['for-each-ref exits nonzero', isForEachRef, exit(128, '', 'fatal: bad object'), 'exit'],
+    ['git config exits 2', isConfigRead, exit(2, '', 'error: invalid key pattern'), 'exit'],
+    ['for-each-ref prints malformed output', isForEachRef, exit(0, 'garbage\n'), 'invalid-response'],
+    ['git config prints malformed output', isConfigRead, exit(0, 'garbage\0'), 'invalid-response'],
+    ['for-each-ref times out', isForEachRef, { kind: 'timeout' }, 'timeout'],
+    ['git config times out', isConfigRead, { kind: 'timeout' }, 'timeout'],
+  ] as const)('fails without running gh when %s', async (_name, matches, reply, failure) => {
+    gitReply = (args) => (matches(args) ? reply : undefined);
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: false, failure });
+    expect(ghCalls()).toHaveLength(0);
+  });
+
+  it('fails without running gh when push.default is invalid', async () => {
+    git(repo, 'branch', 'feature/x');
+    git(repo, 'config', 'push.default', 'bogus');
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: false, failure: 'exit' });
+    expect(ghCalls()).toHaveLength(0);
+  });
+
+  it('treats git config exiting 1 as nothing set', async () => {
+    git(repo, 'config', 'push.default', 'upstream');
+    git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(repo, 'branch', '--track', 'feature/y', 'origin/main');
+    gitReply = (args) => (isConfigRead(args) ? exit(1) : undefined);
+    ghReply = answer({ 'feature/y': { ref: [pr(12)] } });
+    expect(await fetchOnce([worktree('feature/y')])).toEqual({ ok: true, prs: [status('feature/y', 12)] });
+    expect(askedBranches(ghCalls()[0])).toEqual(['feature/y']);
+  });
+
+  it('fails when a pull request lacks its repository', async () => {
+    const node = pr(12);
+    delete node.repository;
+    ghReply = answer({ 'feature/x': { ref: [node] } });
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: false, failure: 'invalid-response' });
+  });
+
+  it('fails when the parent lacks its name', async () => {
+    const full = answer({ 'feature/x': { ref: [pr(12)] } });
+    ghReply = (body) => {
+      const reply = full(body);
+      if (reply.kind !== 'exit') return reply;
+      const parsed = z
+        .object({ data: z.object({ repository: z.object({ parent: z.record(z.string(), z.unknown()) }).loose() }) })
+        .parse(JSON.parse(reply.stdout));
+      delete parsed.data.repository.parent['nameWithOwner'];
+      return exit(0, JSON.stringify(parsed));
+    };
+    expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: false, failure: 'invalid-response' });
+  });
+
   it('fails when the response lacks an asked branch', async () => {
     ghReply = exit(0, JSON.stringify({ data: { repository: { nameWithOwner: 'acme/app', parent: null } } }));
     expect(await fetchOnce([worktree('feature/x')])).toEqual({ ok: false, failure: 'invalid-response' });
@@ -337,17 +548,55 @@ describe('githubFetcher: outcomes', () => {
 });
 
 describe('githubFetcher: which pull request', () => {
-  const fetchFor = (known: BranchOnGitHub, options?: { parent?: boolean; nameWithOwner?: string }) => {
+  const fetchFor = (known: BranchOnGitHub, options?: { parent?: boolean; nameWithOwner?: string; parentName?: string }) => {
     ghReply = answer({ 'feature/x': known }, options);
     return fetchOnce([worktree('feature/x')]);
   };
 
   it('lists the pull request of the exact head, into origin or its parent', async () => {
-    const intoParent = pr(12, { url: 'https://github.com/upstream/app/pull/12' });
-    expect(await fetchFor({ ref: [intoParent] })).toEqual({
+    expect(await fetchFor({ ref: [intoParent(12)] })).toEqual({
       ok: true,
       prs: [status('feature/x', 12, { url: 'https://github.com/upstream/app/pull/12' })],
     });
+  });
+
+  it("drops a merged pull request of origin's branch into a fork of origin", async () => {
+    const intoFork = pr(7, { state: 'MERGED', url: 'https://github.com/hex-inc/app/pull/7', repository: { nameWithOwner: 'hex-inc/app' } });
+    expect(await fetchFor({ ref: [intoFork] })).toEqual({ ok: true, prs: [] });
+  });
+
+  it.each([
+    ['while the branch exists', []],
+    ['after the branch was deleted', null],
+  ] as const)('drops a pull request into a fork found by head name %s', async (_name, ref) => {
+    const intoFork = pr(7, { repository: { nameWithOwner: 'hex-inc/app' } });
+    expect(await fetchFor({ ref: ref === null ? null : [...ref], heads: [intoFork], parentHeads: [intoFork] })).toEqual({
+      ok: true,
+      prs: [],
+    });
+  });
+
+  it('drops a pull request into a repository named as the parent when origin is no fork', async () => {
+    expect(await fetchFor({ ref: [intoParent(12)] }, { parent: false })).toEqual({ ok: true, prs: [] });
+  });
+
+  it('finds a pull request into the parent by head name while the branch exists', async () => {
+    expect(await fetchFor({ ref: [], parentHeads: [intoParent(9)] })).toMatchObject({ ok: true, prs: [{ number: 9 }] });
+  });
+
+  it.each([
+    ['origin', pr(7, { repository: { nameWithOwner: 'ACME/App' } }), {}],
+    ['the parent', intoParent(7, { repository: { nameWithOwner: 'upstream/APP' } }), { parentName: 'Upstream/App' }],
+  ])('compares the repository with %s ignoring case', async (_name, node, options) => {
+    expect(await fetchFor({ ref: [node] }, options)).toMatchObject({ ok: true, prs: [{ number: 7 }] });
+  });
+
+  it('finds the pull request into origin behind five newer ones of the same head into other repositories', async () => {
+    const foreign = [1, 2, 3, 4, 5].map((n) =>
+      pr(n + 1, { repository: { nameWithOwner: `fork${String(n)}/app` }, updatedAt: `2026-11-2${String(n)}T10:00:00Z` }),
+    );
+    const own = pr(1, { updatedAt: '2026-11-10T10:00:00Z' });
+    expect(await fetchFor({ ref: [...foreign, own], heads: [own] })).toEqual({ ok: true, prs: [status('feature/x', 1)] });
   });
 
   it("ignores another fork's pull request of the same name while the branch exists", async () => {
@@ -367,7 +616,7 @@ describe('githubFetcher: which pull request', () => {
   });
 
   it("finds a deleted branch's pull request into the parent", async () => {
-    expect(await fetchFor({ ref: null, parentHeads: [pr(9, { url: 'https://github.com/upstream/app/pull/9' })] })).toEqual({
+    expect(await fetchFor({ ref: null, parentHeads: [intoParent(9)] })).toEqual({
       ok: true,
       prs: [status('feature/x', 9, { url: 'https://github.com/upstream/app/pull/9' })],
     });
@@ -380,8 +629,11 @@ describe('githubFetcher: which pull request', () => {
     });
   });
 
-  it('drops pull requests whose head repository is gone', async () => {
-    expect(await fetchFor({ ref: null, heads: [pr(7, { headRepository: null })] })).toEqual({ ok: true, prs: [] });
+  it.each([
+    ['of the exact head', { ref: [pr(7, { headRepository: null })] }],
+    ['by head name', { ref: null, heads: [pr(7, { headRepository: null })] }],
+  ])('drops pull requests %s whose head repository is gone', async (_name, known: BranchOnGitHub) => {
+    expect(await fetchFor(known)).toEqual({ ok: true, prs: [] });
   });
 
   it('lists none when only another fork has a pull request of that name', async () => {
@@ -416,7 +668,7 @@ describe('githubFetcher: which pull request', () => {
 
   it('takes the most recently updated open one across origin and its parent', async () => {
     const older = pr(1, { updatedAt: '2026-11-10T10:00:00Z' });
-    const newer = pr(2, { updatedAt: '2026-11-15T10:00:00Z' });
+    const newer = intoParent(2, { updatedAt: '2026-11-15T10:00:00Z' });
     expect(await fetchFor({ ref: null, heads: [older], parentHeads: [newer] })).toMatchObject({ ok: true, prs: [{ number: 2 }] });
   });
 

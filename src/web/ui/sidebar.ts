@@ -106,6 +106,40 @@ export const visibleWorktrees = (
 export const defaultWorktree = (entries: readonly SidebarEntry[], filter: WorktreeFilter): string | null =>
   (visibleWorktrees(entries, filter, '', null)[0] ?? entries[0])?.path ?? null;
 
+/** A worktree identified by its host and path. */
+export interface RowId {
+  host: number;
+  path: string;
+}
+
+/** A sidebar entry of one host's worktree. */
+export interface SidebarRow extends SidebarEntry {
+  host: number;
+}
+
+/** A key telling rows of the same path on two hosts apart. */
+export const rowKey = (row: RowId): string => `${String(row.host)}\n${row.path}`;
+
+const sameRow = (a: RowId, b: RowId | null): boolean => b !== null && a.host === b.host && a.path === b.path;
+
+/** The rows of a group's members in member order, each member's entries as `sidebarEntries` lists them. */
+export const groupRows = (members: readonly { host: number; state: Parameters<typeof sidebarEntries>[0] }[]): SidebarRow[] =>
+  members.flatMap(({ host, state }) => sidebarEntries(state).map((entry) => ({ ...entry, host })));
+
+/** The rows the switches and the name search show; the selected row is always shown. */
+export const visibleRows = <R extends SidebarRow>(
+  rows: readonly R[],
+  filter: WorktreeFilter,
+  search: string,
+  selected: RowId | null,
+): R[] => rows.filter((r) => sameRow(r, selected) || (passesFilter(r, filter) && matchesSearch(r.label, search)));
+
+/** The row selected without a stored selection: the first the switches show, else the first row. */
+export const defaultRow = (rows: readonly SidebarRow[], filter: WorktreeFilter): RowId | null => {
+  const row = visibleRows(rows, filter, '', null)[0] ?? rows[0];
+  return row === undefined ? null : { host: row.host, path: row.path };
+};
+
 /** The refs the daemon compared a worktree's commits with, in order, and the fetches that failed. */
 export interface RemovalBases {
   bases: readonly string[];

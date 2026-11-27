@@ -16,6 +16,9 @@
               "headRepository": {
                 "nameWithOwner": "MotleyAI/worktree-term"
               },
+              "repository": {
+                "nameWithOwner": "MotleyAI/worktree-term"
+              },
               "commits": {
                 "nodes": [
                   {
@@ -45,6 +48,9 @@
             "mergeable": "UNKNOWN",
             "reviewDecision": null,
             "headRepository": {
+              "nameWithOwner": "MotleyAI/worktree-term"
+            },
+            "repository": {
               "nameWithOwner": "MotleyAI/worktree-term"
             },
             "commits": {
@@ -78,6 +84,9 @@
               "headRepository": {
                 "nameWithOwner": "MotleyAI/worktree-term"
               },
+              "repository": {
+                "nameWithOwner": "MotleyAI/worktree-term"
+              },
               "commits": {
                 "nodes": [
                   {
@@ -107,6 +116,9 @@
             "mergeable": "CONFLICTING",
             "reviewDecision": null,
             "headRepository": {
+              "nameWithOwner": "MotleyAI/worktree-term"
+            },
+            "repository": {
               "nameWithOwner": "MotleyAI/worktree-term"
             },
             "commits": {

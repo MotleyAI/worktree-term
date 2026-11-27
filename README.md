@@ -38,13 +38,13 @@ flowchart LR
 
 ### Two machines over SSH
 
-The browser and hub run on your laptop; for the laptop's page, the remote host `devbox` contributes only its daemon. A hub's repo tabs, including a remote host's, come from its own `config.json`. Picking `devbox` in the Hubs menu shows `devbox`'s own hub instead, with its own `config.json`: the laptop's hub forwards a loopback port of its own for `devbox` to that hub, one `ssh -W` per connection.
+The browser and hub run on your laptop; for the laptop's page, the remote host `devbox` contributes only its daemon. A hub's repo tabs, including a remote host's, come from its own `config.json`; every clone of a tab's repo found on any host joins that tab. Picking `devbox` in the hub menu shows `devbox`'s own hub instead, with its own `config.json`: the laptop's hub forwards a loopback port of its own for `devbox` to that hub, one `ssh -W` per connection.
 
 ```mermaid
 flowchart LR
   subgraph laptop["laptop (where you browse)"]
     page["Page (browser)<br/>localStorage: selection, filters, sidebar width"]
-    hub["Hub<br/>config.json: hosts: devbox + its repos"]
+    hub["Hub<br/>config.json: hosts: devbox + its repos<br/>sshfs mounts for the editor"]
     localDaemon["Daemon<br/>the laptop's terminals<br/>state.json"]
     page -- "WebSocket, 127.0.0.1:7417" --> hub
     hub -- "unix socket" --> localDaemon
@@ -57,7 +57,7 @@ flowchart LR
     remoteHub -- "unix socket" --> remoteDaemon
   end
   hub -- "ssh devbox wtd connect<br/>one control master per host;<br/>a Tailscale check's login link is shown on the page" --> connect
-  page -. "Hubs menu: 127.0.0.1:7418,<br/>devbox's port on the laptop" .-> hub
+  page -. "hub menu: 127.0.0.1:7418,<br/>devbox's port on the laptop" .-> hub
   hub -. "ssh -W 127.0.0.1:<devbox hub port> devbox<br/>per connection, over the same master" .-> remoteHub
 ```
 
@@ -80,7 +80,9 @@ With `--systemd` it also writes `~/.config/systemd/user/worktree-term-daemon.ser
 
 The hub reads `$XDG_CONFIG_HOME/worktree-term/config.json` (by default `~/.config/worktree-term/config.json`); every key is optional, and a new browser session picks up edits. `presets` lists the terminals a new tab or split can start, in order: `command` runs as `$SHELL -l -i -c <command>`, and `null` starts the plain login shell. Without `presets`, they are `shell` (the login shell), `claude` and `codex`. "+ Add preset" and the × beside each preset in the picker edit `presets` here, starting from those defaults; every open page shows the change.
 
-`repos` and `roots` belong to this machine: `repos` are the repo tabs (absolute or `~/…`), `roots` are where "Add repo" looks for repositories, 3 levels deep (default `["~"]`). `hosts` lists remote hosts, each shown after this machine's repos: `name` labels its tabs (`name:repo`), `ssh` is the SSH alias, `repos` must be absolute paths on that host, and its `roots` (`~` meaning the remote home) default to `["~"]`. "Add repo" and "Remove repo" on the page edit `repos` here, keeping everything else as written.
+`repos` and `roots` belong to this machine: `repos` are the repo tabs (absolute or `~/…`), `roots` are where "Add repo" looks for repositories, 3 levels deep (default `["~"]`). `hosts` lists remote hosts: `name` labels the tabs of its repos (`name:repo`) and the pills of its worktrees, `ssh` is the SSH alias, `repos` must be absolute paths on that host, and its `roots` (`~` meaning the remote home) default to `["~"]`. "Add repo" and "Remove repo" on the page edit `repos` here, keeping everything else as written.
+
+A repo tab holds every listed repo with the same `origin` remote, whatever host lists it: `git@github.com:acme/app.git` and `https://github.com/acme/app` are one origin, and repos without an `origin`, or with a local one, each keep a tab of their own. Tabs come in the order of each tab's first listed repo, this machine's first, and are labelled like it. When the page opens, it looks for repositories below each connected host's `roots`, this machine's included, and adds every clone of a tab's origin it finds there to that tab, once per page; a host connecting later is searched once it connects. A clone made later appears after the page is reloaded. The sidebar lists the worktrees of every repo in the tab, this machine's first; a remote host's worktrees carry a pill with its name, in a colour of its own, dimmed while it reconnects and red while it is down. When a tab holds several clones on one host, the pill also names the clone. "Remove repo" removes every listed repo of the tab, all or none.
 
 A host's `port` is the loopback port on this machine through which its own hub is shown (see [Remote hubs](#remote-hubs)). The hub writes it the first time the host's hub is opened: one above the highest of `port` and every host's `port`. Once present it is never changed by the hub, and it keeps the host's page on the same origin, so that page's preferences survive. You may set it by hand; it must differ from `port` and from every other host's.
 
@@ -109,7 +111,7 @@ A host's `port` is the loopback port on this machine through which its own hub i
 }
 ```
 
-`editor` is the command the "Open in editor" button at the right end of the tab bar runs to open the selected worktree; the default is `kate`. `{path}` stands for the worktree path, as one argument however it is spelled; without `{path}`, the path is added at the end. The command is split into words like a shell would, with `'…'`, `"…"` and `\` quoting, but nothing is expanded (`~`, `$VAR`) and no shell runs. The hub starts it on this machine, in the worktree, so only worktrees on this machine can be opened, not those of remote hosts or from a remote hub's page. Right-clicking the button edits `editor` here, and "Reset to default" removes it; every open page shows the change.
+`editor` is the command the "Open in editor" button at the right end of the tab bar runs to open the selected worktree; the default is `kate`. `{path}` stands for the worktree path, as one argument however it is spelled; without `{path}`, the path is added at the end. The command is split into words like a shell would, with `'…'`, `"…"` and `\` quoting, but nothing is expanded (`~`, `$VAR`) and no shell runs. The hub starts it on this machine, in the worktree. A remote host's worktree is mounted first with `sshfs` (and later unmounted with `fusermount3`) under `run/mounts` in the hub's state directory, over the host's SSH control master, and the editor runs on the mount; the mount stays until the worktree is removed, the host leaves `hosts`, or the hub stops. Both programs must be on the hub's `PATH`; `WTD_SSHFS` and `WTD_FUSERMOUNT` replace them. Editors open only from this machine's page, not from a remote hub's. Right-clicking the button edits `editor` here, and "Reset to default" removes it; every open page shows the change.
 
 ```json
 {
@@ -138,7 +140,7 @@ Each browser session holds one `ssh <alias> "$HOME/.local/bin/wtd" connect` per 
 
 ## Remote hubs
 
-The "Hubs" menu in the page header, shown while `hosts` lists a remote host, lists "This machine" and every remote host. Picking a host shows that host's own hub in the same tab: its own repos, worktrees and terminals, as if you were browsing on it, and "Add repo" and "Remove repo" there edit its `config.json`. Nothing needs configuring beyond the `hosts` entry. Picking "This machine" goes back. `wtd ui <host>` opens a window that does the same:
+The hub menu in the page header, shown while `hosts` lists a remote host, is labelled with the name of the hub the page shows, this machine's name on a home page. It lists "This machine" and every remote host. Picking a host shows that host's own hub in the same tab: its own repos, worktrees and terminals, as if you were browsing on it, and "Add repo" and "Remove repo" there edit its `config.json`. Nothing needs configuring beyond the `hosts` entry. Picking "This machine" goes back. `wtd ui <host>` opens a window that does the same:
 
 ```sh
 wtd ui devbox
@@ -177,7 +179,7 @@ Panes, terminal tabs, worktree rows and repo tabs show the most urgent mark of t
 
 ## Development
 
-Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`npm install -g living-architecture@0.4.1`), which `pnpm test` runs.
+Requires Node 22 (`.nvmrc`), pnpm, and the `la-*` architecture tools on `PATH` (`npm install -g living-architecture@0.14.0`), which `pnpm test` runs.
 
 ```sh
 pnpm install

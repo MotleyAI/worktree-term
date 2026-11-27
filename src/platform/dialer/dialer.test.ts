@@ -312,7 +312,9 @@ const session = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[3];
 const fd = (n) => fs.readlinkSync('/proc/self/fd/' + n);
 fs.appendFileSync(pids, process.pid + '\\n');
 const cwd = fs.readlinkSync('/proc/self/cwd');
-fs.writeFileSync(pids + '.' + process.pid, JSON.stringify({ sid: Number(session), stdin: fd(0), stdout: fd(1), stderr: fd(2), cwd }));
+// Written aside and renamed, so the test never reads it half written.
+fs.writeFileSync(pids + '.tmp.' + process.pid, JSON.stringify({ sid: Number(session), stdin: fd(0), stdout: fd(1), stderr: fd(2), cwd }));
+fs.renameSync(pids + '.tmp.' + process.pid, pids + '.' + process.pid);
 console.log('out pid=' + process.pid);
 console.error('err pid=' + process.pid);
 setTimeout(() => process.exit(0), 30000);

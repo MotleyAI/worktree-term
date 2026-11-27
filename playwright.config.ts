@@ -17,7 +17,7 @@ export default defineConfig({
   projects: [
     // Every test has its own hub, so tests within a file run in parallel too.
     { name: 'e2e', testIgnore: /perf\.spec\.ts$/, fullyParallel: true },
-    // Timed after the rest, so other workers' load does not skew the budgets.
-    { name: 'perf', testMatch: /perf\.spec\.ts$/, dependencies: ['e2e'] },
+    // Timed after the rest and in one worker, so neither e2e workers nor other perf copies skew the budgets.
+    { name: 'perf', testMatch: /perf\.spec\.ts$/, dependencies: ['e2e'], workers: 1 },
   ],
 });

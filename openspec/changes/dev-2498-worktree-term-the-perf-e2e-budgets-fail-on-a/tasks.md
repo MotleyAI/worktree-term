@@ -23,13 +23,13 @@
 
 ## 2. Verdict helper
 
-- [ ] 2.1 `test/e2e/budget.ts`: frame-interval estimate (lowest decile, ≥ 30 finite positive gaps, 4–34 ms), round verdicts ("n frames at T" by median against (n + ½)·T; "≤ X ms" by maximum), best-of-N runner (stop at first pass, return every round's median/p95/max and the verdict), reporting of every round with T and threshold; verify 1.1 passes
+- [x] 2.1 `test/e2e/budget.ts`: frame-interval estimate (lowest decile, ≥ 30 finite positive gaps, 4–34 ms), round verdicts ("n frames at T" by median against (n + ½)·T; "≤ X ms" by maximum), best-of-N runner (stop at first pass, return every round's median/p95/max and the verdict), reporting of every round with T and threshold; verify 1.1 passes
 
 ## 3. Perf project
 
-- [ ] 3.1 `playwright.config.ts`: `workers: 1` on the `perf` project and its comment updated (timed after `e2e`, in one worker); verify `--project perf --no-deps --repeat-each 2` runs its copies one after another
-- [ ] 3.2 `test/e2e/perf.spec.ts`: in-page frame-interval measurement once per page after `openUi` (≥ 60 `requestAnimationFrame` gaps), logged; each measurement becomes a round function through the runner; verify `pnpm exec playwright test --project perf --no-deps` passes, the injected-slowdown test included
-- [ ] 3.3 Timeouts (design D10): measure the worst-case round duration of each budget and set the eight-pane, divider-drag, hanging-`gh` and injected-slowdown tests' timeouts so 3 failing rounds plus setup finish; verify by forcing all rounds to fail once (e.g. a temporarily tightened threshold) and confirming a budget verdict, not a timeout, is reported; revert the temporary change
+- [x] 3.1 `playwright.config.ts`: `workers: 1` on the `perf` project and its comment updated (timed after `e2e`, in one worker); verify `--project perf --no-deps --repeat-each 2` runs its copies one after another
+- [x] 3.2 `test/e2e/perf.spec.ts`: in-page frame-interval measurement once per page after `openUi` (≥ 60 `requestAnimationFrame` gaps), logged; each measurement becomes a round function through the runner; verify `pnpm exec playwright test --project perf --no-deps` passes, the injected-slowdown test included
+- [x] 3.3 Timeouts (design D10): measure the worst-case round duration of each budget and set the eight-pane, divider-drag, hanging-`gh` and injected-slowdown tests' timeouts so 3 failing rounds plus setup finish; verify by forcing all rounds to fail once (e.g. a temporarily tightened threshold) and confirming a budget verdict, not a timeout, is reported; revert the temporary change
 
 ## 4. Done-when verification
 

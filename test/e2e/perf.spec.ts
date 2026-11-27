@@ -117,8 +117,17 @@ const holds = async (name: string, budget: Budget, round: (index: number) => Pro
   expect(verdict.met, `${name}: no round met ${budget.label}`).toBe(true);
 };
 
-/** Clicks the worktree and returns the switch duration from the `wtd:switch` marks. */
+/** Clicks the worktree, once every earlier switch has painted, and returns the switch duration from the `wtd:switch` marks. */
 const timedSwitch = async (page: Page, path: string): Promise<number> => {
+  // A preceding `view` returns before its switch paints when the worktree already holds WebGL.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ([startName, endName]) => performance.getEntriesByName(endName).length >= performance.getEntriesByName(startName).length,
+        [SWITCH_START, SWITCH_END] as const,
+      ),
+    )
+    .toBe(true);
   const ends = await page.evaluate((name) => performance.getEntriesByName(name).length, SWITCH_END);
   await page.locator(worktreeEntry(path)).locator(byTestId(TID.worktreeLabel)).click();
   await expect.poll(() => page.evaluate((name) => performance.getEntriesByName(name).length, SWITCH_END)).toBeGreaterThan(ends);
@@ -323,7 +332,7 @@ test('a recently viewed switch slowed by 2 frames misses its 1-frame budget in a
 });
 
 test('switching to worktrees rendered via DOM takes at most 3 frames (median of 20, best of 3 rounds)', async ({ perf, page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(120_000);
   const interval = await openTimed(perf, page);
   await holds('WebGL reattach switch', frames(3, interval), () => reattachRound(page, perf));
 });
@@ -334,7 +343,7 @@ test('worktrees added and removed with git show in, and leave, the sidebar withi
 });
 
 test('switching to an 8-pane tab rendered via DOM takes at most 6 frames (median of 20, best of 3 rounds)', async ({ perf, page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(120_000);
   const targets = await eightPanes(perf);
   const interval = await openTimed(perf, page);
   await holds('eight-pane switch', frames(6, interval), () => eightPaneRound(page, targets));
@@ -344,7 +353,7 @@ test('dragging a divider of an 8-pane tab paints each pointer move within 1 fram
   perf,
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(120_000);
   const [target] = await eightPanes(perf);
   if (target === undefined) throw new Error('no 8-pane worktree');
   const interval = await openTimed(perf, page);
@@ -352,7 +361,7 @@ test('dragging a divider of an 8-pane tab paints each pointer move within 1 fram
 });
 
 test('every budget holds while the status request never returns', async ({ perf, page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   const targets = await eightPanes(perf);
   const [target] = targets;
   if (target === undefined) throw new Error('no 8-pane worktree');

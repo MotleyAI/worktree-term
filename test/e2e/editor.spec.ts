@@ -697,6 +697,9 @@ test.describe('open in editor across hosts', () => {
 
   test('without sshfs on the hub’s PATH, opening box’s worktree says sshfs could not be found', async ({ hub, page, ssh }) => {
     test.setTimeout(120_000);
+    // A fake unmount program, so the missing one is sshfs whatever this machine has.
+    const { WTD_FUSERMOUNT, WTD_MOUNTINFO } = new FakeSshfs(join(hub.dir, 'sshfs')).env;
+    hub.extraEnv = { ...hub.extraEnv, WTD_FUSERMOUNT, WTD_MOUNTINFO };
     await remoteWorktree(hub, ssh, page);
     await expect(control(page)).toBeEnabled(REMOTE_TIMEOUT);
     await control(page).click();

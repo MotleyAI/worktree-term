@@ -40,14 +40,31 @@ const script = (name: string, body: string): string => {
   return path;
 };
 
-const failure = async (operation: Promise<unknown>): Promise<MountError> => {
-  const error: unknown = await operation.then(
-    () => null,
-    (e: unknown) => e,
-  );
+const asMountError = (error: unknown): MountError => {
   expect(error).toBeInstanceOf(MountError);
   if (!(error instanceof MountError)) throw new Error('not a MountError');
   return error;
+};
+
+const failure = async (operation: Promise<unknown>): Promise<MountError> =>
+  asMountError(
+    await operation.then(
+      () => null,
+      (e: unknown) => e,
+    ),
+  );
+
+/** Mounts BOX_A with `deadlineMs`, running `meanwhile` once the held fake sshfs has started; fake.hold() first. */
+const mountingThen = async (deadlineMs: number, meanwhile: () => void): Promise<unknown> => {
+  const mounting = mount(paths, BOX_A, deadlineMs).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  await vi.waitFor(() => {
+    expect(fake.calls('sshfs')).toHaveLength(1);
+  });
+  meanwhile();
+  return mounting;
 };
 
 const entries = (path: string): string[] => (existsSync(path) ? readdirSync(path) : []);
@@ -312,19 +329,34 @@ describe('mount', () => {
   it('fails with timed out when unmounting after the deadline fails too, keeping that failure as its cause', async () => {
     const point = mountPoint(paths, BOX_A);
     fake.hold();
-    fake.addMount(point);
     vi.stubEnv('WTD_FUSERMOUNT', script('fusermount-fails', 'echo "fusermount3: busy" >&2; exit 1'));
-    const error = await failure(mount(paths, BOX_A, 300));
+    const error = asMountError(
+      await mountingThen(1000, () => {
+        fake.addMount(point);
+      }),
+    );
     expect(error.message).toBe('timed out');
     expect(error.cause).toBeInstanceOf(MountError);
   });
 
+  it('refuses to mount over a mount point the mount table still lists, changing and running nothing', async () => {
+    const point = mountPoint(paths, BOX_A);
+    mkdirSync(point, { recursive: true, mode: 0o755 });
+    chmodSync(point, 0o755);
+    fake.addMount(point);
+    const error = await failure(mount(paths, BOX_A));
+    expect(error.message).toBe(`${point} is already mounted`);
+    expect(modeOf(point)).toBe(0o755);
+    expect(fake.calls()).toEqual([]);
+    expect(fake.mounted()).toEqual([point]);
+  });
+
   it('keeps both failures when reading the mount table fails and so does cleaning up', async () => {
-    vi.stubEnv('WTD_MOUNTINFO', join(dir, 'no-such-mountinfo'));
-    const error: unknown = await mount(paths, BOX_A).then(
-      () => null,
-      (e: unknown) => e,
-    );
+    fake.hold();
+    const error = await mountingThen(60_000, () => {
+      vi.stubEnv('WTD_MOUNTINFO', join(dir, 'no-such-mountinfo'));
+      fake.release();
+    });
     expect(error).toBeInstanceOf(AggregateError);
     const codes =
       error instanceof AggregateError ? error.errors.map((e: unknown) => (e instanceof Error && 'code' in e ? e.code : null)) : [];
@@ -333,7 +365,10 @@ describe('mount', () => {
 
   it('keeps a failed start’s own cause beside a failed cleanup', async () => {
     vi.stubEnv('WTD_SSHFS', join(dir, 'no-such-sshfs'));
-    vi.stubEnv('WTD_MOUNTINFO', join(dir, 'no-such-mountinfo'));
+    // A file in the mount point makes removing it fail.
+    const point = mountPoint(paths, BOX_A);
+    mkdirSync(point, { recursive: true });
+    writeFileSync(join(point, 'stray'), '');
     const error = await failure(mount(paths, BOX_A));
     expect(error.failure).toBe('missing-program');
     expect(error.cause).toBeInstanceOf(AggregateError);
@@ -341,14 +376,17 @@ describe('mount', () => {
       error.cause instanceof AggregateError
         ? error.cause.errors.map((e: unknown) => (e instanceof Error && 'path' in e ? e.path : null))
         : [];
-    expect(paths_).toEqual([join(dir, 'no-such-sshfs'), join(dir, 'no-such-mountinfo')]);
+    expect(paths_).toEqual([join(dir, 'no-such-sshfs'), point]);
   });
 
   it('unmounts what a mount program outliving its deadline mounted', async () => {
     const point = mountPoint(paths, BOX_A);
     fake.hold();
-    fake.addMount(point);
-    const error = await failure(mount(paths, BOX_A, 300));
+    const error = asMountError(
+      await mountingThen(1000, () => {
+        fake.addMount(point);
+      }),
+    );
     expect(error.message).toBe('timed out');
     expect(fake.calls('fusermount3')).toEqual([{ program: 'fusermount3', args: ['-u', '-z', point] }]);
     expect(fake.mounted()).toEqual([]);

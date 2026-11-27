@@ -7,6 +7,9 @@ import type { Worktree } from '../../protocol/index.js';
 import { fetchFailureReason } from './git.js';
 import { listWorktrees, removeWorktree, worktreeRisks, type WorktreeRisks } from './index.js';
 
+// Each test runs many real git commands, which a loaded machine slows past the default budget.
+vi.setConfig({ testTimeout: 30_000 });
+
 let root: string;
 let repo: string;
 

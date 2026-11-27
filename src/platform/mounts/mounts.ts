@@ -179,6 +179,8 @@ export const mount = async (paths: HostPaths, target: MountTarget, deadlineMs = 
   await requireProgram(unmountCommand(point)[0] ?? '');
   await preparePrivateDirs(paths);
   await privateDir(mountDir(paths));
+  // A mount an earlier hub left there is the remote directory itself: leave it alone.
+  if ((await mountedPoints()).has(point)) throw new MountError('failed', `${point} is already mounted`);
   await privateDir(point);
   try {
     const { code, stderr } = await run(command, deadlineMs);

@@ -54,7 +54,8 @@ const originOf = (host: string, port: string, path: string): string | null => {
 };
 
 const fromUrl = (scheme: string, rest: string): string | null => {
-  const defaultPort = DEFAULT_PORTS[scheme.toLowerCase()];
+  const name = scheme.toLowerCase();
+  const defaultPort = Object.hasOwn(DEFAULT_PORTS, name) ? DEFAULT_PORTS[name] : undefined;
   if (defaultPort === undefined) return null;
   const slash = rest.indexOf('/');
   if (slash < 0) return null;
@@ -107,12 +108,12 @@ const configValue = (raw: string): string => {
       kept = value.length;
     } else if (!quoted && (c === ';' || c === '#')) {
       break;
-    } else {
+    } else if (quoted || value !== '' || !/\s/.test(c)) {
       value += c;
       if (quoted || !/\s/.test(c)) kept = value.length;
     }
   }
-  return value.slice(0, kept).trimStart();
+  return value.slice(0, kept);
 };
 
 const SECTION = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/;

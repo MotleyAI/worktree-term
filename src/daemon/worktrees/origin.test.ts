@@ -34,6 +34,13 @@ describe('normalizeOrigin', () => {
     expect(normalizeOrigin(url)).toBe(origin);
   });
 
+  it.each(['constructor://host/app', 'toString://host/app', '__proto__://host/app'])(
+    'gives null for the inherited scheme name of %s',
+    (url) => {
+      expect(normalizeOrigin(url)).toBeNull();
+    },
+  );
+
   it('keeps the case of the path', () => {
     const upper = normalizeOrigin('https://example.com/Org/Repo');
     const lower = normalizeOrigin('https://example.com/org/repo');
@@ -194,6 +201,7 @@ describe('readOrigin', () => {
 
   it.each([
     ['a quoted value', '\turl = "https://quoted.example/x"\n', 'quoted.example/x'],
+    ['quoted leading whitespace', '\turl = " https://spaced.example/x"\n', null],
     ['a comment after the value', '\turl = https://commented.example/x ; mirror\n', 'commented.example/x'],
     ['comment lines before the key', '\t# the main remote\n\t; really\n\turl = https://after.example/x\n', 'after.example/x'],
     ['a value continued on the next line', '\turl = https://cont.example/org/\\\napp.git\n', 'cont.example/org/app'],

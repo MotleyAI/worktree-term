@@ -18,7 +18,7 @@ runs:
     # The version must read the format that living-architecture.yaml records.
     - if: inputs.arch-tools == 'true'
       shell: bash
-      run: npm install -g --ignore-scripts living-architecture@0.4.1
+      run: npm install -g --ignore-scripts living-architecture@0.14.0
     - shell: bash
       run: git config --global user.name ci && git config --global user.email ci@example.com
     - shell: bash

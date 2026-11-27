@@ -232,6 +232,14 @@ describe('mount', () => {
     expect(existsSync(mountPoint(paths, BOX_A))).toBe(false);
   });
 
+  it('fails with the last error line after megabytes of error output', async () => {
+    vi.stubEnv(
+      'WTD_SSHFS',
+      script('sshfs-noisy', "head -c 4000000 /dev/zero | tr '\\0' 'x' >&2\necho >&2\necho 'the real reason' >&2\nexit 1"),
+    );
+    expect((await failure(mount(paths, BOX_A))).message).toBe('the real reason');
+  });
+
   it('fails with the error line, not its standard output, when the program exits 0 without listing the mount point', async () => {
     vi.stubEnv('WTD_SSHFS', script('sshfs-warns', "echo 'on stdout'\necho 'warning: no mount' >&2\necho 'on stdout again'\nexit 0"));
     expect((await failure(mount(paths, BOX_A))).message).toBe('warning: no mount');

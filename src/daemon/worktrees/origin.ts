@@ -169,7 +169,7 @@ const originUrl = (config: string): string | null => {
   return null;
 };
 
-const MISSING = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EISDIR']);
+const MISSING = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EISDIR', 'ELOOP', 'ENAMETOOLONG']);
 
 const isMissing = (error: unknown): boolean =>
   error instanceof Error && 'code' in error && typeof error.code === 'string' && MISSING.has(error.code);

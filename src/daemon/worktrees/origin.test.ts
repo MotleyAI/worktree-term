@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -257,6 +257,13 @@ describe('readOrigin', () => {
   it('gives null when the config file is missing', async () => {
     const path = join(root, 'r');
     mkdirSync(join(path, '.git'), { recursive: true });
+    expect(await readOrigin(path)).toBeNull();
+  });
+
+  it('gives null when the config file is a symbolic link loop', async () => {
+    const path = join(root, 'r');
+    mkdirSync(join(path, '.git'), { recursive: true });
+    symlinkSync('config', join(path, '.git', 'config'));
     expect(await readOrigin(path)).toBeNull();
   });
 

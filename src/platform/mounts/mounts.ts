@@ -9,6 +9,8 @@ import { preparePrivateDirs, privateDir, type HostPaths } from '../files/index.j
 const KEEP_ALIVE = 'reconnect,ServerAliveInterval=15,ServerAliveCountMax=3';
 /** How long a finished program's error output may still arrive. */
 const OUTPUT_WAIT_MS = 1000;
+/** How much of a program's error output is kept: its end, where the last line is. */
+const MAX_STDERR = 64 * 1024;
 /** How long a mount program may run before it is stopped. */
 const MOUNT_DEADLINE_MS = 60_000;
 
@@ -84,7 +86,7 @@ const run = (command: readonly string[], deadlineMs: number | null = null): Prom
     let stderr = '';
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
+      stderr = (stderr + chunk).slice(-MAX_STDERR);
     });
     let timedOut = false;
     const deadline =

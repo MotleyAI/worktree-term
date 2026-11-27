@@ -22,6 +22,8 @@ export interface CloneState {
   readonly watched: readonly WatchedClone[];
   /** The name each host index last had. */
   readonly names: ReadonlyMap<number, string>;
+  /** The hosts the latest hosts update showed connected. */
+  readonly connected: readonly number[];
 }
 
 export type CloneAction =
@@ -40,6 +42,7 @@ export const initialCloneState: CloneState = {
   found: new Map(),
   watched: [],
   names: new Map(),
+  connected: [],
 };
 
 /** The non-null origins of repos their host lists. */
@@ -101,6 +104,7 @@ export const cloneStep = (state: CloneState, action: CloneAction): { state: Clon
         failed,
         listed: new Map(action.hosts.map((h) => [h.idx, h.repos])),
         names: new Map([...known.names, ...action.hosts.map((h) => [h.idx, h.name] as const)]),
+        connected: action.hosts.filter((h) => h.status === 'connected').map((h) => h.idx),
       };
       const step = matched(next);
       return { state: step.state, effects: [...fresh.map((host) => ({ t: 'discover', host }) as const), ...step.effects] };
@@ -113,11 +117,12 @@ export const cloneStep = (state: CloneState, action: CloneAction): { state: Clon
     case 'discovered':
       if (state.names.get(action.host) !== action.name) return { state, effects: [] };
       return matched({ ...state, found: new Map(state.found).set(action.host, action.repos) });
-    case 'failed':
+    case 'failed': {
       if (state.names.get(action.host) !== action.name) return { state, effects: [] };
-      return {
-        state: { ...state, discovering: state.discovering.filter((h) => h !== action.host), failed: [...state.failed, action.host] },
-        effects: [],
-      };
+      const discovering = state.discovering.filter((h) => h !== action.host);
+      // A host that dropped meanwhile is discovered again on its next connection.
+      const failed = state.connected.includes(action.host) ? [...state.failed, action.host] : state.failed;
+      return { state: { ...state, discovering, failed }, effects: [] };
+    }
   }
 };

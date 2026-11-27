@@ -98,6 +98,16 @@ describe('cloneStep', () => {
     expect(state.found.has(1)).toBe(false);
   });
 
+  it('discovers a host again on its next connection when its discovery fails after it dropped', () => {
+    const { effects } = run(
+      hosts(host(0, 'connected'), host(1, 'connected')),
+      hosts(host(0, 'connected'), host(1, 'reconnecting')),
+      { t: 'failed', host: 1, name: 'h1' },
+      hosts(host(0, 'connected'), host(1, 'connected')),
+    );
+    expect(effects.at(-1)).toEqual([{ t: 'discover', host: 1 }]);
+  });
+
   it('ignores a discovery reply or failure of the host an index named before', () => {
     const { state } = run(
       CONNECTED,

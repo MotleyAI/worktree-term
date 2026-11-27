@@ -311,6 +311,18 @@ describe('mount', () => {
     expect(error.cause).toBeInstanceOf(MountError);
   });
 
+  it('keeps both failures when reading the mount table fails and so does cleaning up', async () => {
+    vi.stubEnv('WTD_MOUNTINFO', join(dir, 'no-such-mountinfo'));
+    const error: unknown = await mount(paths, BOX_A).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    const codes =
+      error instanceof AggregateError ? error.errors.map((e: unknown) => (e instanceof Error && 'code' in e ? e.code : null)) : [];
+    expect(codes).toEqual(['ENOENT', 'ENOENT']);
+  });
+
   it('unmounts what a mount program outliving its deadline mounted', async () => {
     const point = mountPoint(paths, BOX_A);
     fake.hold();

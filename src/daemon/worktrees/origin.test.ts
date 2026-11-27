@@ -203,6 +203,15 @@ describe('readOrigin', () => {
     expect(await readOrigin(repo)).toBe(origin);
   });
 
+  it.each([
+    ['a comment line', '# note \\\n[remote "origin"]\n\turl = https://c1.example/x\n', 'c1.example/x'],
+    ['a comment after a value', '[remote "origin"]\n\tfetch = x ; note \\\n\turl = https://c2.example/x\n', 'c2.example/x'],
+    ['a quoted value holding a comment character', '[remote "origin"]\n\turl = "https://c3.example/x;y\\\n"\n', 'c3.example/x;y'],
+  ])('reads past %s ending in a backslash', async (_name, config, origin) => {
+    const repo = repoWithConfig('r', config);
+    expect(await readOrigin(repo)).toBe(origin);
+  });
+
   it('reads a url on the line of its section header', async () => {
     const repo = repoWithConfig('r', '[core]\n\tbare = false\n[remote "origin"] url = https://inline.example/x\n');
     expect(await readOrigin(repo)).toBe('inline.example/x');

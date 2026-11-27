@@ -118,11 +118,21 @@ const configValue = (raw: string): string => {
 const SECTION = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/;
 const KEY = /^([A-Za-z][A-Za-z0-9-]*)\s*(?:=(.*))?$/;
 
-/** Whether `line` ends in an unescaped `\`, continuing on the next line. */
-const continues = (line: string): boolean => {
-  let slashes = 0;
-  while (line.charAt(line.length - 1 - slashes) === '\\') slashes++;
-  return slashes % 2 === 1;
+/** Whether `text` ends in a `\` escaping its line end: unescaped itself, and not inside a comment, which a line end closes. */
+const continues = (text: string): boolean => {
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charAt(i);
+    if (c === '\\') {
+      if (i === text.length - 1) return true;
+      i++;
+    } else if (c === '"') {
+      quoted = !quoted;
+    } else if (!quoted && (c === ';' || c === '#')) {
+      return false;
+    }
+  }
+  return false;
 };
 
 /** Git config text as logical lines, continued lines joined. */
@@ -131,7 +141,7 @@ const logicalLines = (config: string): string[] => {
   let pending = '';
   for (const raw of config.split('\n')) {
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-    if (continues(line)) {
+    if (continues(pending + line)) {
       pending += line.slice(0, -1);
     } else {
       lines.push(pending + line);
